@@ -5,5 +5,12 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/Server/Server.csproj" />
+    <ProjectReference Include="../../src/plugins/data/Sqlite/Sqlite.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="NUnit" />
+    <PackageReference Include="NUnit3TestAdapter" />
+    <PackageReference Include="NUnit.Analyzers" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
   </ItemGroup>
 </Project>

@@ -19,6 +19,9 @@
   <Folder Name="/plugins/storage/">
     <Project Path="src/plugins/storage/Filesystem/Filesystem.csproj" />
   </Folder>
+  <Folder Name="/plugins/data/">
+    <Project Path="src/plugins/data/Sqlite/Sqlite.csproj" />
+  </Folder>
   <Project Path="src/Client.Core/Client.Core.csproj" />
   <Project Path="src/Client.Desktop/Client.Desktop.csproj" />
   <Project Path="src/Client.Android/Client.Android.csproj" />

@@ -17,5 +17,6 @@
     <ProjectReference Include="../plugins/format/Fmp4/Fmp4.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../plugins/cameras/Onvif/Onvif.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../plugins/storage/Filesystem/Filesystem.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../plugins/data/Sqlite/Sqlite.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>
