@@ -13,4 +13,6 @@ public sealed class CameraStream
   public int? Bitrate { get; set; }
   public required string Uri { get; set; }
   public bool RecordingEnabled { get; set; }
+  public RetentionMode RetentionMode { get; set; } = RetentionMode.Default;
+  public long RetentionValue { get; set; }
 }

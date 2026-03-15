@@ -11,5 +11,5 @@ public interface IDataProvider
   IClientRepository Clients { get; }
   ISettingsRepository Settings { get; }
   IPluginDataStore GetPluginStore(string pluginId);
-  Task MigrateAsync(CancellationToken ct);
+  Task<OneOf<Success, Error>> MigrateAsync(CancellationToken ct);
 }

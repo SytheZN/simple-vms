@@ -1,13 +1,12 @@
 using Microsoft.Extensions.DependencyInjection;
-
 namespace Shared.Models;
 
 public interface IPlugin
 {
   PluginMetadata Metadata { get; }
-  void ConfigureServices(IServiceCollection services);
-  Task StartAsync(CancellationToken ct);
-  Task StopAsync(CancellationToken ct);
+  OneOf<Success, Error> ConfigureServices(IServiceCollection services);
+  Task<OneOf<Success, Error>> StartAsync(CancellationToken ct);
+  Task<OneOf<Success, Error>> StopAsync(CancellationToken ct);
 }
 
 public sealed class PluginMetadata

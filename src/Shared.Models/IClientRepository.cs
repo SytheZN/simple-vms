@@ -2,9 +2,9 @@ namespace Shared.Models;
 
 public interface IClientRepository
 {
-  Task<IReadOnlyList<Client>> GetAllAsync(CancellationToken ct = default);
-  Task<Client?> GetByIdAsync(Guid id, CancellationToken ct = default);
-  Task<Client?> GetByCertificateSerialAsync(string serial, CancellationToken ct = default);
-  Task CreateAsync(Client client, CancellationToken ct = default);
-  Task UpdateAsync(Client client, CancellationToken ct = default);
+  Task<OneOf<IReadOnlyList<Client>, Error>> GetAllAsync(CancellationToken ct = default);
+  Task<OneOf<Client, Error>> GetByIdAsync(Guid id, CancellationToken ct = default);
+  Task<OneOf<Client, Error>> GetByCertificateSerialAsync(string serial, CancellationToken ct = default);
+  Task<OneOf<Success, Error>> CreateAsync(Client client, CancellationToken ct = default);
+  Task<OneOf<Success, Error>> UpdateAsync(Client client, CancellationToken ct = default);
 }
