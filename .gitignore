@@ -1,0 +1,34 @@
+# Build output
+bin/
+obj/
+/out/
+
+# .NET
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+project.lock.json
+*.nuget.props
+*.nuget.targets
+
+# NuGet
+**/packages/
+*.nupkg
+.nuget/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Node (Client.Web)
+node_modules/
+dist/
+
+# OS
+.DS_Store
+Thumbs.db

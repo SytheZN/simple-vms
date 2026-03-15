@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../Shared.Models/Shared.Models.csproj" />
+    <ProjectReference Include="../Server.Plugins/Server.Plugins.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Shared.Models/Shared.Models.csproj" />
+    <ProjectReference Include="../Shared.Protocol/Shared.Protocol.csproj" />
+    <ProjectReference Include="../Server.Api/Server.Api.csproj" />
+    <ProjectReference Include="../Server.Streaming/Server.Streaming.csproj" />
+    <ProjectReference Include="../Server.Recording/Server.Recording.csproj" />
+    <ProjectReference Include="../Server.Tunnel/Server.Tunnel.csproj" />
+    <ProjectReference Include="../Server.Plugins/Server.Plugins.csproj" />
+  </ItemGroup>
+</Project>
