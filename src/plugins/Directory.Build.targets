@@ -1,0 +1,10 @@
+<Project>
+  <Target Name="CopyPluginToDebugData" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug'">
+    <PropertyGroup>
+      <PluginDebugDir>$([MSBuild]::NormalizePath('$(MSBuildThisFileDirectory)', '..', '..', 'out', 'debug-data', 'plugins'))</PluginDebugDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(PluginDebugDir)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(PluginDebugDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(PluginDebugDir)" SkipUnchangedFiles="true" Condition="Exists('$(TargetDir)$(TargetName).pdb')" />
+  </Target>
+</Project>
