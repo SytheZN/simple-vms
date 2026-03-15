@@ -34,12 +34,11 @@ src/
   Shared.Models/       Domain models, DTOs, interfaces
   Shared.Protocol/     QUIC protocol, framing, serialization
   Server/              ASP.NET Core host, startup, DI
+  Server.Core/         Domain services, orchestration, scheduling
   Server.Api/          HTTP endpoints, middleware
   Server.Onvif/        ONVIF client (discovery, device, media, events)
   Server.Streaming/    RTSP ingest, NAL demux, live fan-out
   Server.Recording/    fMP4 muxer, segment writer, retention
-  Server.Storage/      Storage provider abstraction
-  Server.Data/         Data provider, repositories
   Server.Tunnel/       QUIC listener, mutual TLS, stream dispatch
   Server.Plugins/      Plugin host, discovery, lifecycle
   Client.Core/         Shared ViewModels, services, controls (Avalonia)

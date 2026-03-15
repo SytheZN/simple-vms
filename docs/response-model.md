@@ -66,6 +66,56 @@ Module IDs are claimed as code is written and tracked in a single source-of-trut
 
 6. **Messages are supplementary.** The `message` string is for humans. Code-level handling must use `result` for control flow and `debugTag` for diagnostics. Never parse the message.
 
+## Internal Error Propagation
+
+### Overview
+
+Internally, operations return a discriminated union: either the success value or an `Error`. Anticipated failure conditions (not found, conflict, bad input, unavailable dependencies) are returned as `Error` values that flow through the call chain carrying structured diagnostic information (result code, debug tag, message) from the point of failure to the API boundary.
+
+Exceptions remain exceptional. Unanticipated failures (null references, out-of-range indexing, invariant violations) throw and are not caught - they bubble up and crash the process. The goal is a clear separation: expected error conditions are values in the return type, and genuine bugs are loud, fatal exceptions.
+
+The library `OneOf` provides the discriminated union type. `OneOf.Chaining` provides `Then()` for composing async operations into pipelines.
+
+### Error Type
+
+Every failure is represented by an `Error` value:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `Result` | enum | Broad outcome category (same enum as the response envelope) |
+| `Tag` | DebugTag | Module + code identifying the exact failure site |
+| `Message` | string | Human-readable description |
+
+### Return Types
+
+Methods that return a value use `OneOf<T, Error>`. Methods that perform an action without returning data use `OneOf<Success, Error>`, where `Success` is a unit type.
+
+```
+OneOf<Camera, Error>                - lookup that returns a value
+OneOf<IReadOnlyList<Camera>, Error> - lookup that returns a collection
+OneOf<Success, Error>               - mutation (create, update, delete)
+```
+
+### Async Pipelines
+
+Operations that depend on previous results are composed using `Then()`:
+
+```
+return await GetCameraById(id, ct)
+    .Then(camera => GetStreamsByCameraId(camera.Id, ct));
+```
+
+Each step in the pipeline short-circuits on error - if an earlier step fails, later steps are skipped and the error propagates through.
+
+### Mapping to Response Envelope
+
+At the API boundary (HTTP endpoints, QUIC API stream handlers), the `OneOf<T, Error>` is converted to a `ResponseEnvelope`:
+
+- **Success path**: `result` = `Success`, `debugTag` = the handling module's tag, `body` = the value.
+- **Error path**: `result`, `debugTag`, and `message` are taken directly from the `Error`.
+
+This is the only conversion point. Internal code never constructs response envelopes - it works exclusively with `OneOf<T, Error>`.
+
 ## Transport Mapping
 
 The `result` enum is the single source of truth. Each transport maps from it:

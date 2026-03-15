@@ -53,12 +53,11 @@ Shared.Models             > Domain models, DTOs, extension point interfaces, eve
 Shared.Protocol           > QUIC protocol definitions, framing, stream types
 
 Server                    > ASP.NET Core host, startup, DI composition
+Server.Core               > Domain services, orchestration, scheduling
 Server.Api                > HTTP endpoints (web UI, enrollment), middleware
 Server.Onvif              > ONVIF client (discovery, device, media, events, analytics)
 Server.Streaming          > RTSP ingest, NAL demux, live stream fan-out
 Server.Recording          > fMP4 segment writer, keyframe indexer, retention engine
-Server.Storage            > Storage provider abstraction (NFS built-in)
-Server.Data               > Data provider abstraction, repository interfaces
 Server.Tunnel             > QUIC listener, mutual TLS, stream dispatch
 Server.Plugins            > Plugin host, discovery, lifecycle management
 
@@ -69,6 +68,10 @@ Client.iOS                > iOS shell, notifications, QR scanning
 
 Client.Web                > Vue.js SPA (built assets embedded in Server)
 ```
+
+### Error Propagation
+
+All internal interfaces return `OneOf<T, Error>` for anticipated failure conditions (not found, conflicts, storage failures). The `Error` type carries a `Result` code, `DebugTag`, and message - the same structure used in the API response envelope. At the API boundary, `OneOf<T, Error>` is converted to a `ResponseEnvelope` for the wire. Unanticipated failures (bugs, invariant violations) remain as exceptions and are not caught. See [response-model.md](response-model.md) for details.
 
 ### Data Flow: Camera to Client
 

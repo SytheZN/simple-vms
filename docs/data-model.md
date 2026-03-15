@@ -24,7 +24,7 @@ Represents a registered camera.
 | `SegmentDuration` | int? | Recording segment duration in seconds (null = use server default) |
 | `Capabilities` | string[] | Camera capabilities (e.g. `ptz`, `audio`, `events`) - populated by the camera provider during configuration |
 | `Config` | map | Provider-specific configuration (opaque to core) |
-| `RetentionMode` | enum | `Default`, `Days`, `Bytes`, `Percent` - `Default` uses global setting |
+| `RetentionMode` | enum | `Default`, `Days`, `Bytes`, `Percent` - fallback for streams that use `Default` |
 | `RetentionValue` | long | Threshold value (ignored when mode is `Default`) |
 | `CreatedAt` | ulong | Unix microseconds |
 | `UpdatedAt` | ulong | Unix microseconds |
@@ -46,6 +46,8 @@ Represents a stream profile on a camera. A camera has one or more streams. Strea
 | `Bitrate` | int? | Bitrate in kbps (if known) |
 | `Uri` | string | Source URI |
 | `RecordingEnabled` | bool | Whether this stream is being recorded |
+| `RetentionMode` | enum | `Default`, `Days`, `Bytes`, `Percent` - `Default` inherits from Camera, which in turn inherits from global |
+| `RetentionValue` | long | Threshold value (ignored when mode is `Default`) |
 
 ### Segment
 
@@ -111,74 +113,90 @@ erDiagram
 
 The `IDataProvider` exposes repository interfaces. Each repository must support the query patterns listed below. The provider translates these into whatever query mechanism its backing store supports.
 
+All repository methods return `OneOf<T, Error>` for operations that produce a value, or `OneOf<Success, Error>` for mutations that do not. See [response-model.md](response-model.md) for the full error propagation model.
+
+Anticipated failures (record not found, constraint violations, storage unavailable) are returned as `Error` values with a `Result` code, `DebugTag`, and message. Unanticipated failures (bugs, invariant violations) throw and are not caught.
+
+### Error Contracts
+
+Each repository documents which `Result` codes its operations can return. The common patterns:
+
+| Result | When |
+|--------|------|
+| `NotFound` | A lookup by ID found no matching record |
+| `Conflict` | An insert violated a uniqueness constraint (duplicate ID, duplicate address, etc.) |
+| `InternalError` | A storage-layer failure (connection lost, corrupt data, I/O error) |
+
+Providers may return additional codes where appropriate, but the above are the baseline. Collection queries (GetAll, GetByTimeRange, etc.) return an empty collection on no results, not `NotFound`.
+
 ### ICameraRepository
 
-| Operation | Description |
-|-----------|-------------|
-| `GetAll()` | List all cameras |
-| `GetById(id)` | Get a single camera by ID |
-| `GetByAddress(address)` | Find a camera by its address (for duplicate detection) |
-| `Create(camera)` | Insert a new camera |
-| `Update(camera)` | Update camera fields |
-| `Delete(id)` | Remove a camera and cascade to streams, segments, keyframes, events |
+| Operation | Returns | Description |
+|-----------|---------|-------------|
+| `GetAll()` | `OneOf<IReadOnlyList<Camera>, Error>` | List all cameras |
+| `GetById(id)` | `OneOf<Camera, Error>` | Get a single camera by ID. `NotFound` if absent. |
+| `GetByAddress(address)` | `OneOf<Camera, Error>` | Find a camera by its address (for duplicate detection). `NotFound` if absent. |
+| `Create(camera)` | `OneOf<Success, Error>` | Insert a new camera. `Conflict` if ID or address already exists. |
+| `Update(camera)` | `OneOf<Success, Error>` | Update camera fields. `NotFound` if absent. |
+| `Delete(id)` | `OneOf<Success, Error>` | Remove a camera and cascade to streams, segments, keyframes, events. `NotFound` if absent. |
 
 ### IStreamRepository
 
-| Operation | Description |
-|-----------|-------------|
-| `GetByCameraId(cameraId)` | List all streams for a camera |
-| `GetById(id)` | Get a single stream |
-| `Upsert(stream)` | Create or update a stream (used during camera config sync) |
-| `Delete(id)` | Remove a stream |
+| Operation | Returns | Description |
+|-----------|---------|-------------|
+| `GetByCameraId(cameraId)` | `OneOf<IReadOnlyList<CameraStream>, Error>` | List all streams for a camera |
+| `GetById(id)` | `OneOf<CameraStream, Error>` | Get a single stream. `NotFound` if absent. |
+| `Upsert(stream)` | `OneOf<Success, Error>` | Create or update a stream (used during camera config sync) |
+| `Delete(id)` | `OneOf<Success, Error>` | Remove a stream |
 
 ### ISegmentRepository
 
-| Operation | Description |
-|-----------|-------------|
-| `GetByTimeRange(streamId, from, to)` | List segments overlapping a time range, ordered by start time |
-| `GetOldest(streamId, limit)` | Get the oldest N segments (for retention) |
-| `GetTotalSize(streamId)` | Sum of `SizeBytes` for all segments of a stream |
-| `Create(segment)` | Insert a new segment |
-| `DeleteBatch(ids)` | Remove segments by ID (batch, for retention) |
+| Operation | Returns | Description |
+|-----------|---------|-------------|
+| `GetByTimeRange(streamId, from, to)` | `OneOf<IReadOnlyList<Segment>, Error>` | List segments overlapping a time range, ordered by start time |
+| `GetOldest(streamId, limit)` | `OneOf<IReadOnlyList<Segment>, Error>` | Get the oldest N segments (for retention) |
+| `GetTotalSize(streamId)` | `OneOf<long, Error>` | Sum of `SizeBytes` for all segments of a stream |
+| `Create(segment)` | `OneOf<Success, Error>` | Insert a new segment |
+| `DeleteBatch(ids)` | `OneOf<Success, Error>` | Remove segments by ID (batch, for retention) |
 
 ### IKeyframeRepository
 
-| Operation | Description |
-|-----------|-------------|
-| `GetBySegmentId(segmentId)` | List all keyframes in a segment, ordered by timestamp |
-| `GetNearest(segmentId, timestamp)` | Find the keyframe at or before a timestamp (for seek) |
-| `CreateBatch(keyframes)` | Insert keyframes for a completed segment (batch) |
-| `DeleteBySegmentIds(segmentIds)` | Remove keyframes when segments are purged |
+| Operation | Returns | Description |
+|-----------|---------|-------------|
+| `GetBySegmentId(segmentId)` | `OneOf<IReadOnlyList<Keyframe>, Error>` | List all keyframes in a segment, ordered by timestamp |
+| `GetNearest(segmentId, timestamp)` | `OneOf<Keyframe, Error>` | Find the keyframe at or before a timestamp (for seek). `NotFound` if no keyframe exists at or before the timestamp. |
+| `CreateBatch(keyframes)` | `OneOf<Success, Error>` | Insert keyframes for a completed segment (batch) |
+| `DeleteBySegmentIds(segmentIds)` | `OneOf<Success, Error>` | Remove keyframes when segments are purged |
 
 ### IEventRepository
 
-| Operation | Description |
-|-----------|-------------|
-| `Query(cameraId?, type?, from, to, limit, offset)` | Filtered, paginated event query |
-| `GetById(id)` | Get a single event |
-| `Create(event)` | Insert an event |
-| `GetByTimeRange(cameraId, from, to)` | Events within a range (for timeline overlay) |
+| Operation | Returns | Description |
+|-----------|---------|-------------|
+| `Query(cameraId?, type?, from, to, limit, offset)` | `OneOf<IReadOnlyList<CameraEvent>, Error>` | Filtered, paginated event query |
+| `GetById(id)` | `OneOf<CameraEvent, Error>` | Get a single event. `NotFound` if absent. |
+| `Create(event)` | `OneOf<Success, Error>` | Insert an event |
+| `GetByTimeRange(cameraId, from, to)` | `OneOf<IReadOnlyList<CameraEvent>, Error>` | Events within a range (for timeline overlay) |
 
 ### IClientRepository
 
-| Operation | Description |
-|-----------|-------------|
-| `GetAll()` | List all non-revoked clients |
-| `GetById(id)` | Get a single non-revoked client |
-| `GetByCertificateSerial(serial)` | Look up client by cert serial, including revoked (used during TLS handshake to reject revoked certs) |
-| `Create(client)` | Insert a new client |
-| `Update(client)` | Update client fields (name, lastSeen, revoked) |
+| Operation | Returns | Description |
+|-----------|---------|-------------|
+| `GetAll()` | `OneOf<IReadOnlyList<Client>, Error>` | List all non-revoked clients |
+| `GetById(id)` | `OneOf<Client, Error>` | Get a single non-revoked client. `NotFound` if absent or revoked. |
+| `GetByCertificateSerial(serial)` | `OneOf<Client, Error>` | Look up client by cert serial, including revoked (used during TLS handshake to reject revoked certs). `NotFound` if absent. |
+| `Create(client)` | `OneOf<Success, Error>` | Insert a new client |
+| `Update(client)` | `OneOf<Success, Error>` | Update client fields (name, lastSeen, revoked) |
 
 ### ISettingsRepository
 
-Key-value settings store for server-level configuration.
+Key-value settings store for server-level configuration. Unlike entity repositories, `Get` returns `null` on a missing key (not `NotFound`) - checking whether a setting exists is a normal code path, not an error.
 
-| Operation | Description |
-|-----------|-------------|
-| `Get(key)` | Get a setting value |
-| `GetAll()` | Get all settings |
-| `Set(key, value)` | Create or update a setting |
-| `Delete(key)` | Remove a setting |
+| Operation | Returns | Description |
+|-----------|---------|-------------|
+| `Get(key)` | `OneOf<string?, Error>` | Get a setting value. Returns null if the key does not exist. |
+| `GetAll()` | `OneOf<IReadOnlyDictionary<string, string>, Error>` | Get all settings |
+| `Set(key, value)` | `OneOf<Success, Error>` | Create or update a setting |
+| `Delete(key)` | `OneOf<Success, Error>` | Remove a setting |
 
 ### IPluginDataStore
 
@@ -188,13 +206,15 @@ Each plugin gets an isolated namespace - a plugin can only access its own data.
 
 Plugins that prefer to manage their own storage (separate database, files, etc.) are free to do so - they should expose the relevant paths or connection details as user-facing configuration via `IPluginConfig`.
 
-| Operation | Description |
-|-----------|-------------|
-| `Get<T>(key)` | Get a value by key, deserialized to `T` |
-| `GetAll<T>(prefix?)` | List all entries, optionally filtered by key prefix |
-| `Set<T>(key, value)` | Create or update a value |
-| `Delete(key)` | Remove a value |
-| `Query<T>(predicate)` | Find entries matching a predicate (provider may support limited query expressiveness) |
+Like `ISettingsRepository`, `Get` returns `null`/`default` on a missing key rather than `NotFound`.
+
+| Operation | Returns | Description |
+|-----------|---------|-------------|
+| `Get<T>(key)` | `OneOf<T?, Error>` | Get a value by key, deserialized to `T`. Returns default if absent. |
+| `GetAll<T>(prefix?)` | `OneOf<IReadOnlyList<KeyValuePair<string, T>>, Error>` | List all entries, optionally filtered by key prefix |
+| `Set<T>(key, value)` | `OneOf<Success, Error>` | Create or update a value |
+| `Delete(key)` | `OneOf<Success, Error>` | Remove a value |
+| `Query<T>(predicate)` | `OneOf<IReadOnlyList<KeyValuePair<string, T>>, Error>` | Find entries matching a predicate (provider may support limited query expressiveness) |
 
 The serialization format is provider-defined (JSON, MessagePack, etc.). Plugins work with typed objects; the provider handles serialization.
 
@@ -211,7 +231,7 @@ The following queries are performance-critical and providers should optimize for
 
 ## Migration Contract
 
-Each `IDataProvider` implements `MigrateAsync()` which is called on server startup. The provider is responsible for:
+Each `IDataProvider` implements `MigrateAsync()` which is called on server startup and returns `OneOf<Success, Error>`. The provider is responsible for:
 
 - Creating the schema on first run
 - Migrating from older schema versions when the server is upgraded

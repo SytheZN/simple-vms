@@ -14,9 +14,9 @@ A plugin is a .NET assembly containing one or more classes that implement extens
 public interface IPlugin
 {
     PluginMetadata Metadata { get; }
-    void ConfigureServices(IServiceCollection services);
-    Task StartAsync(CancellationToken ct);
-    Task StopAsync(CancellationToken ct);
+    OneOf<Success, Error> ConfigureServices(IServiceCollection services);
+    Task<OneOf<Success, Error>> StartAsync(CancellationToken ct);
+    Task<OneOf<Success, Error>> StopAsync(CancellationToken ct);
 }
 ```
 
@@ -70,12 +70,12 @@ Acquires video from a source and produces raw NAL units.
 public interface ICaptureSource
 {
     string Protocol { get; }
-    Task<IStreamConnection> ConnectAsync(CameraConnectionInfo info, CancellationToken ct);
+    Task<OneOf<IStreamConnection, Error>> ConnectAsync(CameraConnectionInfo info, CancellationToken ct);
 }
 
 public interface IStreamConnection : IAsyncDisposable
 {
-    IAsyncEnumerable<NalUnit> ReadNalUnitsAsync(CancellationToken ct);
+    Task<OneOf<IAsyncEnumerable<NalUnit>, Error>> ReadNalUnitsAsync(CancellationToken ct);
     StreamInfo Info { get; }
 }
 ```
@@ -91,21 +91,21 @@ public interface IStreamFormat
 {
     string FormatId { get; }
     string FileExtension { get; }
-    ISegmentWriter CreateWriter(Stream output, CodecInfo codec);
-    ISegmentReader CreateReader(Stream input);
+    OneOf<ISegmentWriter, Error> CreateWriter(Stream output, CodecInfo codec);
+    OneOf<ISegmentReader, Error> CreateReader(Stream input);
 }
 
 public interface ISegmentWriter : IAsyncDisposable
 {
-    Task WriteNalUnitAsync(NalUnit unit, CancellationToken ct);
-    Task FinalizeAsync(CancellationToken ct);
+    Task<OneOf<Success, Error>> WriteNalUnitAsync(NalUnit unit, CancellationToken ct);
+    Task<OneOf<Success, Error>> FinalizeAsync(CancellationToken ct);
     IReadOnlyList<KeyframeEntry> Keyframes { get; }
 }
 
 public interface ISegmentReader : IAsyncDisposable
 {
-    Task SeekToKeyframeAsync(long byteOffset, CancellationToken ct);
-    IAsyncEnumerable<Fragment> ReadFragmentsAsync(CancellationToken ct);
+    Task<OneOf<Success, Error>> SeekToKeyframeAsync(long byteOffset, CancellationToken ct);
+    Task<OneOf<IAsyncEnumerable<Fragment>, Error>> ReadFragmentsAsync(CancellationToken ct);
 }
 ```
 
@@ -119,9 +119,9 @@ Handles camera-specific discovery, configuration, and capability detection.
 public interface ICameraProvider
 {
     string ProviderId { get; }
-    Task<IReadOnlyList<DiscoveredCamera>> DiscoverAsync(DiscoveryOptions options, CancellationToken ct);
-    Task<CameraConfiguration> ConfigureAsync(string address, Credentials credentials, CancellationToken ct);
-    Task<IEventSubscription?> SubscribeEventsAsync(CameraConfiguration config, CancellationToken ct);
+    Task<OneOf<IReadOnlyList<DiscoveredCamera>, Error>> DiscoverAsync(DiscoveryOptions options, CancellationToken ct);
+    Task<OneOf<CameraConfiguration, Error>> ConfigureAsync(string address, Credentials credentials, CancellationToken ct);
+    Task<OneOf<IEventSubscription?, Error>> SubscribeEventsAsync(CameraConfiguration config, CancellationToken ct);
 }
 ```
 
@@ -135,14 +135,13 @@ Processes raw events before they are stored or delivered to clients. Filters can
 public interface IEventFilter
 {
     string FilterId { get; }
-    Task<EventDecision> ProcessAsync(CameraEvent rawEvent, CancellationToken ct);
+    Task<OneOf<EventDecision, Error>> ProcessAsync(CameraEvent rawEvent, CancellationToken ct);
 }
 
 public enum EventDecision
 {
     Pass,
     Suppress,
-    // Modified events return a new CameraEvent via an out parameter
 }
 ```
 
@@ -156,7 +155,7 @@ Delivers event notifications to external systems. All registered sinks receive e
 public interface INotificationSink
 {
     string SinkId { get; }
-    Task SendAsync(CameraEvent evt, CancellationToken ct);
+    Task<OneOf<Success, Error>> SendAsync(CameraEvent evt, CancellationToken ct);
 }
 ```
 
@@ -171,8 +170,8 @@ public interface IVideoAnalyzer
 {
     string AnalyzerId { get; }
     IReadOnlyList<string> SupportedCodecs { get; }
-    Task StartAsync(Guid cameraId, string profile, CancellationToken ct);
-    Task StopAsync(Guid cameraId, string profile, CancellationToken ct);
+    Task<OneOf<Success, Error>> StartAsync(Guid cameraId, string profile, CancellationToken ct);
+    Task<OneOf<Success, Error>> StopAsync(Guid cameraId, string profile, CancellationToken ct);
 }
 ```
 
@@ -189,22 +188,17 @@ public interface IStorageProvider
 {
     string ProviderId { get; }
 
-    // Data I/O
-    Task<ISegmentHandle> CreateSegmentAsync(SegmentMetadata metadata, CancellationToken ct);
-    Task<Stream> OpenReadAsync(string segmentRef, CancellationToken ct);
-
-    // Retention
-    Task PurgeAsync(IReadOnlyList<string> segmentRefs, CancellationToken ct);
-
-    // Space reporting
-    Task<StorageStats> GetStatsAsync(CancellationToken ct);
+    Task<OneOf<ISegmentHandle, Error>> CreateSegmentAsync(SegmentMetadata metadata, CancellationToken ct);
+    Task<OneOf<Stream, Error>> OpenReadAsync(string segmentRef, CancellationToken ct);
+    Task<OneOf<Success, Error>> PurgeAsync(IReadOnlyList<string> segmentRefs, CancellationToken ct);
+    Task<OneOf<StorageStats, Error>> GetStatsAsync(CancellationToken ct);
 }
 
 public interface ISegmentHandle : IAsyncDisposable
 {
-    string SegmentRef { get; }  // opaque reference, stored in the database
-    Stream Stream { get; }      // write stream
-    Task FinalizeAsync(CancellationToken ct);
+    string SegmentRef { get; }
+    Stream Stream { get; }
+    Task<OneOf<Success, Error>> FinalizeAsync(CancellationToken ct);
 }
 
 public record SegmentMetadata
@@ -241,7 +235,6 @@ public interface IDataProvider
 {
     string ProviderId { get; }
 
-    // Repositories
     ICameraRepository Cameras { get; }
     IStreamRepository Streams { get; }
     ISegmentRepository Segments { get; }
@@ -250,15 +243,13 @@ public interface IDataProvider
     IClientRepository Clients { get; }
     ISettingsRepository Settings { get; }
 
-    // Plugin data
     IPluginDataStore GetPluginStore(string pluginId);
 
-    // Schema management
-    Task MigrateAsync(CancellationToken ct);
+    Task<OneOf<Success, Error>> MigrateAsync(CancellationToken ct);
 }
 ```
 
-Each repository interface defines the queries the server core needs (CRUD, time-range queries, keyframe lookups, etc.). The data provider implements them using whatever query language or API the backing store supports.
+Each repository interface defines the queries the server core needs (CRUD, time-range queries, keyframe lookups, etc.). See [data-model.md](data-model.md) for the full return type contracts.
 
 `MigrateAsync` is called on startup to ensure the schema is up to date. The provider owns its own migration strategy.
 
@@ -271,8 +262,8 @@ Authenticates HTTP requests. When no auth provider is installed, HTTP endpoints 
 ```csharp
 public interface IAuthProvider
 {
-    Task<AuthResult> AuthenticateAsync(HttpContext context, CancellationToken ct);
-    Task ChallengeAsync(HttpContext context, CancellationToken ct);
+    Task<OneOf<AuthResult, Error>> AuthenticateAsync(HttpContext context, CancellationToken ct);
+    Task<OneOf<Success, Error>> ChallengeAsync(HttpContext context, CancellationToken ct);
 }
 
 public record AuthResult(bool Authenticated, string? Identity, IDictionary<string, string>? Claims);
@@ -287,8 +278,8 @@ Authorizes operations and filters results based on identity. Receives an opaque 
 ```csharp
 public interface IAuthzProvider
 {
-    Task<bool> AuthorizeAsync(string? identity, string operation, object? resource, CancellationToken ct);
-    Task<IQueryable<T>> FilterAsync<T>(string? identity, IQueryable<T> query, CancellationToken ct);
+    Task<OneOf<bool, Error>> AuthorizeAsync(string? identity, string operation, object? resource, CancellationToken ct);
+    Task<OneOf<IQueryable<T>, Error>> FilterAsync<T>(string? identity, IQueryable<T> query, CancellationToken ct);
 }
 ```
 
@@ -307,8 +298,8 @@ Publish and subscribe to system events.
 ```csharp
 public interface IEventBus
 {
-    Task PublishAsync<T>(T evt, CancellationToken ct) where T : ISystemEvent;
-    IAsyncEnumerable<T> SubscribeAsync<T>(CancellationToken ct) where T : ISystemEvent;
+    Task<OneOf<Success, Error>> PublishAsync<T>(T evt, CancellationToken ct) where T : ISystemEvent;
+    Task<OneOf<IAsyncEnumerable<T>, Error>> SubscribeAsync<T>(CancellationToken ct) where T : ISystemEvent;
 }
 ```
 
@@ -321,7 +312,7 @@ Subscribe to raw NAL unit streams from active cameras.
 ```csharp
 public interface IStreamTap
 {
-    IAsyncEnumerable<NalUnit> TapAsync(Guid cameraId, string profile, CancellationToken ct);
+    Task<OneOf<IAsyncEnumerable<NalUnit>, Error>> TapAsync(Guid cameraId, string profile, CancellationToken ct);
 }
 ```
 
@@ -334,8 +325,8 @@ Query and read recording segments.
 ```csharp
 public interface IRecordingAccess
 {
-    Task<IReadOnlyList<SegmentInfo>> QueryAsync(Guid cameraId, string profile, ulong from, ulong to, CancellationToken ct);
-    Task<Stream> OpenSegmentAsync(string segmentRef, CancellationToken ct);
+    Task<OneOf<IReadOnlyList<SegmentInfo>, Error>> QueryAsync(Guid cameraId, string profile, ulong from, ulong to, CancellationToken ct);
+    Task<OneOf<Stream, Error>> OpenSegmentAsync(string segmentRef, CancellationToken ct);
 }
 ```
 
@@ -348,8 +339,8 @@ Enumerate cameras and stream profiles.
 ```csharp
 public interface ICameraRegistry
 {
-    Task<IReadOnlyList<CameraInfo>> GetCamerasAsync(CancellationToken ct);
-    Task<CameraInfo?> GetCameraAsync(Guid cameraId, CancellationToken ct);
+    Task<OneOf<IReadOnlyList<CameraInfo>, Error>> GetCamerasAsync(CancellationToken ct);
+    Task<OneOf<CameraInfo, Error>> GetCameraAsync(Guid cameraId, CancellationToken ct);
 }
 ```
 
@@ -360,8 +351,8 @@ Read plugin-specific configuration. Configuration is stored per-plugin and manag
 ```csharp
 public interface IPluginConfig
 {
-    T Get<T>(string key, T defaultValue);
-    IReadOnlyDictionary<string, object> GetAll();
+    OneOf<T, Error> Get<T>(string key, T defaultValue);
+    OneOf<IReadOnlyDictionary<string, object>, Error> GetAll();
 }
 ```
 
@@ -417,7 +408,7 @@ Plugins can register custom QUIC stream types in the `0x1000-0x1FFF` range. The 
 public interface IStreamTypeHandler
 {
     ushort StreamType { get; }
-    Task HandleAsync(QuicStream stream, ClientIdentity client, CancellationToken ct);
+    Task<OneOf<Success, Error>> HandleAsync(QuicStream stream, ClientIdentity client, CancellationToken ct);
 }
 ```
 
