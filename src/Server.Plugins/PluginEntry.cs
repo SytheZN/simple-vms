@@ -10,4 +10,5 @@ public sealed class PluginEntry
   public required AssemblyLoadContext LoadContext { get; init; }
   public PluginState State { get; set; } = PluginState.Discovered;
   public string? ErrorMessage { get; set; }
+  public string[] ExtensionPoints { get; set; } = [];
 }

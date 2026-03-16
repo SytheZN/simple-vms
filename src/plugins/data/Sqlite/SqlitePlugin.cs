@@ -18,6 +18,7 @@ public sealed class SqlitePlugin : IPlugin
 
   public OneOf<Success, Error> ConfigureServices(IServiceCollection services)
   {
+    SQLitePCL.Batteries.Init();
     services.AddSingleton<IDataProvider>(sp =>
     {
       var config = sp.GetRequiredService<IConfiguration>();

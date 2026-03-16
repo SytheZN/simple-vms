@@ -1,11 +1,13 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using Microsoft.Extensions.Configuration;
+using Shared.Models;
 
 namespace Server;
 
-public sealed class CertificateManager
+public sealed class CertificateManager : ICertificateService
 {
-  private readonly ServerOptions _options;
+  private readonly string _certsPath;
 
   private X509Certificate2? _rootCa;
   private X509Certificate2? _serverCert;
@@ -16,20 +18,22 @@ public sealed class CertificateManager
     ?? throw new InvalidOperationException("Server certificate not initialized");
 
   public bool IsFirstRun => !File.Exists(RootCaKeyPath);
+  public string RootCaPem => RootCa.ExportCertificatePem();
 
-  private string RootCaPath => Path.Combine(_options.CertsPath, "root-ca.pem");
-  private string RootCaKeyPath => Path.Combine(_options.CertsPath, "root-ca.key");
-  private string ServerCertPath => Path.Combine(_options.CertsPath, "server.pem");
-  private string ServerCertKeyPath => Path.Combine(_options.CertsPath, "server.key");
+  private string RootCaPath => Path.Combine(_certsPath, "root-ca.pem");
+  private string RootCaKeyPath => Path.Combine(_certsPath, "root-ca.key");
+  private string ServerCertPath => Path.Combine(_certsPath, "server.pem");
+  private string ServerCertKeyPath => Path.Combine(_certsPath, "server.key");
 
-  public CertificateManager(ServerOptions options)
+  public CertificateManager(IConfiguration config)
   {
-    _options = options;
+    var dataPath = config["data-path"]!;
+    _certsPath = Path.Combine(dataPath, "certs");
   }
 
   public void Initialize()
   {
-    Directory.CreateDirectory(_options.CertsPath);
+    Directory.CreateDirectory(_certsPath);
 
     if (IsFirstRun)
     {
@@ -46,8 +50,9 @@ public sealed class CertificateManager
     }
   }
 
-  public X509Certificate2 GenerateClientCert(Guid clientId, string serial)
+  public ClientCertBundle GenerateClientCert(Guid clientId)
   {
+    var serial = GenerateSerial();
     using var key = RSA.Create(2048);
 
     var subject = new X500DistinguishedName($"CN={clientId}");
@@ -58,7 +63,7 @@ public sealed class CertificateManager
 
     request.CertificateExtensions.Add(
       new X509EnhancedKeyUsageExtension(
-        [new Oid("1.3.6.1.5.5.7.3.2")], // client auth
+        [new Oid("1.3.6.1.5.5.7.3.2")],
         critical: false));
 
     request.CertificateExtensions.Add(
@@ -72,10 +77,17 @@ public sealed class CertificateManager
       DateTimeOffset.UtcNow.AddYears(10),
       serialBytes);
 
-    return cert.CopyWithPrivateKey(key);
+    using var withKey = cert.CopyWithPrivateKey(key);
+
+    return new ClientCertBundle
+    {
+      CertPem = withKey.ExportCertificatePem(),
+      KeyPem = key.ExportRSAPrivateKeyPem(),
+      Serial = serial
+    };
   }
 
-  public string GenerateSerial()
+  private string GenerateSerial()
   {
     var bytes = new byte[16];
     RandomNumberGenerator.Fill(bytes);
@@ -122,7 +134,7 @@ public sealed class CertificateManager
 
     request.CertificateExtensions.Add(
       new X509EnhancedKeyUsageExtension(
-        [new Oid("1.3.6.1.5.5.7.3.1")], // server auth
+        [new Oid("1.3.6.1.5.5.7.3.1")],
         critical: false));
 
     request.CertificateExtensions.Add(

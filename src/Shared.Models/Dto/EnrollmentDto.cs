@@ -19,3 +19,10 @@ public sealed class StartEnrollmentResponse
   public required string Token { get; init; }
   public required string QrData { get; init; }
 }
+
+public sealed class QrPayload
+{
+  public required int V { get; init; }
+  public required string[] Addresses { get; init; }
+  public required string Token { get; init; }
+}

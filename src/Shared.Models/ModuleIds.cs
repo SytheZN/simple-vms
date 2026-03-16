@@ -2,6 +2,18 @@ namespace Shared.Models;
 
 public static class ModuleIds
 {
+  public const ushort Api = 0x0001;
+  public const ushort Enrollment = 0x0002;
+  public const ushort CameraManagement = 0x0003;
+  public const ushort ClientManagement = 0x0004;
+  public const ushort Discovery = 0x0005;
+  public const ushort Recording = 0x0006;
+  public const ushort Events = 0x0007;
+  public const ushort Retention = 0x0008;
+  public const ushort SystemManagement = 0x0009;
+  public const ushort PluginManagement = 0x000A;
+  public const ushort Setup = 0x000B;
+
   public const ushort PluginRangeStart = 0x1000;
   public const ushort PluginRangeEnd = 0xFFFF;
 

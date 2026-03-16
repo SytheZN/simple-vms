@@ -6,6 +6,7 @@
   <ItemGroup>
     <ProjectReference Include="../Shared.Models/Shared.Models.csproj" />
     <ProjectReference Include="../Shared.Protocol/Shared.Protocol.csproj" />
+    <ProjectReference Include="../Server.Core/Server.Core.csproj" />
     <ProjectReference Include="../Server.Api/Server.Api.csproj" />
     <ProjectReference Include="../Server.Streaming/Server.Streaming.csproj" />
     <ProjectReference Include="../Server.Recording/Server.Recording.csproj" />

@@ -1,10 +1,21 @@
 <Project>
-  <Target Name="CopyPluginToDebugData" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug'">
-    <PropertyGroup>
-      <PluginDebugDir>$([MSBuild]::NormalizePath('$(MSBuildThisFileDirectory)', '..', '..', 'out', 'debug-data', 'plugins'))</PluginDebugDir>
-    </PropertyGroup>
-    <MakeDir Directories="$(PluginDebugDir)" />
-    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(PluginDebugDir)" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(PluginDebugDir)" SkipUnchangedFiles="true" Condition="Exists('$(TargetDir)$(TargetName).pdb')" />
+  <PropertyGroup>
+    <PluginDebugDir>$([MSBuild]::NormalizePath('$(MSBuildThisFileDirectory)', '..', '..', 'out', 'debug-data', 'plugins', '$(AssemblyName)'))</PluginDebugDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Update="@(ProjectReference)" Private="false" ExcludeAssets="runtime" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Update="OneOf" IncludeAssets="compile" PrivateAssets="all" />
+    <PackageReference Update="OneOf.Chaining" IncludeAssets="compile" PrivateAssets="all" />
+  </ItemGroup>
+
+  <Target Name="PublishPluginToDebugData" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug'">
+    <Exec Command="dotnet publish &quot;$(MSBuildProjectFullPath)&quot; --no-build -c Debug -o &quot;$(PluginDebugDir)&quot;" />
+  </Target>
+
+  <Target Name="CleanPluginDebugData" AfterTargets="Clean">
+    <RemoveDir Directories="$(PluginDebugDir)" />
   </Target>
 </Project>

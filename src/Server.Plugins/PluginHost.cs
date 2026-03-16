@@ -22,34 +22,71 @@ public sealed class PluginHost
     if (!Directory.Exists(pluginsPath))
       return;
 
-    foreach (var dll in Directory.GetFiles(Path.GetFullPath(pluginsPath), "*.dll"))
-    {
-      try
-      {
-        _logger.LogDebug("Loading assembly {Path}", dll);
-        var loadContext = new PluginLoadContext(dll);
-        var assembly = loadContext.LoadFromAssemblyPath(dll);
+    var fullPath = Path.GetFullPath(pluginsPath);
 
-        foreach (var type in FindPluginTypes(assembly))
-        {
-          var plugin = (IPlugin)Activator.CreateInstance(type)!;
-          _plugins.Add(new PluginEntry
-          {
-            Plugin = plugin,
-            Metadata = plugin.Metadata,
-            LoadContext = loadContext,
-            State = PluginState.Loaded
-          });
-          _logger.LogInformation("Discovered plugin: {Id} ({Name} v{Version}) from {Path}",
-            plugin.Metadata.Id, plugin.Metadata.Name, plugin.Metadata.Version, dll);
-        }
-      }
-      catch (Exception ex)
+    foreach (var dir in Directory.GetDirectories(fullPath))
+    {
+      var dirName = Path.GetFileName(dir);
+      var dll = Path.Combine(dir, $"{dirName}.dll");
+      if (!File.Exists(dll))
+        continue;
+
+      LoadPlugin(dll);
+    }
+
+    foreach (var dll in Directory.GetFiles(fullPath, "*.dll"))
+      LoadPlugin(dll);
+  }
+
+  private void LoadPlugin(string dll)
+  {
+    try
+    {
+      _logger.LogDebug("Loading assembly {Path}", dll);
+      var loadContext = new PluginLoadContext(dll);
+      var assembly = loadContext.LoadFromAssemblyPath(dll);
+
+      foreach (var type in FindPluginTypes(assembly))
       {
-        _logger.LogError(ex, "Failed to load plugin from {Path}", dll);
+        var plugin = (IPlugin)Activator.CreateInstance(type)!;
+
+        if (_plugins.Any(p => p.Metadata.Id == plugin.Metadata.Id))
+        {
+          _logger.LogDebug("Skipping duplicate plugin {Id} from {Path}",
+            plugin.Metadata.Id, dll);
+          return;
+        }
+
+        _plugins.Add(new PluginEntry
+        {
+          Plugin = plugin,
+          Metadata = plugin.Metadata,
+          LoadContext = loadContext,
+          State = PluginState.Loaded
+        });
+        _logger.LogInformation("Discovered plugin: {Id} ({Name} v{Version}) from {Path}",
+          plugin.Metadata.Id, plugin.Metadata.Name, plugin.Metadata.Version, dll);
       }
     }
+    catch (Exception ex)
+    {
+      _logger.LogError(ex, "Failed to load plugin from {Path}", dll);
+    }
   }
+
+  private static readonly HashSet<Type> ExtensionPointTypes = new(
+  [
+    typeof(ICaptureSource),
+    typeof(IStreamFormat),
+    typeof(ICameraProvider),
+    typeof(IEventFilter),
+    typeof(INotificationSink),
+    typeof(IVideoAnalyzer),
+    typeof(IStorageProvider),
+    typeof(IDataProvider),
+    typeof(IAuthProvider),
+    typeof(IAuthzProvider)
+  ]);
 
   public void ConfigureAll(IServiceCollection services)
   {
@@ -57,8 +94,15 @@ public sealed class PluginHost
     {
       try
       {
+        var before = services.Select(d => d.ServiceType).ToHashSet();
         entry.Plugin.ConfigureServices(services);
         entry.State = PluginState.Configured;
+        entry.ExtensionPoints = services
+          .Select(d => d.ServiceType)
+          .Where(t => !before.Contains(t) && ExtensionPointTypes.Contains(t))
+          .Select(t => t.Name)
+          .Distinct()
+          .ToArray();
       }
       catch (Exception ex)
       {
