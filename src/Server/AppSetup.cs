@@ -19,17 +19,6 @@ public static class AppSetup
     var quicPort = config.GetValue("quic-port", 443);
 
     var certManager = new CertificateManager(config);
-
-    if (config.GetValue<bool>("auto-certs"))
-    {
-      if (!certManager.TryLoadCerts())
-        certManager.GenerateCerts();
-    }
-    else
-    {
-      certManager.TryLoadCerts();
-    }
-
     builder.Services.AddSingleton(certManager);
     builder.Services.AddSingleton<ICertificateService>(certManager);
 
@@ -64,11 +53,6 @@ public static class AppSetup
 
   public static async Task InitializeAsync(WebApplication app)
   {
-    var pluginHost = app.Services.GetRequiredService<PluginHost>();
-    await pluginHost.StartAllAsync(app.Lifetime.ApplicationStopping);
-
-    var certManager = app.Services.GetRequiredService<CertificateManager>();
-
     app.UseApiMiddleware();
     app.UseDefaultFiles();
     app.UseStaticFiles();
@@ -87,10 +71,11 @@ public static class AppSetup
 
     app.Lifetime.ApplicationStopping.Register(() =>
     {
+      var pluginHost = app.Services.GetRequiredService<PluginHost>();
       pluginHost.StopAllAsync().GetAwaiter().GetResult();
     });
 
-    if (certManager.HasCerts)
+    if (TryInitializeCerts(app))
     {
       await CompleteStartupAsync(app);
     }
@@ -102,9 +87,28 @@ public static class AppSetup
 
   internal static async Task CompleteStartupAsync(WebApplication app)
   {
+    var pluginHost = app.Services.GetRequiredService<PluginHost>();
+    await pluginHost.StartAllAsync(app.Lifetime.ApplicationStopping);
+
     var dataProvider = app.Services.GetService<IDataProvider>();
     if (dataProvider != null)
       await dataProvider.MigrateAsync(app.Lifetime.ApplicationStopping);
+  }
+
+  private static bool TryInitializeCerts(WebApplication app)
+  {
+    var certManager = app.Services.GetRequiredService<CertificateManager>();
+    var config = app.Configuration;
+
+    if (config.GetValue<bool>("auto-certs"))
+    {
+      if (!certManager.TryLoadCerts())
+        certManager.GenerateCerts();
+
+      return true;
+    }
+
+    return certManager.TryLoadCerts();
   }
 
   private static async Task PollForCertsAsync(WebApplication app)

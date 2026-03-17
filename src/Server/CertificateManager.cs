@@ -29,7 +29,6 @@ public sealed class CertificateManager : ICertificateService
   {
     var dataPath = config["data-path"]!;
     _certsPath = Path.Combine(dataPath, "certs");
-    Directory.CreateDirectory(_certsPath);
   }
 
   public bool TryLoadCerts()
@@ -44,6 +43,8 @@ public sealed class CertificateManager : ICertificateService
 
   public void GenerateCerts()
   {
+    Directory.CreateDirectory(_certsPath);
+
     _rootCa = GenerateRootCa();
     SaveCertAndKey(_rootCa, RootCaPath, RootCaKeyPath);
 
