@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 
 const darkMode = ref(false)
 const sampleModalOpen = ref(false)
@@ -9,6 +9,58 @@ const sampleSelect = ref('option-1')
 const sampleInput = ref('Sample text')
 const sampleTextarea = ref('Longer form content goes here.')
 const settingsExpanded = ref(true)
+const motionCanvas = ref<HTMLCanvasElement | null>(null)
+
+function drawMotionOverlay(canvas: HTMLCanvasElement) {
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  const cols = 32
+  const rows = 24
+  canvas.width = cols
+  canvas.height = rows
+
+  const style = getComputedStyle(document.documentElement)
+  const motionColor = style.getPropertyValue('--color-motion').trim()
+  const activeColor = style.getPropertyValue('--color-motion-active').trim()
+
+  ctx.clearRect(0, 0, cols, rows)
+
+  const blobs = [
+    { x: 18, y: 6, r: 2 },
+    { x: 18, y: 8, r: 3 },
+    { x: 18, y: 11, r: 2.5 },
+    { x: 18, y: 14, r: 2 },
+    { x: 17, y: 16, r: 1.5 },
+    { x: 19, y: 16, r: 1.5 },
+    { x: 18, y: 18, r: 1 },
+    { x: 10, y: 12, r: 4 },
+    { x: 10, y: 15, r: 3 },
+  ]
+
+  ctx.fillStyle = activeColor
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      for (const b of blobs) {
+        const dist = Math.sqrt((x - b.x) ** 2 + (y - b.y) ** 2)
+        if (dist < b.r) {
+          ctx.fillRect(x, y, 1, 1)
+          break
+        }
+      }
+    }
+  }
+}
+
+onMounted(() => {
+  if (motionCanvas.value) drawMotionOverlay(motionCanvas.value)
+})
+
+watch(darkMode, () => {
+  requestAnimationFrame(() => {
+    if (motionCanvas.value) drawMotionOverlay(motionCanvas.value)
+  })
+})
 const animatedProgress = ref(0)
 const animatedRunning = ref(false)
 
@@ -635,6 +687,12 @@ function toggleDark() {
           <!-- Player area -->
           <div class="bg-surface-sunken aspect-video relative flex items-center justify-center">
             <i class="ph ph-video-camera icon-xl text-text-muted"></i>
+            <!-- Motion overlay -->
+            <canvas
+              ref="motionCanvas"
+              class="absolute inset-0 w-full h-full pointer-events-none"
+              style="image-rendering: pixelated;"
+            ></canvas>
             <!-- Overlay: camera name + status -->
             <div class="absolute top-3 left-3 flex items-center gap-2">
               <span class="badge badge-success"><i class="ph-fill ph-circle icon-sm"></i> Live</span>
@@ -666,30 +724,34 @@ function toggleDark() {
               </select>
             </div>
             <button class="btn btn-ghost btn-sm"><i class="ph ph-record icon-sm text-danger"></i></button>
-            <button class="btn btn-ghost btn-sm"><i class="ph ph-camera icon-sm"></i></button>
+            <button class="btn btn-ghost btn-sm"><i class="ph ph-person-arms-spread icon-sm"></i></button>
           </div>
           <!-- Timeline -->
-          <div class="px-4 py-3 border-t border-border space-y-2">
-            <div class="flex items-center gap-3 text-xs text-text-muted">
-              <span class="font-mono">12:00</span>
-              <div class="flex-1 h-6 bg-surface-sunken rounded-md relative overflow-hidden">
-                <!-- Recording spans -->
-                <div class="absolute top-0 bottom-0 bg-primary/30 rounded-sm" style="left: 0%; width: 35%;"></div>
-                <div class="absolute top-0 bottom-0 bg-primary/30 rounded-sm" style="left: 40%; width: 25%;"></div>
-                <div class="absolute top-0 bottom-0 bg-primary/30 rounded-sm" style="left: 70%; width: 30%;"></div>
-                <!-- Event markers -->
-                <div class="absolute top-0 bottom-0 w-0.5 bg-warning" style="left: 15%;"></div>
-                <div class="absolute top-0 bottom-0 w-0.5 bg-warning" style="left: 48%;"></div>
-                <div class="absolute top-0 bottom-0 w-0.5 bg-danger" style="left: 67%;"></div>
-                <!-- Playhead -->
-                <div class="absolute top-0 bottom-0 w-0.5 bg-text" style="left: 85%;"></div>
+          <div class="px-4 pt-2 pb-3 border-t border-border space-y-1">
+            <div class="relative">
+              <div class="timeline-bar">
+                <div class="timeline-span timeline-span-recording" style="left: 0%; width: 35%;"></div>
+                <div class="timeline-span timeline-span-recording" style="left: 40%; width: 25%;"></div>
+                <div class="timeline-span timeline-span-recording" style="left: 70%; width: 30%;"></div>
+                <div class="timeline-span timeline-span-motion" style="left: 12%; width: 8%;"></div>
+                <div class="timeline-span timeline-span-motion" style="left: 45%; width: 12%;"></div>
+                <div class="timeline-marker timeline-alert" style="left: 67%;"></div>
+                <div class="timeline-marker timeline-playhead" style="left: 85%;"></div>
               </div>
-              <span class="font-mono">18:00</span>
+              <div class="relative h-4">
+                <div class="timeline-tick" style="left: 0%;">12:00</div>
+                <div class="timeline-tick" style="left: 16.6%;">13:00</div>
+                <div class="timeline-tick" style="left: 33.3%;">14:00</div>
+                <div class="timeline-tick" style="left: 50%;">15:00</div>
+                <div class="timeline-tick" style="left: 66.6%;">16:00</div>
+                <div class="timeline-tick" style="left: 83.3%;">17:00</div>
+                <div class="timeline-tick" style="left: 100%; transform: translateX(-100%);">18:00</div>
+              </div>
             </div>
             <div class="flex items-center gap-4 text-xs text-text-muted">
-              <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm bg-primary/30"></span> Recording</span>
-              <span class="flex items-center gap-1"><span class="inline-block w-3 h-0.5 bg-warning"></span> Motion</span>
-              <span class="flex items-center gap-1"><span class="inline-block w-3 h-0.5 bg-danger"></span> Alert</span>
+              <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 timeline-span-recording rounded-sm"></span> Recording</span>
+              <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 timeline-span-motion rounded-sm"></span> Motion</span>
+              <span class="flex items-center gap-1"><span class="inline-block w-3 h-0.5 timeline-alert"></span> Alert</span>
             </div>
           </div>
         </div>
