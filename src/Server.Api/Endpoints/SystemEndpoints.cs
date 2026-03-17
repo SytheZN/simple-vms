@@ -13,6 +13,7 @@ public static class SystemEndpoints
     group.MapGet("/storage", GetStorage);
     group.MapGet("/settings", GetSettings);
     group.MapPut("/settings", UpdateSettings);
+    group.MapPost("/certs", GenerateCerts);
   }
 
   private static async Task<IResult> GetHealth(
@@ -46,5 +47,21 @@ public static class SystemEndpoints
   {
     var result = await system.UpdateSettingsAsync(settings, ct);
     return ApiResponse.Ok(result, new DebugTag(ModuleIds.SystemManagement, 0x0013));
+  }
+
+  private static IResult GenerateCerts(ICertificateService certs)
+  {
+    if (certs.HasCerts)
+      return ApiResponse.Err(new Error(
+        Result.Conflict,
+        new DebugTag(ModuleIds.SystemManagement, 0x0014),
+        "Certificates already exist. To regenerate, delete the existing certificates first."));
+
+    certs.GenerateCerts();
+    return Results.Json(new ResponseEnvelope
+    {
+      Result = Result.Success,
+      DebugTag = new DebugTag(ModuleIds.SystemManagement, 0x0015)
+    }, ApiResponse.SerializerOptions);
   }
 }

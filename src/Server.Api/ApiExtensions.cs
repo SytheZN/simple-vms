@@ -9,7 +9,6 @@ public static class ApiExtensions
 {
   public static IServiceCollection AddApiServices(this IServiceCollection services)
   {
-    services.AddSingleton<SetupState>();
     services.AddSingleton<CameraStatusTracker>();
     services.AddSingleton<ConnectionTracker>();
     services.AddSingleton<EnrollmentService>();
@@ -26,7 +25,6 @@ public static class ApiExtensions
 
   public static WebApplication UseApiMiddleware(this WebApplication app)
   {
-    app.UseMiddleware<SetupGateMiddleware>();
     app.UseMiddleware<AuthMiddleware>();
     app.UseMiddleware<AuthzMiddleware>();
     return app;

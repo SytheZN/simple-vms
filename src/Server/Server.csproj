@@ -20,4 +20,12 @@
     <ProjectReference Include="../plugins/storage/Filesystem/Filesystem.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../plugins/data/Sqlite/Sqlite.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
+  <Target Name="BuildWebUI" BeforeTargets="Build;Publish" Condition="Exists('../Client.Web/package.json')">
+    <Exec Command="npm ci --prefix ../Client.Web" />
+    <Exec Command="npm run build --prefix ../Client.Web" />
+    <ItemGroup>
+      <WebUIFiles Include="../Client.Web/dist/**/*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(WebUIFiles)" DestinationFolder="wwwroot/%(RecursiveDir)" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

@@ -8,21 +8,40 @@ public sealed class SystemService
 {
   private readonly ulong _startTime = DateTimeOffset.UtcNow.ToUnixMicroseconds();
   private readonly IDataProvider _data;
+  private readonly ICertificateService _certs;
   private readonly CameraStatusTracker _cameraStatus;
   private readonly IEnumerable<IStorageProvider> _storage;
 
   public SystemService(
     IDataProvider data,
+    ICertificateService certs,
     CameraStatusTracker cameraStatus,
     IEnumerable<IStorageProvider> storage)
   {
     _data = data;
+    _certs = certs;
     _cameraStatus = cameraStatus;
     _storage = storage;
   }
 
   public async Task<OneOf<HealthResponse, Error>> GetHealthAsync(CancellationToken ct)
   {
+    var uptimeMicros = DateTimeOffset.UtcNow.ToUnixMicroseconds() - _startTime;
+    var uptimeSeconds = (int)(uptimeMicros / 1_000_000);
+    var version = Assembly.GetEntryAssembly()?.GetName().Version?.ToString() ?? "0.0.0";
+
+    if (!_certs.HasCerts)
+    {
+      return new HealthResponse
+      {
+        Status = "missing-certs",
+        Uptime = uptimeSeconds,
+        Cameras = new CameraHealthCounts { Total = 0, Online = 0, Offline = 0, Error = 0 },
+        Storage = new StorageResponse { Stores = [] },
+        Version = version
+      };
+    }
+
     var camerasResult = await _data.Cameras.GetAllAsync(ct);
     if (camerasResult.IsT1) return camerasResult.AsT1;
 
@@ -39,11 +58,6 @@ public sealed class SystemService
     var storage = storageResult.Match(
       s => s,
       _ => new StorageResponse { Stores = [] });
-
-    var uptimeMicros = DateTimeOffset.UtcNow.ToUnixMicroseconds() - _startTime;
-    var uptimeSeconds = (int)(uptimeMicros / 1_000_000);
-
-    var version = Assembly.GetEntryAssembly()?.GetName().Version?.ToString() ?? "0.0.0";
 
     var status = counts.Error > 0 ? "degraded"
       : counts.Offline > 0 && counts.Total > 0 ? "degraded"

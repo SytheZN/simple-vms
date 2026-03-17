@@ -9,7 +9,9 @@ public sealed class ClientCertBundle
 
 public interface ICertificateService
 {
-  bool IsFirstRun { get; }
+  bool HasCerts { get; }
   string RootCaPem { get; }
   ClientCertBundle GenerateClientCert(Guid clientId);
+  void GenerateCerts();
+  bool TryLoadCerts();
 }

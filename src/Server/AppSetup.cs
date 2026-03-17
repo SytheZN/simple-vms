@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Server.Api;
-using Server.Api.Middleware;
 using Server.Core;
 using Server.Plugins;
 using Shared.Models;
@@ -20,7 +19,17 @@ public static class AppSetup
     var quicPort = config.GetValue("quic-port", 443);
 
     var certManager = new CertificateManager(config);
-    certManager.Initialize();
+
+    if (config.GetValue<bool>("auto-certs"))
+    {
+      if (!certManager.TryLoadCerts())
+        certManager.GenerateCerts();
+    }
+    else
+    {
+      certManager.TryLoadCerts();
+    }
+
     builder.Services.AddSingleton(certManager);
     builder.Services.AddSingleton<ICertificateService>(certManager);
 
@@ -59,18 +68,12 @@ public static class AppSetup
     await pluginHost.StartAllAsync(app.Lifetime.ApplicationStopping);
 
     var certManager = app.Services.GetRequiredService<CertificateManager>();
-    var setupState = app.Services.GetRequiredService<SetupState>();
-
-    if (!certManager.IsFirstRun)
-    {
-      var dataProvider = app.Services.GetService<IDataProvider>();
-      if (dataProvider != null)
-        await dataProvider.MigrateAsync(app.Lifetime.ApplicationStopping);
-      setupState.SetupComplete = true;
-    }
 
     app.UseApiMiddleware();
+    app.UseDefaultFiles();
+    app.UseStaticFiles();
     app.MapApiEndpoints();
+    app.MapFallbackToFile("index.html");
 
     var endpoints = app.Services.GetRequiredService<ServerEndpoints>();
 
@@ -86,5 +89,38 @@ public static class AppSetup
     {
       pluginHost.StopAllAsync().GetAwaiter().GetResult();
     });
+
+    if (certManager.HasCerts)
+    {
+      await CompleteStartupAsync(app);
+    }
+    else
+    {
+      _ = PollForCertsAsync(app);
+    }
+  }
+
+  internal static async Task CompleteStartupAsync(WebApplication app)
+  {
+    var dataProvider = app.Services.GetService<IDataProvider>();
+    if (dataProvider != null)
+      await dataProvider.MigrateAsync(app.Lifetime.ApplicationStopping);
+  }
+
+  private static async Task PollForCertsAsync(WebApplication app)
+  {
+    var certManager = app.Services.GetRequiredService<CertificateManager>();
+    var ct = app.Lifetime.ApplicationStopping;
+
+    while (!ct.IsCancellationRequested)
+    {
+      await Task.Delay(TimeSpan.FromSeconds(2), ct).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+
+      if (certManager.HasCerts || certManager.TryLoadCerts())
+      {
+        await CompleteStartupAsync(app);
+        return;
+      }
+    }
   }
 }

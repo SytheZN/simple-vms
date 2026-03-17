@@ -25,9 +25,12 @@ project.lock.json
 *.swo
 *~
 
-# Node (Client.Web)
+# Node (Client.Web / Client.Theme)
 node_modules/
 dist/
+
+# Generated web UI
+src/Server/wwwroot/
 
 # OS
 .DS_Store

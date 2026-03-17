@@ -17,7 +17,7 @@ public sealed class CertificateManager : ICertificateService
   public X509Certificate2 ServerCert => _serverCert
     ?? throw new InvalidOperationException("Server certificate not initialized");
 
-  public bool IsFirstRun => !File.Exists(RootCaKeyPath);
+  public bool HasCerts => _rootCa != null && _serverCert != null;
   public string RootCaPem => RootCa.ExportCertificatePem();
 
   private string RootCaPath => Path.Combine(_certsPath, "root-ca.pem");
@@ -29,25 +29,26 @@ public sealed class CertificateManager : ICertificateService
   {
     var dataPath = config["data-path"]!;
     _certsPath = Path.Combine(dataPath, "certs");
+    Directory.CreateDirectory(_certsPath);
   }
 
-  public void Initialize()
+  public bool TryLoadCerts()
   {
-    Directory.CreateDirectory(_certsPath);
+    if (!File.Exists(RootCaKeyPath))
+      return false;
 
-    if (IsFirstRun)
-    {
-      _rootCa = GenerateRootCa();
-      SaveCertAndKey(_rootCa, RootCaPath, RootCaKeyPath);
+    _rootCa = LoadCertWithKey(RootCaPath, RootCaKeyPath);
+    _serverCert = LoadCertWithKey(ServerCertPath, ServerCertKeyPath);
+    return true;
+  }
 
-      _serverCert = GenerateServerCert(_rootCa);
-      SaveCertAndKey(_serverCert, ServerCertPath, ServerCertKeyPath);
-    }
-    else
-    {
-      _rootCa = LoadCertWithKey(RootCaPath, RootCaKeyPath);
-      _serverCert = LoadCertWithKey(ServerCertPath, ServerCertKeyPath);
-    }
+  public void GenerateCerts()
+  {
+    _rootCa = GenerateRootCa();
+    SaveCertAndKey(_rootCa, RootCaPath, RootCaKeyPath);
+
+    _serverCert = GenerateServerCert(_rootCa);
+    SaveCertAndKey(_serverCert, ServerCertPath, ServerCertKeyPath);
   }
 
   public ClientCertBundle GenerateClientCert(Guid clientId)

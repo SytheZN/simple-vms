@@ -36,7 +36,8 @@ public sealed class ApiTestFixture
     {
       ["data-path"] = _tempDir,
       ["http-port"] = "0",
-      ["bind"] = "127.0.0.1"
+      ["bind"] = "127.0.0.1",
+      ["auto-certs"] = "true"
     });
 
     AppSetup.Configure(builder);
