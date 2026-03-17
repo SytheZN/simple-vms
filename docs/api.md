@@ -349,7 +349,7 @@ Server health check.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `status` | string | `healthy`, `degraded`, `unhealthy` |
+| `status` | string | `healthy`, `degraded`, `unhealthy`, `missing-certs` |
 | `uptime` | int | Seconds since server start (informational duration, not a timestamp) |
 | `cameras` | object | `{ "total": N, "online": N, "offline": N, "error": N }` |
 | `storage` | object | See storage endpoint |
@@ -391,6 +391,14 @@ Update server settings.
 | `segmentDuration` | int? | Default recording segment duration in seconds (default: 300). Actual duration rounds to the nearest keyframe boundary. |
 | `discoverySubnets` | string[]? | Subnets to include in discovery scans |
 | `defaultCredentials` | object? | Default camera credentials for discovery |
+
+#### POST /api/v1/system/certs
+
+Generate root CA and server certificate. On a new installation this is called from the setup wizard to create the initial certificates. On an existing installation this regenerates the root CA, permanently disconnecting all enrolled clients (their certificates become invalid).
+
+**Request:** No body.
+
+**Response body:** No body. The server begins startup continuation (schema migration, plugin loading) once the certificates are written.
 
 ---
 

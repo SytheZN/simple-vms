@@ -184,7 +184,7 @@ If no existing artifacts are found, the server starts in **setup mode**:
 1. Server starts, reads startup arguments
 2. HTTP web UI serves the setup wizard only - no other functionality is available
 3. The wizard warns the user: if they expect an existing installation, the data path may be misconfigured (e.g. a network mount that isn't mounted)
-4. The user confirms this is a new installation and configures initial settings (storage paths, etc.)
+4. The user confirms this is a new installation by clicking "Create Certs" (calls `POST /api/v1/system/certs`)
 5. Server generates root CA and server certificate, stores in `{data-path}/certs/`
 6. Data provider initializes its schema (`MigrateAsync`)
 7. Server transitions to normal operation
@@ -197,6 +197,8 @@ This prevents a missing network mount from silently bootstrapping a fresh instal
 
 If existing artifacts are found, the server starts normally. Plugins and storage may not be immediately available (e.g. delayed network mount). The server handles this gracefully:
 
+- If certificates are found, startup proceeds normally
+- If certificates are not found, the server polls for their existence in the background while the web UI redirects to the new installation flow. If the certificates later appear (whether from the user clicking "Create Certs" or from a delayed mount), the server continues startup and the UI redirects to the main page.
 - Startup does not fail if plugins or storage are temporarily unavailable
 - The server retries loading plugins and connecting to storage in the background with backoff
 - Cameras and recording start as their dependencies become available
