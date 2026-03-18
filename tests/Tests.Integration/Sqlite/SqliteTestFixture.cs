@@ -7,12 +7,13 @@ public sealed class SqliteTestFixture
 {
   private string _dbPath = null!;
 
-  public SqliteDataProvider Provider { get; private set; } = null!;
+  public SqliteProvider Provider { get; private set; } = null!;
 
   public async Task SetUp()
   {
     _dbPath = Path.Combine(Path.GetTempPath(), $"vms-test-{Guid.NewGuid()}.db");
-    Provider = new SqliteDataProvider(_dbPath);
+    Provider = new SqliteProvider();
+    Provider.InitializeProvider(_dbPath);
     (await Provider.MigrateAsync(CancellationToken.None)).Switch(
       _ => { },
       error => Assert.Fail($"Migration failed: {error.Message}"));

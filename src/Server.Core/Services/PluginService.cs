@@ -7,18 +7,19 @@ namespace Server.Core.Services;
 public sealed class PluginService
 {
   private readonly PluginHost _host;
-  private readonly IDataProvider _data;
 
-  public PluginService(PluginHost host, IDataProvider data)
+  public PluginService(PluginHost host)
   {
     _host = host;
-    _data = data;
   }
 
-  public OneOf<IReadOnlyList<PluginListItem>, Error> GetAll()
+  public OneOf<IReadOnlyList<PluginListItem>, Error> GetAll(string? type = null)
   {
-    var items = _host.Plugins.Select(ToDto).ToList();
-    return (OneOf<IReadOnlyList<PluginListItem>, Error>)items;
+    var plugins = (IEnumerable<PluginEntry>)_host.Plugins;
+    if (type != null)
+      plugins = plugins.Where(p => p.ExtensionPoints.Contains(type, StringComparer.OrdinalIgnoreCase));
+    var items = plugins.Select(ToDto).ToList();
+    return items;
   }
 
   public OneOf<PluginListItem, Error> GetById(string id)
@@ -33,8 +34,7 @@ public sealed class PluginService
     return ToDto(entry);
   }
 
-  public async Task<OneOf<Success, Error>> UpdateConfigAsync(
-    string id, Dictionary<string, object> config, CancellationToken ct)
+  public OneOf<IReadOnlyList<SettingGroup>, Error> GetConfigSchema(string id)
   {
     var entry = _host.Plugins.FirstOrDefault(p => p.Metadata.Id == id);
     if (entry == null)
@@ -43,43 +43,101 @@ public sealed class PluginService
         new DebugTag(ModuleIds.PluginManagement, 0x0004),
         $"Plugin '{id}' not found");
 
-    var store = _data.GetPluginStore(id);
-    foreach (var (key, value) in config)
-      await store.SetAsync(key, value, ct);
+    if (entry.Plugin is not IPluginSettings settings)
+      return Array.Empty<SettingGroup>();
 
-    return new Success();
+    return settings.GetSchema().ToList();
   }
 
-  public async Task<OneOf<Success, Error>> StartAsync(string id, CancellationToken ct)
+  public OneOf<IReadOnlyDictionary<string, object>, Error> GetConfigValues(string id)
   {
-    try
-    {
-      await _host.StartPluginAsync(id, ct);
-      return new Success();
-    }
-    catch (ArgumentException)
-    {
+    var entry = _host.Plugins.FirstOrDefault(p => p.Metadata.Id == id);
+    if (entry == null)
+      return new Error(
+        Result.NotFound,
+        new DebugTag(ModuleIds.PluginManagement, 0x0007),
+        $"Plugin '{id}' not found");
+
+    if (entry.Plugin is not IPluginSettings settings)
+      return new Error(
+        Result.BadRequest,
+        new DebugTag(ModuleIds.PluginManagement, 0x0008),
+        $"Plugin '{id}' does not support settings");
+
+    return settings.GetValues().ToDictionary();
+  }
+
+  public OneOf<Success, Error> ApplyConfigValues(
+    string id, IReadOnlyDictionary<string, object> values)
+  {
+    var entry = _host.Plugins.FirstOrDefault(p => p.Metadata.Id == id);
+    if (entry == null)
+      return new Error(
+        Result.NotFound,
+        new DebugTag(ModuleIds.PluginManagement, 0x0009),
+        $"Plugin '{id}' not found");
+
+    if (entry.Plugin is not IPluginSettings settings)
+      return new Error(
+        Result.BadRequest,
+        new DebugTag(ModuleIds.PluginManagement, 0x000A),
+        $"Plugin '{id}' does not support settings");
+
+    return settings.ApplyValues(values);
+  }
+
+  public OneOf<Success, Error> ValidateField(string id, string key, object value)
+  {
+    var entry = _host.Plugins.FirstOrDefault(p => p.Metadata.Id == id);
+    if (entry == null)
+      return new Error(
+        Result.NotFound,
+        new DebugTag(ModuleIds.PluginManagement, 0x000B),
+        $"Plugin '{id}' not found");
+
+    if (entry.Plugin is not IPluginSettings settings)
+      return new Error(
+        Result.BadRequest,
+        new DebugTag(ModuleIds.PluginManagement, 0x000C),
+        $"Plugin '{id}' does not support settings");
+
+    return settings.ValidateValue(key, value);
+  }
+
+  public async Task<OneOf<Success, Error>> UserStartAsync(string id, CancellationToken ct)
+  {
+    var entry = _host.Plugins.FirstOrDefault(p => p.Metadata.Id == id);
+    if (entry == null)
       return new Error(
         Result.NotFound,
         new DebugTag(ModuleIds.PluginManagement, 0x0002),
         $"Plugin '{id}' not found");
-    }
+
+    if (entry.Plugin is not IUserStartable startable)
+      return new Error(
+        Result.Unavailable,
+        new DebugTag(ModuleIds.PluginManagement, 0x0005),
+        $"Plugin '{id}' does not support user-initiated start");
+
+    return await startable.UserStartAsync(ct);
   }
 
-  public async Task<OneOf<Success, Error>> StopAsync(string id)
+  public async Task<OneOf<Success, Error>> UserStopAsync(string id, CancellationToken ct)
   {
-    try
-    {
-      await _host.StopPluginAsync(id);
-      return new Success();
-    }
-    catch (ArgumentException)
-    {
+    var entry = _host.Plugins.FirstOrDefault(p => p.Metadata.Id == id);
+    if (entry == null)
       return new Error(
         Result.NotFound,
         new DebugTag(ModuleIds.PluginManagement, 0x0003),
         $"Plugin '{id}' not found");
-    }
+
+    if (entry.Plugin is not IUserStartable startable)
+      return new Error(
+        Result.Unavailable,
+        new DebugTag(ModuleIds.PluginManagement, 0x0006),
+        $"Plugin '{id}' does not support user-initiated stop");
+
+    return await startable.UserStopAsync(ct);
   }
 
   private static PluginListItem ToDto(PluginEntry entry) =>
@@ -87,8 +145,10 @@ public sealed class PluginService
     {
       Id = entry.Metadata.Id,
       Name = entry.Metadata.Name,
+      Description = entry.Metadata.Description,
       Version = entry.Metadata.Version,
       Status = entry.State.ToString().ToLowerInvariant(),
-      ExtensionPoints = entry.ExtensionPoints
+      ExtensionPoints = entry.ExtensionPoints,
+      UserStartable = entry.Plugin is IUserStartable
     };
 }

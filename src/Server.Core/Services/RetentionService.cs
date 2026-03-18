@@ -1,3 +1,4 @@
+using Server.Plugins;
 using Shared.Models;
 using Shared.Models.Dto;
 
@@ -8,19 +9,19 @@ public sealed class RetentionService
   private const string ModeKey = "retention.mode";
   private const string ValueKey = "retention.value";
 
-  private readonly IDataProvider _data;
+  private readonly PluginHost _plugins;
 
-  public RetentionService(IDataProvider data)
+  public RetentionService(PluginHost plugins)
   {
-    _data = data;
+    _plugins = plugins;
   }
 
   public async Task<OneOf<RetentionPolicy, Error>> GetGlobalAsync(CancellationToken ct)
   {
-    var modeResult = await _data.Settings.GetAsync(ModeKey, ct);
+    var modeResult = await _plugins.DataProvider!.Config.GetAsync("server", ModeKey, ct);
     if (modeResult.IsT1) return modeResult.AsT1;
 
-    var valueResult = await _data.Settings.GetAsync(ValueKey, ct);
+    var valueResult = await _plugins.DataProvider!.Config.GetAsync("server", ValueKey, ct);
     if (valueResult.IsT1) return valueResult.AsT1;
 
     return new RetentionPolicy
@@ -33,9 +34,9 @@ public sealed class RetentionService
   public async Task<OneOf<Success, Error>> SetGlobalAsync(
     RetentionPolicy policy, CancellationToken ct)
   {
-    var modeResult = await _data.Settings.SetAsync(ModeKey, policy.Mode, ct);
+    var modeResult = await _plugins.DataProvider!.Config.SetAsync("server", ModeKey, policy.Mode, ct);
     if (modeResult.IsT1) return modeResult.AsT1;
 
-    return await _data.Settings.SetAsync(ValueKey, policy.Value.ToString(), ct);
+    return await _plugins.DataProvider!.Config.SetAsync("server", ValueKey, policy.Value.ToString(), ct);
   }
 }

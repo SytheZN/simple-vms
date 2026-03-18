@@ -1,11 +1,44 @@
 <script setup lang="ts">
-import { useRoute } from 'vue-router'
+import { ref, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { api } from '@/api/client'
 
 const route = useRoute()
+const router = useRouter()
+const ready = ref(false)
+
+onMounted(async () => {
+  if (route.name === 'setup') {
+    ready.value = true
+    return
+  }
+
+  const minDelay = new Promise(resolve => setTimeout(resolve, 500))
+  let target: string | null = null
+
+  try {
+    const health = await api.system.health()
+    if (health.status === 'missing-certs') {
+      target = '/setup'
+    }
+  } catch {
+    target = '/setup'
+  }
+
+  await minDelay
+
+  if (target) {
+    await router.replace(target)
+  }
+  ready.value = true
+})
 </script>
 
 <template>
-  <div v-if="route.name === 'setup'" class="min-h-screen bg-surface font-sans">
+  <div v-if="!ready" class="min-h-screen bg-surface flex items-center justify-center">
+    <div class="spinner spinner-lg"></div>
+  </div>
+  <div v-else-if="route.name === 'setup'" class="min-h-screen bg-surface font-sans">
     <router-view />
   </div>
   <div v-else class="min-h-screen bg-surface font-sans flex">

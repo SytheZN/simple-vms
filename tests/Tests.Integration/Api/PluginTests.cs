@@ -57,7 +57,7 @@ public sealed class PluginTests
 
     var body = (await ApiTestFixture.Envelope<PluginListItem>(response)).Body!;
     Assert.That(body.Id, Is.EqualTo("sqlite"));
-    Assert.That(body.ExtensionPoints, Does.Contain("IDataProvider"));
+    Assert.That(body.ExtensionPoints, Does.Contain("data"));
   }
 
   /// <summary>

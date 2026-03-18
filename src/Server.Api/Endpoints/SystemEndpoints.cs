@@ -16,12 +16,15 @@ public static class SystemEndpoints
     group.MapPost("/certs", GenerateCerts);
   }
 
-  private static async Task<IResult> GetHealth(
-    SystemService system,
-    CancellationToken ct)
+  private static IResult GetHealth(SystemService system)
   {
-    var result = await system.GetHealthAsync(ct);
-    return ApiResponse.Ok(result, new DebugTag(ModuleIds.SystemManagement, 0x0010));
+    var health = system.GetHealth();
+    return Results.Json(new ResponseEnvelope
+    {
+      Result = Result.Success,
+      DebugTag = new DebugTag(ModuleIds.SystemManagement, 0x0010),
+      Body = health
+    }, ApiResponse.SerializerOptions);
   }
 
   private static async Task<IResult> GetStorage(

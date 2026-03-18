@@ -18,6 +18,9 @@ public static class AppSetup
     var pluginsPath = Path.Combine(dataPath, "plugins");
     var quicPort = config.GetValue("quic-port", 443);
 
+    var systemHealth = new SystemHealth();
+    builder.Services.AddSingleton(systemHealth);
+
     var certManager = new CertificateManager(config);
     builder.Services.AddSingleton(certManager);
     builder.Services.AddSingleton<ICertificateService>(certManager);
@@ -25,7 +28,8 @@ public static class AppSetup
     var endpoints = new ServerEndpoints { QuicPort = quicPort };
     builder.Services.AddSingleton(endpoints);
 
-    builder.Services.AddSingleton<IEventBus, EventBus>();
+    var eventBus = new EventBus();
+    builder.Services.AddSingleton<IEventBus>(eventBus);
 
     using var earlyLoggerFactory = LoggerFactory.Create(b =>
     {
@@ -33,9 +37,14 @@ public static class AppSetup
       b.AddConsole();
     });
 
-    var pluginHost = new PluginHost(earlyLoggerFactory.CreateLogger<PluginHost>());
+    var dataProviderConfig = new DataProviderConfigJsonStore(dataPath);
+    builder.Services.AddSingleton(dataProviderConfig);
+
+    var environment = new ServerEnvironment(dataPath);
+
+    var pluginHost = new PluginHost(
+      earlyLoggerFactory.CreateLogger<PluginHost>(), dataProviderConfig, eventBus, environment);
     pluginHost.Discover(pluginsPath);
-    pluginHost.ConfigureAll(builder.Services);
     builder.Services.AddSingleton(pluginHost);
 
     builder.Services.AddApiServices();
@@ -72,35 +81,36 @@ public static class AppSetup
     app.Lifetime.ApplicationStopping.Register(() =>
     {
       var pluginHost = app.Services.GetRequiredService<PluginHost>();
-      pluginHost.StopAllAsync().GetAwaiter().GetResult();
+      pluginHost.StopAsync().GetAwaiter().GetResult();
     });
 
-    if (TryInitializeCerts(app))
+    var certManager = app.Services.GetRequiredService<CertificateManager>();
+    var systemHealth = app.Services.GetRequiredService<SystemHealth>();
+
+    if (TryInitializeCerts(app, certManager))
     {
+      systemHealth.TransitionToStarting();
       await CompleteStartupAsync(app);
+      systemHealth.TransitionToHealthy();
     }
     else
     {
-      _ = PollForCertsAsync(app);
+      var pluginHost = app.Services.GetRequiredService<PluginHost>();
+      pluginHost.Initialize(dataOnly: true);
+      _ = PollForCertsAsync(app, certManager, systemHealth);
     }
   }
 
   internal static async Task CompleteStartupAsync(WebApplication app)
   {
     var pluginHost = app.Services.GetRequiredService<PluginHost>();
-    await pluginHost.StartAllAsync(app.Lifetime.ApplicationStopping);
-
-    var dataProvider = app.Services.GetService<IDataProvider>();
-    if (dataProvider != null)
-      await dataProvider.MigrateAsync(app.Lifetime.ApplicationStopping);
+    pluginHost.Initialize();
+    await pluginHost.StartAsync(app.Lifetime.ApplicationStopping);
   }
 
-  private static bool TryInitializeCerts(WebApplication app)
+  private static bool TryInitializeCerts(WebApplication app, CertificateManager certManager)
   {
-    var certManager = app.Services.GetRequiredService<CertificateManager>();
-    var config = app.Configuration;
-
-    if (config.GetValue<bool>("auto-certs"))
+    if (app.Configuration.GetValue<bool>("auto-certs"))
     {
       if (!certManager.TryLoadCerts())
         certManager.GenerateCerts();
@@ -111,9 +121,9 @@ public static class AppSetup
     return certManager.TryLoadCerts();
   }
 
-  private static async Task PollForCertsAsync(WebApplication app)
+  private static async Task PollForCertsAsync(
+    WebApplication app, CertificateManager certManager, SystemHealth systemHealth)
   {
-    var certManager = app.Services.GetRequiredService<CertificateManager>();
     var ct = app.Lifetime.ApplicationStopping;
 
     while (!ct.IsCancellationRequested)
@@ -122,7 +132,9 @@ public static class AppSetup
 
       if (certManager.HasCerts || certManager.TryLoadCerts())
       {
+        systemHealth.TransitionToStarting();
         await CompleteStartupAsync(app);
+        systemHealth.TransitionToHealthy();
         return;
       }
     }

@@ -1,13 +1,13 @@
 export type Result =
-  | 'Success'
-  | 'Created'
-  | 'NotFound'
-  | 'BadRequest'
-  | 'Conflict'
-  | 'Unauthorized'
-  | 'Forbidden'
-  | 'InternalError'
-  | 'Unavailable'
+  | 'success'
+  | 'created'
+  | 'notFound'
+  | 'badRequest'
+  | 'conflict'
+  | 'unauthorized'
+  | 'forbidden'
+  | 'internalError'
+  | 'unavailable'
 
 export interface ResponseEnvelope<T = unknown> {
   result: Result
@@ -137,16 +137,7 @@ export interface RetentionPolicy {
 export interface HealthResponse {
   status: string
   uptime: number
-  cameras: CameraHealthCounts
-  storage: StorageResponse
   version: string
-}
-
-export interface CameraHealthCounts {
-  total: number
-  online: number
-  offline: number
-  error: number
 }
 
 export interface StorageResponse {
@@ -171,7 +162,28 @@ export interface ServerSettings {
 export interface PluginListItem {
   id: string
   name: string
+  description?: string
   version: string
   status: string
   extensionPoints: string[]
+  userStartable: boolean
+}
+
+export interface SettingGroup {
+  key: string
+  order: number
+  label: string
+  description?: string
+  fields: SettingField[]
+}
+
+export interface SettingField {
+  key: string
+  order: number
+  label: string
+  type: string
+  description?: string
+  defaultValue?: unknown
+  required: boolean
+  value?: unknown
 }

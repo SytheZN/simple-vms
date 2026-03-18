@@ -1,3 +1,4 @@
+using Server.Plugins;
 using Shared.Models;
 using Shared.Models.Dto;
 
@@ -5,11 +6,11 @@ namespace Server.Core.Services;
 
 public sealed class RecordingService
 {
-  private readonly IDataProvider _data;
+  private readonly PluginHost _plugins;
 
-  public RecordingService(IDataProvider data)
+  public RecordingService(PluginHost plugins)
   {
-    _data = data;
+    _plugins = plugins;
   }
 
   public async Task<OneOf<IReadOnlyList<RecordingSegmentDto>, Error>> GetSegmentsAsync(
@@ -19,7 +20,7 @@ public sealed class RecordingService
     if (streamResult.IsT1) return streamResult.AsT1;
 
     var stream = streamResult.AsT0;
-    var segments = await _data.Segments.GetByTimeRangeAsync(stream.Id, from, to, ct);
+    var segments = await _plugins.DataProvider.Segments.GetByTimeRangeAsync(stream.Id, from, to, ct);
     return segments.Match<OneOf<IReadOnlyList<RecordingSegmentDto>, Error>>(
       segs => segs.Select(s => new RecordingSegmentDto
       {
@@ -39,14 +40,14 @@ public sealed class RecordingService
     if (streamResult.IsT1) return streamResult.AsT1;
 
     var stream = streamResult.AsT0;
-    var segmentsResult = await _data.Segments.GetByTimeRangeAsync(stream.Id, from, to, ct);
+    var segmentsResult = await _plugins.DataProvider.Segments.GetByTimeRangeAsync(stream.Id, from, to, ct);
     if (segmentsResult.IsT1)
       return segmentsResult.AsT1;
 
     var segments = segmentsResult.AsT0;
     var spans = MergeSpans(segments);
 
-    var eventsResult = await _data.Events.GetByTimeRangeAsync(cameraId, from, to, ct);
+    var eventsResult = await _plugins.DataProvider.Events.GetByTimeRangeAsync(cameraId, from, to, ct);
     var events = eventsResult.Match(
       evts => evts.Select(e => new TimelineEvent
       {
@@ -63,7 +64,7 @@ public sealed class RecordingService
   private async Task<OneOf<CameraStream, Error>> FindStreamAsync(
     Guid cameraId, string profile, CancellationToken ct)
   {
-    var streams = await _data.Streams.GetByCameraIdAsync(cameraId, ct);
+    var streams = await _plugins.DataProvider.Streams.GetByCameraIdAsync(cameraId, ct);
     if (streams.IsT1) return streams.AsT1;
 
     var match = streams.AsT0.FirstOrDefault(s => s.Profile == profile);

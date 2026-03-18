@@ -31,8 +31,8 @@ public sealed class PluginDataStoreTests
   [Test]
   public async Task Isolation_PluginsSeeOnlyOwnData()
   {
-    var store1 = _db.GetPluginStore("plugin-a");
-    var store2 = _db.GetPluginStore("plugin-b");
+    var store1 = _db.GetDataStore("plugin-a");
+    var store2 = _db.GetDataStore("plugin-b");
 
     await store1.SetAsync("key", "value-a");
     await store2.SetAsync("key", "value-b");
@@ -59,8 +59,8 @@ public sealed class PluginDataStoreTests
   [Test]
   public async Task Delete_DoesNotAffectOtherPlugins()
   {
-    var store1 = _db.GetPluginStore("plugin-a");
-    var store2 = _db.GetPluginStore("plugin-b");
+    var store1 = _db.GetDataStore("plugin-a");
+    var store2 = _db.GetDataStore("plugin-b");
 
     await store1.SetAsync("key", "value-a");
     await store2.SetAsync("key", "value-b");
@@ -89,7 +89,7 @@ public sealed class PluginDataStoreTests
   [Test]
   public async Task GetAll_FiltersByPrefix()
   {
-    var store = _db.GetPluginStore("test-plugin");
+    var store = _db.GetDataStore("test-plugin");
 
     await store.SetAsync("user:1", new TestUser("Alice", 30));
     await store.SetAsync("user:2", new TestUser("Bob", 25));
@@ -113,7 +113,7 @@ public sealed class PluginDataStoreTests
   [Test]
   public async Task Query_FiltersByPredicate()
   {
-    var store = _db.GetPluginStore("query-test");
+    var store = _db.GetDataStore("query-test");
 
     await store.SetAsync("user:1", new TestUser("Alice", 30));
     await store.SetAsync("user:2", new TestUser("Bob", 25));
@@ -137,7 +137,7 @@ public sealed class PluginDataStoreTests
   [Test]
   public async Task Get_MissingKeyReturnsNull()
   {
-    var store = _db.GetPluginStore("empty-plugin");
+    var store = _db.GetDataStore("empty-plugin");
 
     (await store.GetAsync<string>("nonexistent")).Switch(
       val => Assert.That(val, Is.Null),

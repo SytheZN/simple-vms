@@ -459,6 +459,17 @@ Get current config values for a plugin. Returns the values from `IPluginSettings
 
 Update plugin configuration. Calls `IPluginSettings.ApplyValues()`. Returns validation errors on failure. Returns `BadRequest` if the plugin does not implement `IPluginSettings`.
 
+#### POST /api/v1/plugins/{id}/config/validate
+
+Validate a single field value. Calls `IPluginSettings.ValidateValue()`. Returns `BadRequest` with a message if validation fails. Returns `BadRequest` if the plugin does not implement `IPluginSettings`. Used by the UI for inline validation on field blur.
+
+**Request body:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `key` | string | Field key to validate |
+| `value` | any | Value to validate |
+
 #### POST /api/v1/plugins/{id}/start
 
 Start a stopped plugin. Only available for plugins that implement `IUserStartable`. Returns `Unavailable` if the plugin does not support user-initiated start.

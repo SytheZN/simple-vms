@@ -7,6 +7,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Server;
 using Server.Api;
+using Server.Plugins;
 using Server.Core;
 using Shared.Models;
 using Dto = Shared.Models.Dto;
@@ -30,6 +31,14 @@ public sealed class ApiTestFixture
     var pluginsDir = Path.Combine(_tempDir, "plugins");
     Directory.CreateDirectory(pluginsDir);
     CopyPluginAssemblies(pluginsDir);
+
+    var dpConfig = new DataProviderConfigJsonStore(_tempDir);
+    dpConfig.SetActive("sqlite");
+    dpConfig.SetProviderSettings("sqlite", new Dictionary<string, object>
+    {
+      ["directory"] = _tempDir,
+      ["filename"] = "server.db"
+    });
 
     var builder = WebApplication.CreateBuilder();
     builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>

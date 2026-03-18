@@ -1,3 +1,4 @@
+using Server.Plugins;
 using Shared.Models;
 using Shared.Models.Dto;
 
@@ -5,13 +6,11 @@ namespace Server.Core.Services;
 
 public sealed class DiscoveryService
 {
-  private readonly IDataProvider _data;
-  private readonly IEnumerable<ICameraProvider> _providers;
+  private readonly PluginHost _plugins;
 
-  public DiscoveryService(IDataProvider data, IEnumerable<ICameraProvider> providers)
+  public DiscoveryService(PluginHost plugins)
   {
-    _data = data;
-    _providers = providers;
+    _plugins = plugins;
   }
 
   public async Task<OneOf<IReadOnlyList<DiscoveredCameraDto>, Error>> DiscoverAsync(
@@ -24,14 +23,14 @@ public sealed class DiscoveryService
       Password = request.Credentials?.Password
     };
 
-    var existing = await _data.Cameras.GetAllAsync(ct);
+    var existing = await _plugins.DataProvider.Cameras.GetAllAsync(ct);
     var existingAddresses = existing.Match(
       cameras => cameras.Select(c => c.Address).ToHashSet(StringComparer.OrdinalIgnoreCase),
       _ => new HashSet<string>(StringComparer.OrdinalIgnoreCase));
 
     var results = new List<DiscoveredCameraDto>();
 
-    foreach (var provider in _providers)
+    foreach (var provider in _plugins.CameraProviders)
     {
       try
       {

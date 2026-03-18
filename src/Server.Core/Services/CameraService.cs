@@ -1,3 +1,4 @@
+using Server.Plugins;
 using Shared.Models;
 using Shared.Models.Dto;
 
@@ -5,24 +6,19 @@ namespace Server.Core.Services;
 
 public sealed class CameraService
 {
-  private readonly IDataProvider _data;
+  private readonly PluginHost _plugins;
   private readonly CameraStatusTracker _status;
-  private readonly IEnumerable<ICameraProvider> _providers;
 
-  public CameraService(
-    IDataProvider data,
-    CameraStatusTracker status,
-    IEnumerable<ICameraProvider> providers)
+  public CameraService(PluginHost plugins, CameraStatusTracker status)
   {
-    _data = data;
+    _plugins = plugins;
     _status = status;
-    _providers = providers;
   }
 
   public async Task<OneOf<IReadOnlyList<CameraListItem>, Error>> GetAllAsync(
     string? statusFilter, CancellationToken ct)
   {
-    var result = await _data.Cameras.GetAllAsync(ct);
+    var result = await _plugins.DataProvider.Cameras.GetAllAsync(ct);
     return await result.Match<Task<OneOf<IReadOnlyList<CameraListItem>, Error>>>(
       async cameras =>
       {
@@ -33,7 +29,7 @@ public sealed class CameraService
           if (statusFilter != null && cameraStatus != statusFilter)
             continue;
 
-          var streams = await _data.Streams.GetByCameraIdAsync(cam.Id, ct);
+          var streams = await _plugins.DataProvider.Streams.GetByCameraIdAsync(cam.Id, ct);
           var streamDtos = streams.Match(
             s => s.Select(ToStreamDto).ToList(),
             _ => new List<StreamProfileDto>());
@@ -48,11 +44,11 @@ public sealed class CameraService
   public async Task<OneOf<CameraListItem, Error>> GetByIdAsync(
     Guid id, CancellationToken ct)
   {
-    var result = await _data.Cameras.GetByIdAsync(id, ct);
+    var result = await _plugins.DataProvider.Cameras.GetByIdAsync(id, ct);
     return await result.Match<Task<OneOf<CameraListItem, Error>>>(
       async cam =>
       {
-        var streams = await _data.Streams.GetByCameraIdAsync(cam.Id, ct);
+        var streams = await _plugins.DataProvider.Streams.GetByCameraIdAsync(cam.Id, ct);
         var streamDtos = streams.Match(
           s => s.Select(ToStreamDto).ToList(),
           _ => new List<StreamProfileDto>());
@@ -65,8 +61,8 @@ public sealed class CameraService
     CreateCameraRequest request, CancellationToken ct)
   {
     var provider = request.ProviderId != null
-      ? _providers.FirstOrDefault(p => p.ProviderId == request.ProviderId)
-      : _providers.FirstOrDefault();
+      ? _plugins.CameraProviders.FirstOrDefault(p => p.ProviderId == request.ProviderId)
+      : _plugins.CameraProviders.FirstOrDefault();
 
     if (provider == null)
       return new Error(
@@ -74,7 +70,7 @@ public sealed class CameraService
         new DebugTag(ModuleIds.CameraManagement, 0x0001),
         "No camera provider available");
 
-    var existingResult = await _data.Cameras.GetByAddressAsync(request.Address, ct);
+    var existingResult = await _plugins.DataProvider.Cameras.GetByAddressAsync(request.Address, ct);
     if (existingResult.IsT0)
       return new Error(
         Result.Conflict,
@@ -110,7 +106,7 @@ public sealed class CameraService
       UpdatedAt = now
     };
 
-    var createResult = await _data.Cameras.CreateAsync(camera, ct);
+    var createResult = await _plugins.DataProvider.Cameras.CreateAsync(camera, ct);
     if (createResult.IsT1)
       return createResult.AsT1;
 
@@ -130,7 +126,7 @@ public sealed class CameraService
           Uri = s.Uri,
           RecordingEnabled = true
         };
-        await _data.Streams.UpsertAsync(stream, ct);
+        await _plugins.DataProvider.Streams.UpsertAsync(stream, ct);
         streamDtos.Add(ToStreamDto(stream));
       }
 
@@ -140,7 +136,7 @@ public sealed class CameraService
   public async Task<OneOf<Success, Error>> UpdateAsync(
     Guid id, UpdateCameraRequest request, CancellationToken ct)
   {
-    var result = await _data.Cameras.GetByIdAsync(id, ct);
+    var result = await _plugins.DataProvider.Cameras.GetByIdAsync(id, ct);
     if (result.IsT1) return result.AsT1;
 
     var camera = result.AsT0;
@@ -154,12 +150,12 @@ public sealed class CameraService
     }
     camera.UpdatedAt = DateTimeOffset.UtcNow.ToUnixMicroseconds();
 
-    var updateResult = await _data.Cameras.UpdateAsync(camera, ct);
+    var updateResult = await _plugins.DataProvider.Cameras.UpdateAsync(camera, ct);
     if (updateResult.IsT1) return updateResult.AsT1;
 
     if (request.Streams != null)
     {
-      var streams = await _data.Streams.GetByCameraIdAsync(id, ct);
+      var streams = await _plugins.DataProvider.Streams.GetByCameraIdAsync(id, ct);
       if (streams.IsT0)
       {
         foreach (var streamCfg in request.Streams)
@@ -168,7 +164,7 @@ public sealed class CameraService
           if (match != null)
           {
             match.RecordingEnabled = streamCfg.RecordingEnabled;
-            await _data.Streams.UpsertAsync(match, ct);
+            await _plugins.DataProvider.Streams.UpsertAsync(match, ct);
           }
         }
       }
@@ -180,7 +176,7 @@ public sealed class CameraService
   public async Task<OneOf<Success, Error>> DeleteAsync(Guid id, CancellationToken ct)
   {
     _status.Remove(id);
-    return await _data.Cameras.DeleteAsync(id, ct);
+    return await _plugins.DataProvider.Cameras.DeleteAsync(id, ct);
   }
 
   public Task<OneOf<Success, Error>> RestartAsync(Guid id, CancellationToken ct)

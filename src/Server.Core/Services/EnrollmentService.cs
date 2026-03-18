@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Server.Plugins;
 using Shared.Models;
 using Shared.Models.Dto;
 
@@ -13,16 +14,16 @@ public sealed class EnrollmentService
 
   private readonly ConcurrentDictionary<string, ulong> _pending = new();
   private readonly ICertificateService _certs;
-  private readonly IDataProvider _data;
+  private readonly PluginHost _plugins;
   private readonly ServerEndpoints _endpoints;
 
   public EnrollmentService(
     ICertificateService certs,
-    IDataProvider data,
+    PluginHost plugins,
     ServerEndpoints endpoints)
   {
     _certs = certs;
-    _data = data;
+    _plugins = plugins;
     _endpoints = endpoints;
   }
 
@@ -73,7 +74,7 @@ public sealed class EnrollmentService
       EnrolledAt = DateTimeOffset.UtcNow.ToUnixMicroseconds()
     };
 
-    var result = await _data.Clients.CreateAsync(client, ct);
+    var result = await _plugins.DataProvider!.Clients.CreateAsync(client, ct);
     return result.Match<OneOf<EnrollResponse, Error>>(
       _ => response,
       error => error);

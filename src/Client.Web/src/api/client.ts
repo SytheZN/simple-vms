@@ -16,6 +16,7 @@ import type {
   StorageResponse,
   ServerSettings,
   PluginListItem,
+  SettingGroup,
 } from '@/types/api'
 
 class ApiError extends Error {
@@ -40,7 +41,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   if (res.status === 204) return undefined as T
 
   const envelope: ResponseEnvelope<T> = await res.json()
-  if (envelope.result !== 'Success' && envelope.result !== 'Created') {
+  if (envelope.result !== 'success' && envelope.result !== 'created') {
     throw new ApiError(envelope.result, envelope.debugTag, envelope.message ?? envelope.result)
   }
   return envelope.body as T
@@ -127,9 +128,12 @@ export const api = {
   },
 
   plugins: {
-    list: () => get<PluginListItem[]>('/api/v1/plugins'),
+    list: (type?: string) => get<PluginListItem[]>(`/api/v1/plugins${qs({ type })}`),
     get: (id: string) => get<PluginListItem>(`/api/v1/plugins/${id}`),
-    updateConfig: (id: string, body: unknown) => put<void>(`/api/v1/plugins/${id}/config`, body),
+    configSchema: (id: string) => request<SettingGroup[]>('OPTIONS', `/api/v1/plugins/${id}/config`),
+    configValues: (id: string) => get<Record<string, unknown>>(`/api/v1/plugins/${id}/config`),
+    updateConfig: (id: string, body: Record<string, unknown>) => put<void>(`/api/v1/plugins/${id}/config`, body),
+    validateField: (id: string, key: string, value: unknown) => post<void>(`/api/v1/plugins/${id}/config/validate`, { key, value }),
     start: (id: string) => post<void>(`/api/v1/plugins/${id}/start`),
     stop: (id: string) => post<void>(`/api/v1/plugins/${id}/stop`),
   },

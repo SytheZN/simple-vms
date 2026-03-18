@@ -425,7 +425,7 @@ public interface IConfig
 
 The plugin host provides a per-plugin `IConfig` instance via `PluginContext`. The backing store is transparent to the plugin:
 
-- **Data provider plugins** (`IDataProvider`): backed by `{data-path}/provider.json`
+- **Data provider plugins** (`IDataProvider`): backed by `{data-path}/dataProviderConfig.json`
 - **All other plugins**: backed by `IDataStore` (via the active data provider)
 
 ### IDataStore
@@ -484,12 +484,12 @@ Plugin configuration has three layers:
 
 The plugin host routes `IConfig` storage based on plugin type:
 
-- **Data provider plugins** (`IDataProvider`): backed by `{data-path}/provider.json` (via `DataProviderConfig`). This file also identifies which data provider plugin is active (by assembly name). This is necessary because the database is not available before the data provider connects.
+- **Data provider plugins** (`IDataProvider`): backed by `{data-path}/dataProviderConfig.json` (via `DataProviderConfig`). This file also identifies which data provider plugin is active (by assembly name). This is necessary because the database is not available before the data provider connects.
 - **All other plugins**: backed by `IConfigRepository` (namespaced by plugin ID) via the active data provider.
 
 This routing is transparent to the plugin - it uses `IConfig` the same way regardless of type.
 
-#### provider.json
+#### dataProviderConfig.json
 
 ```json
 {
@@ -510,7 +510,7 @@ This routing is transparent to the plugin - it uses `IConfig` the same way regar
 | `active` | string | Assembly name of the active data provider |
 | `providers` | object | Per-provider configuration keyed by assembly name, passed to `IConfig` |
 
-The `active` field determines which provider starts. A provider's config entry is created when its configuration is first saved. If `provider.json` does not exist (first run), no data provider is active and the setup wizard must be completed. Changing the active data provider requires a server restart.
+The `active` field determines which provider starts. A provider's config entry is created when its configuration is first saved. If `dataProviderConfig.json` does not exist (first run), no data provider is active and the setup wizard must be completed. Changing the active data provider requires a server restart.
 
 ### Migration
 

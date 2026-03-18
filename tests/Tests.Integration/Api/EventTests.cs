@@ -1,5 +1,6 @@
 using System.Net;
 using Microsoft.Extensions.DependencyInjection;
+using Server.Plugins;
 using Shared.Models;
 using Shared.Models.Dto;
 
@@ -18,7 +19,7 @@ public sealed class EventTests
   public async Task Setup()
   {
     _client = ApiTestFixture.Client;
-    _data = ApiTestFixture.App.Services.GetRequiredService<IDataProvider>();
+    _data = ApiTestFixture.App.Services.GetRequiredService<PluginHost>().DataProvider;
 
     _cameraId = Guid.NewGuid();
     _eventId = Guid.NewGuid();

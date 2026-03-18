@@ -21,7 +21,7 @@ public sealed class SystemTests
   /// GET /api/v1/system/health
   ///
   /// EXPECTED RESULT:
-  /// 200 with status, uptime >= 0, camera counts, storage object, and version string
+  /// 200 with status, uptime >= 0, and version string
   /// </summary>
   [Test]
   public async Task Health_ReturnsAllFields()
@@ -37,11 +37,6 @@ public sealed class SystemTests
     Assert.That(body.Status, Is.AnyOf("healthy", "degraded", "unhealthy"));
     Assert.That(body.Uptime, Is.GreaterThanOrEqualTo(0));
     Assert.That(body.Version, Is.Not.Null);
-    Assert.That(body.Cameras.Total, Is.GreaterThanOrEqualTo(0));
-    Assert.That(body.Cameras.Online, Is.GreaterThanOrEqualTo(0));
-    Assert.That(body.Cameras.Offline, Is.GreaterThanOrEqualTo(0));
-    Assert.That(body.Cameras.Error, Is.GreaterThanOrEqualTo(0));
-    Assert.That(body.Storage.Stores, Is.Not.Null);
   }
 
   /// <summary>
