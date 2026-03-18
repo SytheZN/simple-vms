@@ -2,12 +2,12 @@ using Microsoft.Data.Sqlite;
 using Shared.Models;
 namespace Data.Sqlite;
 
-internal sealed class SqliteKeyframeRepository : IKeyframeRepository
+internal sealed class KeyframeRepository : IKeyframeRepository
 {
   private const ushort ModuleId = ModuleIds.PluginSqliteKeyframe;
-  private readonly SqliteConnectionQueue _queue;
+  private readonly ConnectionQueue _queue;
 
-  public SqliteKeyframeRepository(SqliteConnectionQueue queue)
+  public KeyframeRepository(ConnectionQueue queue)
   {
     _queue = queue;
   }
@@ -31,7 +31,7 @@ internal sealed class SqliteKeyframeRepository : IKeyframeRepository
           results.Add(ReadKeyframe(reader));
         return results;
       }
-      catch (SqliteException ex)
+      catch (Exception ex)
       {
         return Error.Create(ModuleId, 0x0001, Result.InternalError, $"Failed to list keyframes for segment {segmentId}: {ex.Message}");
       }
@@ -58,7 +58,7 @@ internal sealed class SqliteKeyframeRepository : IKeyframeRepository
           return Error.Create(ModuleId, 0x0002, Result.NotFound, $"No keyframe at or before {timestamp} in segment {segmentId}");
         return ReadKeyframe(reader);
       }
-      catch (SqliteException ex)
+      catch (Exception ex)
       {
         return Error.Create(ModuleId, 0x0003, Result.InternalError, $"Failed to find nearest keyframe: {ex.Message}");
       }
@@ -96,7 +96,7 @@ internal sealed class SqliteKeyframeRepository : IKeyframeRepository
         transaction.Commit();
         return new Success();
       }
-      catch (SqliteException ex)
+      catch (Exception ex)
       {
         return Error.Create(ModuleId, 0x0004, Result.InternalError, $"Failed to create keyframes: {ex.Message}");
       }
@@ -123,7 +123,7 @@ internal sealed class SqliteKeyframeRepository : IKeyframeRepository
         cmd.ExecuteNonQuery();
         return new Success();
       }
-      catch (SqliteException ex)
+      catch (Exception ex)
       {
         return Error.Create(ModuleId, 0x0005, Result.InternalError, $"Failed to delete keyframes: {ex.Message}");
       }

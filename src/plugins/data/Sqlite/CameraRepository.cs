@@ -4,12 +4,12 @@ using Shared.Models;
 
 namespace Data.Sqlite;
 
-internal sealed class SqliteCameraRepository : ICameraRepository
+internal sealed class CameraRepository : ICameraRepository
 {
   private const ushort ModuleId = ModuleIds.PluginSqliteCamera;
-  private readonly SqliteConnectionQueue _queue;
+  private readonly ConnectionQueue _queue;
 
-  public SqliteCameraRepository(SqliteConnectionQueue queue)
+  public CameraRepository(ConnectionQueue queue)
   {
     _queue = queue;
   }

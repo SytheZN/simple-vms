@@ -4,13 +4,13 @@ using Microsoft.Data.Sqlite;
 using Shared.Models;
 namespace Data.Sqlite;
 
-internal sealed class SqlitePluginDataStore : IPluginDataStore
+internal sealed class DataStore : IDataStore
 {
-  private const ushort ModuleId = ModuleIds.PluginSqlitePluginData;
-  private readonly SqliteConnectionQueue _queue;
+  private const ushort ModuleId = ModuleIds.PluginSqliteDataStore;
+  private readonly ConnectionQueue _queue;
   private readonly string _pluginId;
 
-  public SqlitePluginDataStore(SqliteConnectionQueue queue, string pluginId)
+  public DataStore(ConnectionQueue queue, string pluginId)
   {
     _queue = queue;
     _pluginId = pluginId;
@@ -29,7 +29,7 @@ internal sealed class SqlitePluginDataStore : IPluginDataStore
         var result = cmd.ExecuteScalar() as string;
         return result != null ? JsonSerializer.Deserialize<T>(result) : default;
       }
-      catch (SqliteException ex)
+      catch (Exception ex)
       {
         return Error.Create(ModuleId, 0x0001, Result.InternalError, $"Failed to get plugin data '{key}': {ex.Message}");
       }
@@ -69,7 +69,7 @@ internal sealed class SqlitePluginDataStore : IPluginDataStore
         }
         return results;
       }
-      catch (SqliteException ex)
+      catch (Exception ex)
       {
         return Error.Create(ModuleId, 0x0002, Result.InternalError, $"Failed to list plugin data: {ex.Message}");
       }
@@ -93,7 +93,7 @@ internal sealed class SqlitePluginDataStore : IPluginDataStore
         cmd.ExecuteNonQuery();
         return new Success();
       }
-      catch (SqliteException ex)
+      catch (Exception ex)
       {
         return Error.Create(ModuleId, 0x0003, Result.InternalError, $"Failed to set plugin data '{key}': {ex.Message}");
       }
@@ -113,7 +113,7 @@ internal sealed class SqlitePluginDataStore : IPluginDataStore
         cmd.ExecuteNonQuery();
         return new Success();
       }
-      catch (SqliteException ex)
+      catch (Exception ex)
       {
         return Error.Create(ModuleId, 0x0004, Result.InternalError, $"Failed to delete plugin data '{key}': {ex.Message}");
       }
@@ -143,7 +143,7 @@ internal sealed class SqlitePluginDataStore : IPluginDataStore
         }
         return results;
       }
-      catch (SqliteException ex)
+      catch (Exception ex)
       {
         return Error.Create(ModuleId, 0x0005, Result.InternalError, $"Failed to query plugin data: {ex.Message}");
       }

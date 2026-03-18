@@ -2,12 +2,12 @@ using Microsoft.Data.Sqlite;
 using Shared.Models;
 namespace Data.Sqlite;
 
-internal sealed class SqliteClientRepository : IClientRepository
+internal sealed class ClientRepository : IClientRepository
 {
   private const ushort ModuleId = ModuleIds.PluginSqliteClient;
-  private readonly SqliteConnectionQueue _queue;
+  private readonly ConnectionQueue _queue;
 
-  public SqliteClientRepository(SqliteConnectionQueue queue)
+  public ClientRepository(ConnectionQueue queue)
   {
     _queue = queue;
   }
@@ -26,7 +26,7 @@ internal sealed class SqliteClientRepository : IClientRepository
           results.Add(ReadClient(reader));
         return results;
       }
-      catch (SqliteException ex)
+      catch (Exception ex)
       {
         return Error.Create(ModuleId, 0x0001, Result.InternalError, $"Failed to list clients: {ex.Message}");
       }
@@ -47,7 +47,7 @@ internal sealed class SqliteClientRepository : IClientRepository
           return Error.Create(ModuleId, 0x0002, Result.NotFound, $"Client {id} not found");
         return ReadClient(reader);
       }
-      catch (SqliteException ex)
+      catch (Exception ex)
       {
         return Error.Create(ModuleId, 0x0003, Result.InternalError, $"Failed to get client {id}: {ex.Message}");
       }
@@ -68,7 +68,7 @@ internal sealed class SqliteClientRepository : IClientRepository
           return Error.Create(ModuleId, 0x0004, Result.NotFound, $"Client with serial {serial} not found");
         return ReadClient(reader);
       }
-      catch (SqliteException ex)
+      catch (Exception ex)
       {
         return Error.Create(ModuleId, 0x0005, Result.InternalError, $"Failed to get client by serial: {ex.Message}");
       }
@@ -94,7 +94,7 @@ internal sealed class SqliteClientRepository : IClientRepository
       {
         return Error.Create(ModuleId, 0x0006, Result.Conflict, $"Client {client.Id} already exists");
       }
-      catch (SqliteException ex)
+      catch (Exception ex)
       {
         return Error.Create(ModuleId, 0x0007, Result.InternalError, $"Failed to create client: {ex.Message}");
       }
@@ -117,7 +117,7 @@ internal sealed class SqliteClientRepository : IClientRepository
         cmd.ExecuteNonQuery();
         return new Success();
       }
-      catch (SqliteException ex)
+      catch (Exception ex)
       {
         return Error.Create(ModuleId, 0x0008, Result.InternalError, $"Failed to update client: {ex.Message}");
       }

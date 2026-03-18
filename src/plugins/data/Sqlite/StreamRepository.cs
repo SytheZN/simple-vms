@@ -2,12 +2,12 @@ using Microsoft.Data.Sqlite;
 using Shared.Models;
 namespace Data.Sqlite;
 
-internal sealed class SqliteStreamRepository : IStreamRepository
+internal sealed class StreamRepository : IStreamRepository
 {
   private const ushort ModuleId = ModuleIds.PluginSqliteStream;
-  private readonly SqliteConnectionQueue _queue;
+  private readonly ConnectionQueue _queue;
 
-  public SqliteStreamRepository(SqliteConnectionQueue queue)
+  public StreamRepository(ConnectionQueue queue)
   {
     _queue = queue;
   }
@@ -27,7 +27,7 @@ internal sealed class SqliteStreamRepository : IStreamRepository
           results.Add(ReadStream(reader));
         return results;
       }
-      catch (SqliteException ex)
+      catch (Exception ex)
       {
         return Error.Create(ModuleId, 0x0001, Result.InternalError, $"Failed to list streams for camera {cameraId}: {ex.Message}");
       }
@@ -48,7 +48,7 @@ internal sealed class SqliteStreamRepository : IStreamRepository
           return Error.Create(ModuleId, 0x0002, Result.NotFound, $"Stream {id} not found");
         return ReadStream(reader);
       }
-      catch (SqliteException ex)
+      catch (Exception ex)
       {
         return Error.Create(ModuleId, 0x0003, Result.InternalError, $"Failed to get stream {id}: {ex.Message}");
       }
@@ -79,7 +79,7 @@ internal sealed class SqliteStreamRepository : IStreamRepository
         cmd.ExecuteNonQuery();
         return new Success();
       }
-      catch (SqliteException ex)
+      catch (Exception ex)
       {
         return Error.Create(ModuleId, 0x0004, Result.InternalError, $"Failed to upsert stream: {ex.Message}");
       }
@@ -98,7 +98,7 @@ internal sealed class SqliteStreamRepository : IStreamRepository
         cmd.ExecuteNonQuery();
         return new Success();
       }
-      catch (SqliteException ex)
+      catch (Exception ex)
       {
         return Error.Create(ModuleId, 0x0005, Result.InternalError, $"Failed to delete stream {id}: {ex.Message}");
       }

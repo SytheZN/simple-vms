@@ -3,18 +3,18 @@ using Microsoft.Data.Sqlite;
 
 namespace Data.Sqlite;
 
-public sealed class SqliteConnectionQueue
+internal sealed class ConnectionQueue
 {
-  private readonly Channel<Operation> _channel;
-  private readonly Task _processingTask;
+  private readonly Channel<Operation> _channel = Channel.CreateUnbounded<Operation>(
+    new UnboundedChannelOptions { SingleReader = true });
 
-  public SqliteConnectionQueue(string connectionString)
+  private Func<Func<SqliteConnection, object?>, object?>? _executor;
+  private Task? _processingTask;
+
+  public void Start(Func<Func<SqliteConnection, object?>, object?> executor)
   {
-    _channel = Channel.CreateUnbounded<Operation>(new UnboundedChannelOptions
-    {
-      SingleReader = true
-    });
-    _processingTask = Task.Run(() => ProcessQueueAsync(connectionString));
+    _executor = executor;
+    _processingTask = Task.Run(ProcessQueueAsync);
   }
 
   public Task<T> ExecuteAsync<T>(Func<SqliteConnection, T> work, CancellationToken ct)
@@ -26,25 +26,17 @@ public sealed class SqliteConnectionQueue
     return op.Task;
   }
 
-  public Task ExecuteAsync(Action<SqliteConnection> work, CancellationToken ct)
+  private async Task ProcessQueueAsync()
   {
-    return ExecuteAsync(conn => { work(conn); return 0; }, ct);
-  }
-
-  private async Task ProcessQueueAsync(string connectionString)
-  {
-    using var conn = new SqliteConnection(connectionString);
-    conn.Open();
-
     await foreach (var op in _channel.Reader.ReadAllAsync())
     {
-      op.Execute(conn);
+      op.Execute(_executor!);
     }
   }
 
   private abstract class Operation
   {
-    public abstract void Execute(SqliteConnection conn);
+    public abstract void Execute(Func<Func<SqliteConnection, object?>, object?> executor);
     public abstract void TryCancel();
   }
 
@@ -60,14 +52,14 @@ public sealed class SqliteConnectionQueue
       _work = work;
     }
 
-    public override void Execute(SqliteConnection conn)
+    public override void Execute(Func<Func<SqliteConnection, object?>, object?> executor)
     {
       if (_tcs.Task.IsCompleted)
         return;
 
       try
       {
-        var result = _work(conn);
+        var result = (T)executor(conn => _work(conn))!;
         _tcs.TrySetResult(result);
       }
       catch (Exception ex)

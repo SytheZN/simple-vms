@@ -3,22 +3,23 @@ using Shared.Models;
 
 namespace Data.Sqlite;
 
-public sealed class SqliteDataProvider : IDataProvider
+public sealed partial class SqliteProvider : IDataProvider
 {
   private const ushort ModuleId = ModuleIds.PluginSqliteMigration;
-  private readonly SqliteConnectionQueue _queue;
+  private readonly ConnectionQueue _queue = new();
+  private SqliteConnection? _connection;
 
   public string ProviderId => "sqlite";
 
-  public ICameraRepository Cameras { get; }
-  public IStreamRepository Streams { get; }
-  public ISegmentRepository Segments { get; }
-  public IKeyframeRepository Keyframes { get; }
-  public IEventRepository Events { get; }
-  public IClientRepository Clients { get; }
-  public ISettingsRepository Settings { get; }
+  public ICameraRepository Cameras { get; private set; } = null!;
+  public IStreamRepository Streams { get; private set; } = null!;
+  public ISegmentRepository Segments { get; private set; } = null!;
+  public IKeyframeRepository Keyframes { get; private set; } = null!;
+  public IEventRepository Events { get; private set; } = null!;
+  public IClientRepository Clients { get; private set; } = null!;
+  public IConfigRepository Config { get; private set; } = null!;
 
-  public SqliteDataProvider(string databasePath)
+  internal void InitializeProvider(string databasePath)
   {
     var dir = Path.GetDirectoryName(databasePath);
     if (dir != null)
@@ -31,23 +32,26 @@ public sealed class SqliteDataProvider : IDataProvider
       Cache = SqliteCacheMode.Shared
     }.ToString();
 
-    _queue = new SqliteConnectionQueue(connectionString);
+    _connection = new SqliteConnection(connectionString);
+    _connection.Open();
 
-    Cameras = new SqliteCameraRepository(_queue);
-    Streams = new SqliteStreamRepository(_queue);
-    Segments = new SqliteSegmentRepository(_queue);
-    Keyframes = new SqliteKeyframeRepository(_queue);
-    Events = new SqliteEventRepository(_queue);
-    Clients = new SqliteClientRepository(_queue);
-    Settings = new SqliteSettingsRepository(_queue);
+    _queue.Start(work => work(_connection));
+
+    Cameras = new CameraRepository(_queue);
+    Streams = new StreamRepository(_queue);
+    Segments = new SegmentRepository(_queue);
+    Keyframes = new KeyframeRepository(_queue);
+    Events = new EventRepository(_queue);
+    Clients = new ClientRepository(_queue);
+    Config = new ConfigRepository(_queue);
   }
 
-  public IPluginDataStore GetPluginStore(string pluginId)
+  public IDataStore GetDataStore(string pluginId)
   {
-    return new SqlitePluginDataStore(_queue, pluginId);
+    return new DataStore(_queue, pluginId);
   }
 
-  public async Task<OneOf<Success, Error>> MigrateAsync(CancellationToken ct)
+  internal async Task<OneOf<Success, Error>> MigrateAsync(CancellationToken ct)
   {
     return await _queue.ExecuteAsync<OneOf<Success, Error>>(conn =>
     {
@@ -137,9 +141,11 @@ public sealed class SqliteDataProvider : IDataProvider
 
         CREATE UNIQUE INDEX IF NOT EXISTS idx_clients_serial ON clients(certificate_serial);
 
-        CREATE TABLE IF NOT EXISTS settings (
-          key TEXT NOT NULL PRIMARY KEY,
-          value TEXT NOT NULL
+        CREATE TABLE IF NOT EXISTS plugin_config (
+          plugin_id TEXT NOT NULL,
+          key TEXT NOT NULL,
+          value TEXT NOT NULL,
+          PRIMARY KEY (plugin_id, key)
         );
 
         CREATE TABLE IF NOT EXISTS plugin_data (

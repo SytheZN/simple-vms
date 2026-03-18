@@ -4,12 +4,12 @@ using Microsoft.Data.Sqlite;
 using Shared.Models;
 namespace Data.Sqlite;
 
-internal sealed class SqliteEventRepository : IEventRepository
+internal sealed class EventRepository : IEventRepository
 {
   private const ushort ModuleId = ModuleIds.PluginSqliteEvent;
-  private readonly SqliteConnectionQueue _queue;
+  private readonly ConnectionQueue _queue;
 
-  public SqliteEventRepository(SqliteConnectionQueue queue)
+  public EventRepository(ConnectionQueue queue)
   {
     _queue = queue;
   }
@@ -54,7 +54,7 @@ internal sealed class SqliteEventRepository : IEventRepository
           results.Add(ReadEvent(reader));
         return results;
       }
-      catch (SqliteException ex)
+      catch (Exception ex)
       {
         return Error.Create(ModuleId, 0x0001, Result.InternalError, $"Failed to query events: {ex.Message}");
       }
@@ -75,7 +75,7 @@ internal sealed class SqliteEventRepository : IEventRepository
           return Error.Create(ModuleId, 0x0002, Result.NotFound, $"Event {id} not found");
         return ReadEvent(reader);
       }
-      catch (SqliteException ex)
+      catch (Exception ex)
       {
         return Error.Create(ModuleId, 0x0003, Result.InternalError, $"Failed to get event {id}: {ex.Message}");
       }
@@ -108,7 +108,7 @@ internal sealed class SqliteEventRepository : IEventRepository
       {
         return Error.Create(ModuleId, 0x0004, Result.Conflict, $"Event {evt.Id} already exists");
       }
-      catch (SqliteException ex)
+      catch (Exception ex)
       {
         return Error.Create(ModuleId, 0x0005, Result.InternalError, $"Failed to create event: {ex.Message}");
       }
@@ -137,7 +137,7 @@ internal sealed class SqliteEventRepository : IEventRepository
           results.Add(ReadEvent(reader));
         return results;
       }
-      catch (SqliteException ex)
+      catch (Exception ex)
       {
         return Error.Create(ModuleId, 0x0006, Result.InternalError, $"Failed to query events by time range: {ex.Message}");
       }

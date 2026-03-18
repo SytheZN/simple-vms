@@ -3,6 +3,9 @@
     <IsAotCompatible>false</IsAotCompatible>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Tests.Integration" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../../../Shared.Models/Shared.Models.csproj" />
   </ItemGroup>
   <ItemGroup>

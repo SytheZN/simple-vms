@@ -2,12 +2,12 @@ using Microsoft.Data.Sqlite;
 using Shared.Models;
 namespace Data.Sqlite;
 
-internal sealed class SqliteSegmentRepository : ISegmentRepository
+internal sealed class SegmentRepository : ISegmentRepository
 {
   private const ushort ModuleId = ModuleIds.PluginSqliteSegment;
-  private readonly SqliteConnectionQueue _queue;
+  private readonly ConnectionQueue _queue;
 
-  public SqliteSegmentRepository(SqliteConnectionQueue queue)
+  public SegmentRepository(ConnectionQueue queue)
   {
     _queue = queue;
   }
@@ -34,7 +34,7 @@ internal sealed class SqliteSegmentRepository : ISegmentRepository
           results.Add(ReadSegment(reader));
         return results;
       }
-      catch (SqliteException ex)
+      catch (Exception ex)
       {
         return Error.Create(ModuleId, 0x0001, Result.InternalError, $"Failed to query segments by time range: {ex.Message}");
       }
@@ -62,7 +62,7 @@ internal sealed class SqliteSegmentRepository : ISegmentRepository
           results.Add(ReadSegment(reader));
         return results;
       }
-      catch (SqliteException ex)
+      catch (Exception ex)
       {
         return Error.Create(ModuleId, 0x0002, Result.InternalError, $"Failed to query oldest segments: {ex.Message}");
       }
@@ -80,7 +80,7 @@ internal sealed class SqliteSegmentRepository : ISegmentRepository
         cmd.Parameters.AddWithValue("@streamId", streamId.ToString());
         return (long)cmd.ExecuteScalar()!;
       }
-      catch (SqliteException ex)
+      catch (Exception ex)
       {
         return Error.Create(ModuleId, 0x0003, Result.InternalError, $"Failed to get total size for stream {streamId}: {ex.Message}");
       }
@@ -112,7 +112,7 @@ internal sealed class SqliteSegmentRepository : ISegmentRepository
       {
         return Error.Create(ModuleId, 0x0004, Result.Conflict, $"Segment {segment.Id} already exists");
       }
-      catch (SqliteException ex)
+      catch (Exception ex)
       {
         return Error.Create(ModuleId, 0x0005, Result.InternalError, $"Failed to create segment: {ex.Message}");
       }
@@ -139,7 +139,7 @@ internal sealed class SqliteSegmentRepository : ISegmentRepository
         cmd.ExecuteNonQuery();
         return new Success();
       }
-      catch (SqliteException ex)
+      catch (Exception ex)
       {
         return Error.Create(ModuleId, 0x0006, Result.InternalError, $"Failed to delete segments: {ex.Message}");
       }
