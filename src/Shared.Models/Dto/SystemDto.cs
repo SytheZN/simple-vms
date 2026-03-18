@@ -4,17 +4,7 @@ public sealed class HealthResponse
 {
   public required string Status { get; init; }
   public required int Uptime { get; init; }
-  public required CameraHealthCounts Cameras { get; init; }
-  public required StorageResponse Storage { get; init; }
   public required string Version { get; init; }
-}
-
-public sealed class CameraHealthCounts
-{
-  public required int Total { get; init; }
-  public required int Online { get; init; }
-  public required int Offline { get; init; }
-  public required int Error { get; init; }
 }
 
 public sealed class StorageResponse

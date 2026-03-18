@@ -5,8 +5,9 @@ namespace Server.Plugins;
 
 public sealed class PluginEntry
 {
-  public required IPlugin Plugin { get; init; }
-  public required PluginMetadata Metadata { get; init; }
+  public required Type PluginType { get; init; }
+  public IPlugin Plugin { get; set; } = null!;
+  public PluginMetadata Metadata { get; set; } = null!;
   public required AssemblyLoadContext LoadContext { get; init; }
   public PluginState State { get; set; } = PluginState.Discovered;
   public string? ErrorMessage { get; set; }

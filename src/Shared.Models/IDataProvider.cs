@@ -9,7 +9,6 @@ public interface IDataProvider
   IKeyframeRepository Keyframes { get; }
   IEventRepository Events { get; }
   IClientRepository Clients { get; }
-  ISettingsRepository Settings { get; }
-  IPluginDataStore GetPluginStore(string pluginId);
-  Task<OneOf<Success, Error>> MigrateAsync(CancellationToken ct);
+  IConfigRepository Config { get; }
+  IDataStore GetDataStore(string pluginId);
 }

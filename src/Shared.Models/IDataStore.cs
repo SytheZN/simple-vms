@@ -1,7 +1,7 @@
 using System.Linq.Expressions;
 namespace Shared.Models;
 
-public interface IPluginDataStore
+public interface IDataStore
 {
   Task<OneOf<T?, Error>> GetAsync<T>(string key, CancellationToken ct = default);
   Task<OneOf<IReadOnlyList<KeyValuePair<string, T>>, Error>> GetAllAsync<T>(string? prefix = null, CancellationToken ct = default);

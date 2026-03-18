@@ -23,7 +23,7 @@ public static class ModuleIds
   public const ushort PluginSqliteKeyframe = 0x1004;
   public const ushort PluginSqliteEvent = 0x1005;
   public const ushort PluginSqliteClient = 0x1006;
-  public const ushort PluginSqliteSettings = 0x1007;
-  public const ushort PluginSqlitePluginData = 0x1008;
+  public const ushort PluginSqliteConfig = 0x1007;
+  public const ushort PluginSqliteDataStore = 0x1008;
   public const ushort PluginSqliteMigration = 0x1009;
 }
