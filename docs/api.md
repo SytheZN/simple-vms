@@ -22,9 +22,7 @@ All ID fields are `Guid` values, serialized as lowercase hyphenated strings (e.g
 
 Authorization is pluggable via `IAuthzProvider`. The provider receives an opaque identity string (QUIC client ID from certificate, or the identifier returned by the HTTP auth provider) and decides what is permitted. How identities map to accounts, roles, or permissions is entirely the provider's concern - the core system does not define accounts or roles.
 
-When no `IAuthzProvider` plugin is installed, all operations are permitted - every identity is treated as `su` (unrestricted access). The built-in `IAuthzProvider` implements RBAC - it manages its own account and role data via `IPluginDataStore`, gates operations, and filters results based on role. Additional roles can be defined over time but the role set is not pre-defined.
-
-The built-in provider can be replaced entirely (e.g. with an external policy engine) without changing the protocol or API surface. The authorization layer only filters; it never changes the shape of the API.
+When no `IAuthzProvider` plugin is installed, all operations are permitted. The authorization layer only filters; it never changes the shape of the API.
 
 ## Endpoints
 
@@ -349,10 +347,8 @@ Server health check.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `status` | string | `healthy`, `degraded`, `unhealthy`, `missing-certs` |
+| `status` | string | `healthy`, `degraded`, `unhealthy`, `missing-certs`, `starting` |
 | `uptime` | int | Seconds since server start (informational duration, not a timestamp) |
-| `cameras` | object | `{ "total": N, "online": N, "offline": N, "error": N }` |
-| `storage` | object | See storage endpoint |
 | `version` | string | Server version |
 
 #### GET /api/v1/system/storage
@@ -404,9 +400,9 @@ Generate root CA and server certificate. On a new installation this is called fr
 
 ### Plugins
 
-#### GET /api/v1/plugins
+#### GET /api/v1/plugins\[?type={extensionPoint}\]
 
-List installed plugins.
+List discovered plugins, optionally filtered by extension point type (e.g. `data-provider`, `capture-source`, `camera-provider`). Available during setup before plugins are started.
 
 **Response body:** Array of:
 
@@ -414,25 +410,62 @@ List installed plugins.
 |-------|------|-------------|
 | `id` | string | Plugin identifier |
 | `name` | string | Display name |
+| `description` | string? | Plugin description |
 | `version` | string | Plugin version |
-| `status` | string | `running`, `stopped`, `error` |
+| `status` | string | `discovered`, `running`, `stopped`, `error` |
 | `extensionPoints` | string[] | Which interfaces the plugin implements |
+| `userStartable` | bool | Whether the plugin supports user-initiated start/stop |
 
 #### GET /api/v1/plugins/{id}
 
-Get plugin details and configuration.
+Get plugin details (same fields as the list item).
+
+#### OPTIONS /api/v1/plugins/{id}/config
+
+Get the settings schema for a plugin. Returns the grouped field definitions from `IPluginSettings.GetSchema()`. Returns an empty array if the plugin does not implement `IPluginSettings`. The UI should call this first and only show config options if the schema is non-empty.
+
+**Response body:**
+
+Array of setting groups:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `key` | string | Group identifier |
+| `order` | int | Display order |
+| `label` | string | Group heading |
+| `description` | string? | Group description |
+| `fields` | object[] | Setting fields |
+
+Field object:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `key` | string | Field identifier |
+| `order` | int | Display order within group |
+| `label` | string | Field label |
+| `type` | string | Field type (e.g. `string`, `int`, `bool`, `path`, `password`) |
+| `description` | string? | Help text |
+| `defaultValue` | any? | Default value |
+| `required` | bool | Whether the field is required |
+| `value` | any? | Current value (from `IPluginSettings.GetValues()`) |
+
+#### GET /api/v1/plugins/{id}/config
+
+Get current config values for a plugin. Returns the values from `IPluginSettings.GetValues()`. Returns `BadRequest` if the plugin does not implement `IPluginSettings`.
+
+**Response body:** Key-value object of current settings.
 
 #### PUT /api/v1/plugins/{id}/config
 
-Update plugin configuration. Schema is plugin-defined.
+Update plugin configuration. Calls `IPluginSettings.ApplyValues()`. Returns validation errors on failure. Returns `BadRequest` if the plugin does not implement `IPluginSettings`.
 
 #### POST /api/v1/plugins/{id}/start
 
-Start a stopped plugin.
+Start a stopped plugin. Only available for plugins that implement `IUserStartable`. Returns `Unavailable` if the plugin does not support user-initiated start.
 
 #### POST /api/v1/plugins/{id}/stop
 
-Stop a running plugin.
+Stop a running plugin. Only available for plugins that implement `IUserStartable`. Returns `Unavailable` if the plugin does not support user-initiated stop.
 
 ---
 

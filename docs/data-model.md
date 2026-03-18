@@ -187,26 +187,26 @@ Providers may return additional codes where appropriate, but the above are the b
 | `Create(client)` | `OneOf<Success, Error>` | Insert a new client |
 | `Update(client)` | `OneOf<Success, Error>` | Update client fields (name, lastSeen, revoked) |
 
-### ISettingsRepository
+### IConfigRepository
 
-Key-value settings store for server-level configuration. Unlike entity repositories, `Get` returns `null` on a missing key (not `NotFound`) - checking whether a setting exists is a normal code path, not an error.
+Key-value configuration store scoped by plugin ID. Each plugin gets an isolated namespace. Backs `IConfig` for non-data-provider plugins. Unlike entity repositories, `Get` returns `null` on a missing key (not `NotFound`) - checking whether a config value exists is a normal code path, not an error.
 
 | Operation | Returns | Description |
 |-----------|---------|-------------|
-| `Get(key)` | `OneOf<string?, Error>` | Get a setting value. Returns null if the key does not exist. |
-| `GetAll()` | `OneOf<IReadOnlyDictionary<string, string>, Error>` | Get all settings |
-| `Set(key, value)` | `OneOf<Success, Error>` | Create or update a setting |
-| `Delete(key)` | `OneOf<Success, Error>` | Remove a setting |
+| `Get(pluginId, key)` | `OneOf<string?, Error>` | Get a config value. Returns null if the key does not exist. |
+| `GetAll(pluginId)` | `OneOf<IReadOnlyDictionary<string, string>, Error>` | Get all config for a plugin |
+| `Set(pluginId, key, value)` | `OneOf<Success, Error>` | Create or update a config value |
+| `Delete(pluginId, key)` | `OneOf<Success, Error>` | Remove a config value |
 
-### IPluginDataStore
+### IDataStore
 
 Generic key-value/document store for plugins to persist internal state (accounts, sessions, learned data, etc.) without bringing their own database. Every `IDataProvider` must implement this.
 
 Each plugin gets an isolated namespace - a plugin can only access its own data.
 
-Plugins that prefer to manage their own storage (separate database, files, etc.) are free to do so - they should expose the relevant paths or connection details as user-facing configuration via `IPluginConfig`.
+Plugins that prefer to manage their own storage (separate database, files, etc.) are free to do so - they should expose the relevant paths or connection details as user-facing configuration via `IPluginSettings`.
 
-Like `ISettingsRepository`, `Get` returns `null`/`default` on a missing key rather than `NotFound`.
+Like `IConfigRepository`, `Get` returns `null`/`default` on a missing key rather than `NotFound`.
 
 | Operation | Returns | Description |
 |-----------|---------|-------------|
@@ -229,9 +229,9 @@ The following queries are performance-critical and providers should optimize for
 - **`IEventRepository.GetByTimeRange`** - called on every timeline render. Must handle cameras with high event rates (continuous motion).
 - **`ISegmentRepository.GetOldest`** and **`GetTotalSize`** - called by the retention engine on a regular interval. Should not block recording.
 
-## Migration Contract
+## Migration
 
-Each `IDataProvider` implements `MigrateAsync()` which is called on server startup and returns `OneOf<Success, Error>`. The provider is responsible for:
+Migration is the data provider plugin's responsibility. It runs during the plugin's `StartAsync` - the `IDataProvider` interface does not expose a migration method. The provider is responsible for:
 
 - Creating the schema on first run
 - Migrating from older schema versions when the server is upgraded

@@ -184,12 +184,13 @@ If no existing artifacts are found, the server starts in **setup mode**:
 1. Server starts, reads startup arguments
 2. HTTP web UI serves the setup wizard only - no other functionality is available
 3. The wizard warns the user: if they expect an existing installation, the data path may be misconfigured (e.g. a network mount that isn't mounted)
-4. The user confirms this is a new installation by clicking "Create Certs" (calls `POST /api/v1/system/certs`)
-5. Server generates root CA and server certificate, stores in `{data-path}/certs/`
-6. Data provider initializes its schema (`MigrateAsync`)
-7. Server transitions to normal operation
-8. User runs camera discovery or adds cameras manually
-9. User creates a client enrollment
+4. The user selects and configures a data provider
+5. The user confirms this is a new installation by clicking "Create Certs"
+6. Server generates root CA and server certificate, stores in `{data-path}/certs/`
+7. Server starts the data provider plugin (which runs schema migration), then starts remaining plugins
+8. Server transitions to normal operation
+9. User runs camera discovery or adds cameras manually
+10. User creates a client enrollment
 
 This prevents a missing network mount from silently bootstrapping a fresh installation on top of an empty local directory.
 

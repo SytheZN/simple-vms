@@ -2,19 +2,19 @@
 
 ## Overview
 
-The server is built around a plugin architecture. All major subsystems - capture sources, recording formats, camera providers, notification delivery, analytics, authentication, authorization - are behind extension point interfaces. Built-in functionality ships as internal plugins that use the same interfaces as third-party plugins. There are no privileged internal code paths.
+The server is built around a plugin architecture. All major subsystems - capture sources, recording formats, camera providers, notification delivery, analytics, authentication, authorization - are behind extension point interfaces. There are no privileged internal code paths.
 
-This means the server core is a host that wires plugins together, manages lifecycle, and provides shared services. All domain behavior lives in plugins.
+The server core is a host that wires plugins together, manages lifecycle, and provides shared services. All domain behavior lives in plugins.
 
 ## Plugin Structure
 
-A plugin is a .NET assembly containing one or more classes that implement extension point interfaces. Each plugin has a single entry point class implementing `IPlugin`.
+A plugin is a .NET assembly containing one or more classes that implement extension point interfaces. Each plugin has a single entry point class implementing `IPlugin`. The plugin provides extension points by implementing the corresponding interfaces on the same class (e.g. `SqlitePlugin : IPlugin, IDataProvider`). The host discovers them via reflection.
 
 ```csharp
 public interface IPlugin
 {
     PluginMetadata Metadata { get; }
-    OneOf<Success, Error> ConfigureServices(IServiceCollection services);
+    OneOf<Success, Error> Initialize(PluginContext context);
     Task<OneOf<Success, Error>> StartAsync(CancellationToken ct);
     Task<OneOf<Success, Error>> StopAsync(CancellationToken ct);
 }
@@ -32,35 +32,70 @@ public record PluginMetadata
 }
 ```
 
+`PluginContext` provides the services the plugin needs:
+
+```csharp
+public sealed class PluginContext
+{
+    public required IConfig Config { get; init; }
+    public required IEventBus EventBus { get; init; }
+    public required IDataStore DataStore { get; init; }
+    public required ICameraRegistry CameraRegistry { get; init; }
+    public required IStreamTap StreamTap { get; init; }
+    public required IRecordingAccess RecordingAccess { get; init; }
+}
+```
+
 ## Lifecycle
 
 ```mermaid
-stateDiagram-v2
-    [*] --> Discovered: Assembly found in plugins/
-    Discovered --> Loaded: IPlugin instantiated
-    Loaded --> Configured: ConfigureServices called
-    Configured --> Starting: StartAsync called
-    Starting --> Running: Start completed
-    Running --> Stopping: StopAsync called
-    Stopping --> Stopped: Stop completed
-    Stopped --> Starting: Restart
-    Starting --> Error: Start failed
-    Running --> Error: Unhandled exception
-    Error --> Starting: Restart
-    Stopped --> [*]: Unloaded
+flowchart TD
+    A((Start)) --> B[Discovered]
+    B -->|Start failed| E[Error]
+    B -->|StartAsync| S
+
+    subgraph S [Started]
+        C[Running] -->|UserStopAsync| D[Stopped]
+        D -->|UserStartAsync| C
+    end
+
+    S -->|Unhandled exception| E
+    S -->|StopAsync| F((Shutdown))
 ```
 
-1. **Discovered** - the plugin host scans the `plugins/` directory for assemblies containing `IPlugin` implementations.
-2. **Loaded** - the `IPlugin` class is instantiated.
-3. **Configured** - `ConfigureServices` is called. The plugin registers its extension point implementations into a scoped `IServiceCollection`.
-4. **Running** - `StartAsync` completes. The plugin is active and its registered services are available to the system.
-5. **Stopped** - `StopAsync` completes. Services are removed from the container.
+1. **Discovered** - the plugin host scans the `plugins/` directory, loads the assembly, and instantiates `IPlugin`. The plugin is not yet initialized or started.
+2. **Started** - `StartAsync` completes during server startup. The plugin enters the Started subgraph. For plugins implementing `IUserStartable`, transitions between Running and Stopped within this subgraph are controlled by the plugin and the user via the API. Plugins may start in either Running or Stopped depending on their own logic.
+3. **Error** - `StartAsync` failed or an unhandled exception occurred.
 
-Built-in plugins follow the same lifecycle but are discovered from the server assembly rather than the `plugins/` directory.
+
+Plugins that do not implement `IUserStartable` cannot be stopped by the user - they are either `discovered`, `running`, or `error`. Their `StopAsync` is only called on server shutdown.
+
+### IUserStartable
+
+Plugins with user-controlled lifecycle events (scheduling, background processing, event subscriptions, etc.) implement `IUserStartable`:
+
+```csharp
+public interface IUserStartable
+{
+    Task<OneOf<Success, Error>> UserStartAsync(CancellationToken ct);
+    Task<OneOf<Success, Error>> UserStopAsync(CancellationToken ct);
+}
+```
+
+The `POST /api/v1/plugins/{id}/start` and `POST /api/v1/plugins/{id}/stop` endpoints delegate to these methods. Plugins that do not implement `IUserStartable` return `Unavailable` from these endpoints.
+
+### API Status Values
+
+| Status | Meaning |
+|--------|---------|
+| `discovered` | Loaded but not yet started (server still starting up) |
+| `running` | Active |
+| `stopped` | User-stopped via `IUserStartable` (only for plugins that implement it) |
+| `error` | Start failed or unhandled exception |
 
 ## Extension Points
 
-Extension points are interfaces defined in the `Shared.Models` assembly. Any plugin can provide one or more implementations. When multiple plugins implement the same extension point, the system uses all of them (e.g. multiple `INotificationSink` implementations each receive events) unless the extension point is singular by design (e.g. `IAuthzProvider`).
+Extension points are interfaces defined in the `Shared.Models` assembly. A plugin provides extension points by implementing the corresponding interfaces on its `IPlugin` class. The host discovers them via reflection. When multiple plugins implement the same extension point, the system uses all of them.
 
 ### ICaptureSource
 
@@ -80,7 +115,7 @@ public interface IStreamConnection : IAsyncDisposable
 }
 ```
 
-The built-in implementation handles RTSP over TCP interleaved. A plugin could implement capture from files, RTMP, or proprietary protocols.
+Plugins could implement capture from RTSP (TCP interleaved), files, RTMP, or proprietary protocols.
 
 ### IStreamFormat
 
@@ -109,7 +144,7 @@ public interface ISegmentReader : IAsyncDisposable
 }
 ```
 
-The built-in implementation produces fragmented MP4 for video streams. Metadata profiles (e.g. motion) use a lightweight format suited to their data type. A plugin could add MKV, raw HEVC, or other formats.
+Plugins could implement fragmented MP4, MKV, raw HEVC, or other formats. Metadata profiles (e.g. motion) use a lightweight format suited to their data type.
 
 ### ICameraProvider
 
@@ -125,7 +160,7 @@ public interface ICameraProvider
 }
 ```
 
-Built-in implementations: ONVIF (full discovery, events, analytics) and Generic RTSP (manual URI, no discovery). A plugin could add vendor-specific providers (e.g. Amcrest, Reolink) that expose features not available through standard ONVIF.
+Plugins could implement ONVIF (full discovery, events, analytics), generic RTSP (manual URI, no discovery), or vendor-specific providers (e.g. Amcrest, Reolink) that expose features not available through standard ONVIF.
 
 ### IEventFilter
 
@@ -145,7 +180,7 @@ public enum EventDecision
 }
 ```
 
-Built-in: motion zone filter (suppress motion events outside configured regions). Plugins could add object detection filtering, time-based schedules, or deduplication.
+Plugins could implement motion zone filtering, object detection filtering, time-based schedules, or deduplication.
 
 ### INotificationSink
 
@@ -159,7 +194,7 @@ public interface INotificationSink
 }
 ```
 
-Built-in: client push over QUIC (event channel stream). Plugins could add email (SMTP), webhooks, Pushover, Telegram, etc.
+Plugins could implement client push over QUIC, email (SMTP), webhooks, Pushover, Telegram, etc.
 
 ### IVideoAnalyzer
 
@@ -175,7 +210,7 @@ public interface IVideoAnalyzer
 }
 ```
 
-No built-in implementation. The analyzer is responsible for its own pipeline: it subscribes to raw NAL units via `IStreamTap`, decodes them (CPU or GPU), performs analysis, and publishes results to `IEventBus`. The server never decodes video - that is entirely the analyzer plugin's concern.
+The analyzer is responsible for its own pipeline: it subscribes to raw NAL units via `IStreamTap`, decodes them (CPU or GPU), performs analysis, and publishes results to `IEventBus`. The server never decodes video - that is entirely the analyzer plugin's concern.
 
 Analysis results flow through the normal event filter > notification pipeline.
 
@@ -224,7 +259,7 @@ The retention engine (part of the server core) subscribes to `RecordingSegmentCo
 
 **Storage duration estimation:** The server tracks recording byte rate over a rolling window (bytes written per unit time, per camera). Combined with `FreeBytes` from `StorageStats`, this gives an estimated remaining recording duration. This calculation lives in the server core - the provider just reports accurate space figures.
 
-Built-in: filesystem (covers NFS, local, any mounted filesystem). Plugins could add S3, SMB, or other backends. Non-filesystem backends may not support all space reporting - `TotalBytes` and `FreeBytes` can return `-1` to indicate "unknown", in which case percentage-based retention and duration estimation are unavailable.
+Plugins could implement filesystem (NFS, local, any mounted filesystem), S3, SMB, or other backends. Non-filesystem backends may not support all space reporting - `TotalBytes` and `FreeBytes` can return `-1` to indicate "unknown", in which case percentage-based retention and duration estimation are unavailable.
 
 ### IDataProvider
 
@@ -241,19 +276,15 @@ public interface IDataProvider
     IKeyframeRepository Keyframes { get; }
     IEventRepository Events { get; }
     IClientRepository Clients { get; }
-    ISettingsRepository Settings { get; }
+    IConfigRepository Config { get; }
 
-    IPluginDataStore GetPluginStore(string pluginId);
-
-    Task<OneOf<Success, Error>> MigrateAsync(CancellationToken ct);
+    IDataStore GetDataStore(string pluginId);
 }
 ```
 
 Each repository interface defines the queries the server core needs (CRUD, time-range queries, keyframe lookups, etc.). See [data-model.md](data-model.md) for the full return type contracts.
 
-`MigrateAsync` is called on startup to ensure the schema is up to date. The provider owns its own migration strategy.
-
-The data provider manages its own storage - a SQL-based provider manages its own database files/connections, a cloud-based provider manages its own credentials and endpoints. The server core does not dictate where or how the data is stored, only what queries it needs to perform.
+The data provider manages its own storage - a SQL-based provider manages its own database files/connections, a cloud-based provider manages its own credentials and endpoints. The server core does not dictate where or how the data is stored, only what queries it needs to perform. Migration is handled internally during the plugin's `StartAsync` (see [Configuration > Migration](#migration)).
 
 ### IAuthProvider
 
@@ -269,7 +300,7 @@ public interface IAuthProvider
 public record AuthResult(bool Authenticated, string? Identity, IDictionary<string, string>? Claims);
 ```
 
-No built-in implementation - HTTP is open on LAN by default. Plugins could add basic auth, OIDC, LDAP, or a simple PIN gate.
+When no `IAuthProvider` is installed, HTTP is open on LAN by default. Plugins could add basic auth, OIDC, LDAP, or a simple PIN gate.
 
 ### IAuthzProvider
 
@@ -283,13 +314,49 @@ public interface IAuthzProvider
 }
 ```
 
-When no `IAuthzProvider` is installed, all identities have unrestricted access (`su`). The built-in provider implements RBAC - it manages accounts and roles via `IPluginDataStore`. Additional roles can be defined but the role set is not pre-determined.
+When no `IAuthzProvider` is installed, all identities have unrestricted access.
 
-`FilterAsync` is used for list operations (e.g. "get cameras") - the authorization layer filters the query so the caller only sees what their role permits. `AuthorizeAsync` gates individual operations (e.g. "delete this camera").
+### IPluginSettings
+
+Plugins with user-facing settings implement `IPluginSettings`. The plugin advertises a schema describing what the UI should present, provides current values, and receives user-set values for validation and application.
+
+```csharp
+public interface IPluginSettings
+{
+    IReadOnlyList<SettingGroup> GetSchema();
+    IReadOnlyDictionary<string, object> GetValues();
+    OneOf<Success, Error> ValidateValue(string key, object value);
+    OneOf<Success, Error> ApplyValues(IReadOnlyDictionary<string, object> values);
+}
+
+public record SettingGroup
+{
+    public required string Key { get; init; }
+    public required int Order { get; init; }
+    public required string Label { get; init; }
+    public string? Description { get; init; }
+    public required IReadOnlyList<SettingField> Fields { get; init; }
+}
+
+public record SettingField
+{
+    public required string Key { get; init; }
+    public required int Order { get; init; }
+    public required string Label { get; init; }
+    public required string Type { get; init; }
+    public string? Description { get; init; }
+    public object? DefaultValue { get; init; }
+    public bool Required { get; init; }
+}
+```
+
+`GetSchema` returns groups of fields for the UI to render in order. `GetValues` returns the current values keyed by field key. `ValidateValue` validates a single field value before submission (for inline validation in the UI). `ApplyValues` validates and persists the full set. Plugins that have no user-facing settings do not implement `IPluginSettings`.
+
+The API endpoints `OPTIONS/GET/PUT /api/v1/plugins/{id}/config` delegate to these methods. The host looks up the plugin by ID and calls the methods directly on the `IPlugin` instance.
 
 ## Plugin Services
 
-Plugins receive shared services via dependency injection. These services are provided by the server host and give plugins access to system state and data.
+Plugins receive shared services via `PluginContext` during initialization. These services are provided by the plugin host and give plugins access to system state and data.
 
 ### IEventBus
 
@@ -344,35 +411,59 @@ public interface ICameraRegistry
 }
 ```
 
-### IPluginConfig
+### IConfig
 
-Read plugin-specific configuration. Configuration is stored per-plugin and managed through the API (`PUT /api/v1/plugins/{id}/config`).
+Private key-value configuration store for the plugin. The plugin reads and writes its own internal configuration here (e.g. database path, connection strings, polling intervals). These values are not directly exposed to the user.
 
 ```csharp
-public interface IPluginConfig
+public interface IConfig
 {
-    OneOf<T, Error> Get<T>(string key, T defaultValue);
-    OneOf<IReadOnlyDictionary<string, object>, Error> GetAll();
+    T Get<T>(string key, T defaultValue);
+    void Set<T>(string key, T value);
 }
 ```
 
-### IPluginDataStore
+The plugin host provides a per-plugin `IConfig` instance via `PluginContext`. The backing store is transparent to the plugin:
 
-Optional per-plugin isolated data store for internal plugin state. Not user-facing - for data the plugin needs to persist that isn't configuration (e.g. accounts, sessions, learned state, cache).
+- **Data provider plugins** (`IDataProvider`): backed by `{data-path}/provider.json`
+- **All other plugins**: backed by `IDataStore` (via the active data provider)
 
-Plugins are not required to use this. A plugin that prefers its own database, files, or scratch directories is free to manage its own storage - it should expose the relevant paths/connection details as configuration via `IPluginConfig`.
+### IDataStore
+
+Per-plugin isolated data store for internal state that is not configuration (e.g. accounts, sessions, learned data, cache). Always backed by the active data provider.
+
+Plugins are not required to use this. A plugin that prefers its own storage is free to manage it independently.
 
 See [data-model.md](data-model.md) for the full interface definition.
 
 ## Plugin Loading
 
-1. The plugin host scans the `plugins/` directory on startup for `.dll` assemblies.
-2. Each assembly is loaded into an isolated `AssemblyLoadContext`.
-3. The host searches for types implementing `IPlugin` and instantiates them.
-4. Plugins are sorted by dependency (if declared) and started in order.
-5. On shutdown, plugins are stopped in reverse order.
+Plugin loading has two phases: discovery (at startup) and starting (after setup is complete).
 
-Built-in plugins are loaded from the server assembly itself using the same discovery mechanism.
+### Discovery
+
+On startup, the plugin host immediately:
+
+1. Scans the `plugins/` directory for `.dll` assemblies
+2. Loads each assembly into an isolated `AssemblyLoadContext`
+3. Finds types implementing `IPlugin` and instantiates them
+4. Detects which extension point interfaces each plugin class implements
+
+After discovery, no plugins are initialized or running. The server begins listening on HTTP. The web UI can enumerate discovered plugins (e.g. to let the setup wizard present data provider options).
+
+
+### Initialization and Starting
+
+During setup (before certificates exist), the host creates temporary instances of all data provider plugins and calls `Initialize` with a `PluginContext` containing `DataProviderConfig` as `IConfig`. These temporary instances serve the setup wizard (the web UI queries their `IPluginSettings` to present configuration options). They are discarded once setup completes.
+
+Once the server has certificates and a configured data provider:
+
+1. All plugins are discovered fresh (new instances).
+2. The host calls `Initialize` then `StartAsync` on the active data provider plugin. The data provider connects and runs schema migration.
+3. The host calls `Initialize` then `StartAsync` on all remaining plugins.
+4. On shutdown, plugins are stopped in reverse order.
+
+See [Configuration](#configuration) for how `IConfig` is routed per plugin type.
 
 ### Isolation
 
@@ -381,38 +472,49 @@ Each plugin runs in its own `AssemblyLoadContext`, providing:
 - Assembly version isolation (two plugins can depend on different versions of the same library)
 - Clean unload when a plugin is stopped (assemblies are unloaded with the context)
 
-Plugins share the host's `IServiceProvider` for injected services but cannot access each other's internals directly. Inter-plugin communication goes through the event bus.
+Plugins receive services from the host via `PluginContext` but cannot access each other's internals directly. Inter-plugin communication goes through the event bus.
 
 ### Configuration
 
-Plugin configuration is stored alongside other server data. Plugins read their configuration through `IPluginConfig`. The schema is plugin-defined - the server stores it opaquely and exposes it through the API for the web UI to render.
+Plugin configuration has three layers:
 
-## API Endpoints
+- **`IConfig`** - private key-value store the plugin uses internally. The plugin host routes storage transparently based on plugin type (see below).
+- **`IPluginSettings`** - user-facing settings with schema, validation, and apply. The API endpoints `GET/PUT /api/v1/plugins/{id}/config` delegate to this. Plugins without user-facing settings do not implement it.
+- **`IDataStore`** - arbitrary internal state (not configuration). Always DB-backed.
 
-Plugins can register additional HTTP and QUIC API endpoints. The plugin host provides a registration mechanism during `ConfigureServices`:
+The plugin host routes `IConfig` storage based on plugin type:
 
-```csharp
-public static class PluginEndpointExtensions
+- **Data provider plugins** (`IDataProvider`): backed by `{data-path}/provider.json` (via `DataProviderConfig`). This file also identifies which data provider plugin is active (by assembly name). This is necessary because the database is not available before the data provider connects.
+- **All other plugins**: backed by `IConfigRepository` (namespaced by plugin ID) via the active data provider.
+
+This routing is transparent to the plugin - it uses `IConfig` the same way regardless of type.
+
+#### provider.json
+
+```json
 {
-    public static void MapPluginEndpoints(this IServiceCollection services, string prefix, Action<IEndpointRouteBuilder> configure);
+  "active": "Sqlite",
+  "providers": {
+    "Sqlite": {
+      "path": "server.db"
+    },
+    "Postgres": {
+      "connectionString": "Host=..."
+    }
+  }
 }
 ```
 
-Plugin endpoints are mounted under `/api/v1/plugins/{id}/...` and are subject to the same authentication and authorization pipeline as core endpoints.
+| Field | Type | Description |
+|-------|------|-------------|
+| `active` | string | Assembly name of the active data provider |
+| `providers` | object | Per-provider configuration keyed by assembly name, passed to `IConfig` |
 
-## QUIC Stream Types
+The `active` field determines which provider starts. A provider's config entry is created when its configuration is first saved. If `provider.json` does not exist (first run), no data provider is active and the setup wizard must be completed. Changing the active data provider requires a server restart.
 
-Plugins can register custom QUIC stream types in the `0x1000-0x1FFF` range. The plugin claims a stream type value during `ConfigureServices` and provides a handler:
+### Migration
 
-```csharp
-public interface IStreamTypeHandler
-{
-    ushort StreamType { get; }
-    Task<OneOf<Success, Error>> HandleAsync(QuicStream stream, ClientIdentity client, CancellationToken ct);
-}
-```
-
-The protocol layer dispatches incoming streams with plugin-registered type values to the appropriate handler.
+Each data provider plugin is responsible for its own schema migration. Migration runs during `StartAsync` - the `IDataProvider` interface does not expose a migration method. The server does not manage or orchestrate migration.
 
 ## Debug Tags
 

@@ -8,7 +8,7 @@ A network video management system designed for home and power users. It supports
 
 - **No transcoding** - video passes through as opaque NAL units; the server never decodes or re-encodes
 - **Single port access** - all client communication (API, live video, playback, events) over one QUIC/UDP port
-- **Plugin-first** - all major subsystems (capture, storage, formats, detection) are behind extension point interfaces; built-in functionality uses the same interfaces as third-party plugins
+- **Plugin-first** - all major subsystems (capture, storage, formats, detection) are behind extension point interfaces; there are no privileged internal code paths
 - **CPU-only by default** - the server must run efficiently on hardware without a GPU; hardware acceleration is a future plugin concern
 - **Containers first, native supported** - Docker/Podman is the primary deployment, but the server runs as a standalone binary with no container dependency
 
@@ -165,7 +165,7 @@ The server takes a single `--data-path` argument for core data (certs, plugins).
   plugins/                             # plugin assemblies
 ```
 
-The recordings path layout is managed by the `IStorageProvider` plugin. The layout below is an example from the built-in filesystem provider - other providers may organize data differently:
+The recordings path layout is managed by the `IStorageProvider` plugin. The layout below is an example from a filesystem provider - other providers may organize data differently:
 
 ```
 {recordings-path}/
@@ -200,8 +200,8 @@ See [plugins.md](plugins.md) for full specification.
 
 ### Extension Points
 
-| Interface | Purpose | Built-in Implementations |
-|-----------|---------|------------------------|
+| Interface | Purpose | Included Plugins |
+|-----------|---------|-----------------|
 | `ICaptureSource` | Acquire video from a source | RTSP (TCP interleaved) |
 | `IStreamFormat` | Mux/demux stream container format (video, audio, metadata) | Fragmented MP4 |
 | `ICameraProvider` | Camera-specific behavior, discovery | ONVIF, Generic RTSP |
@@ -211,11 +211,11 @@ See [plugins.md](plugins.md) for full specification.
 | `IStorageProvider` | Read/write recordings | NFS/local filesystem |
 | `IDataProvider` | Metadata storage (cameras, segments, events, config, etc.) | TBD |
 | `IAuthProvider` | Authenticate HTTP/web UI requests | None (unauthenticated by default) |
-| `IAuthzProvider` | Authorize operations and filter results by identity | Built-in RBAC (no provider = unrestricted `su` access) |
+| `IAuthzProvider` | Authorize operations and filter results by identity | Client-type RBAC (no provider = unrestricted access) |
 
 ### Plugin Services
 
-Plugins receive these services via dependency injection:
+Plugins receive these services from the plugin host via `PluginContext` (see [plugins.md](plugins.md)):
 
 | Service | Purpose |
 |---------|---------|
@@ -223,16 +223,16 @@ Plugins receive these services via dependency injection:
 | `IStreamTap` | Subscribe to raw NAL unit streams from cameras |
 | `IRecordingAccess` | Query and read recording segments |
 | `ICameraRegistry` | Enumerate cameras and stream profiles |
-| `IPluginConfig` | Read plugin-specific configuration |
-| `IPluginDataStore` | Per-plugin isolated key-value/document store for internal state |
+| `IConfig` | Read and write plugin-specific configuration |
+| `IDataStore` | Per-plugin isolated key-value/document store for internal state |
 
 ### Plugin Loading
 
 - Plugins are .NET assemblies placed in the `plugins/` directory
 - Each assembly contains a class implementing `IPlugin`
 - The plugin host discovers, loads, and manages plugin lifecycle
-- Plugins register their extension point implementations via `IServiceCollection`
-- Built-in modules use the same interfaces (no privileged internal paths)
+- A plugin provides extension points by implementing the corresponding interfaces on its `IPlugin` class
+- All plugins use the same interfaces (no privileged internal paths)
 
 ## Security Model
 
