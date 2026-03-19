@@ -8,7 +8,12 @@ const router = createRouter({
     { path: '/', name: 'gallery', component: () => import('@/views/GalleryView.vue') },
     { path: '/events', name: 'events', component: () => import('@/views/EventsView.vue') },
     { path: '/clients', name: 'clients', component: () => import('@/views/EnrollmentView.vue') },
-    { path: '/settings', name: 'settings', component: () => import('@/views/SettingsView.vue') },
+    { path: '/settings', redirect: '/settings/general' },
+    { path: '/settings/general', name: 'settings-general', component: () => import('@/views/settings/GeneralView.vue') },
+    { path: '/settings/cameras', name: 'settings-cameras', component: () => import('@/views/settings/CamerasView.vue') },
+    { path: '/settings/storage', name: 'settings-storage', component: () => import('@/views/settings/StorageView.vue') },
+    { path: '/settings/retention', name: 'settings-retention', component: () => import('@/views/settings/RetentionView.vue') },
+    { path: '/settings/plugins', name: 'settings-plugins', component: () => import('@/views/settings/PluginsView.vue') },
   ],
 })
 

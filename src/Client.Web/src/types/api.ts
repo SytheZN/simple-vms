@@ -88,6 +88,7 @@ export interface DiscoveryRequest {
 
 export interface DiscoveredCamera {
   address: string
+  hostname?: string
   name?: string
   manufacturer?: string
   model?: string

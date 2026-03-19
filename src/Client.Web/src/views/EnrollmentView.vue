@@ -87,8 +87,8 @@ onUnmounted(() => clearInterval(heartbeat))
 
 <template>
   <div class="space-y-8">
-    <div class="flex items-center justify-between">
-      <h1 class="section-heading">Clients</h1>
+    <h1 class="section-heading">Clients</h1>
+    <div>
       <button v-if="!enrolling" class="btn btn-primary" @click="startEnrollment">
         <i class="ph ph-plus icon-sm"></i> Add Client
       </button>

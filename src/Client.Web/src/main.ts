@@ -5,6 +5,7 @@ import router from './router'
 import '@phosphor-icons/web/regular'
 import '@phosphor-icons/web/fill'
 import './style.css'
+import './stores/theme'
 
 const app = createApp(App)
 app.use(createPinia())
