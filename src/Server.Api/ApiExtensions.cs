@@ -25,6 +25,7 @@ public static class ApiExtensions
 
   public static WebApplication UseApiMiddleware(this WebApplication app)
   {
+    app.UseMiddleware<CancellationMiddleware>();
     app.UseMiddleware<AuthMiddleware>();
     app.UseMiddleware<AuthzMiddleware>();
     return app;

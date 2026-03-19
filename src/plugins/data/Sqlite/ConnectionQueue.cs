@@ -30,7 +30,14 @@ internal sealed class ConnectionQueue
   {
     await foreach (var op in _channel.Reader.ReadAllAsync())
     {
-      op.Execute(_executor!);
+      try
+      {
+        op.Execute(_executor!);
+      }
+      catch (Exception ex)
+      {
+        op.TrySetFault(ex);
+      }
     }
   }
 
@@ -38,12 +45,13 @@ internal sealed class ConnectionQueue
   {
     public abstract void Execute(Func<Func<SqliteConnection, object?>, object?> executor);
     public abstract void TryCancel();
+    public abstract void TrySetFault(Exception ex);
   }
 
   private sealed class Operation<T> : Operation
   {
     private readonly Func<SqliteConnection, T> _work;
-    private readonly TaskCompletionSource<T> _tcs = new();
+    private readonly TaskCompletionSource<T> _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public Task<T> Task => _tcs.Task;
 
@@ -71,6 +79,11 @@ internal sealed class ConnectionQueue
     public override void TryCancel()
     {
       _tcs.TrySetCanceled();
+    }
+
+    public override void TrySetFault(Exception ex)
+    {
+      _tcs.TrySetException(ex);
     }
   }
 }
