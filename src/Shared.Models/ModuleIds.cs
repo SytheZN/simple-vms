@@ -26,4 +26,10 @@ public static class ModuleIds
   public const ushort PluginSqliteConfig = 0x1007;
   public const ushort PluginSqliteDataStore = 0x1008;
   public const ushort PluginSqliteMigration = 0x1009;
+
+  public const ushort PluginOnvifDiscovery = 0x1010;
+  public const ushort PluginOnvifDevice = 0x1011;
+  public const ushort PluginOnvifMedia = 0x1012;
+  public const ushort PluginOnvifEvents = 0x1013;
+  public const ushort PluginOnvifSoap = 0x1014;
 }

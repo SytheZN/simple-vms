@@ -93,24 +93,24 @@ public sealed class CameraTests
 
   /// <summary>
   /// SCENARIO:
-  /// No camera providers are registered
+  /// Camera provider is available but camera is unreachable
   ///
   /// ACTION:
-  /// POST /api/v1/cameras with an address
+  /// POST /api/v1/cameras with an unreachable address
   ///
   /// EXPECTED RESULT:
-  /// 400 because no camera provider is available to configure the camera
+  /// 500 because the provider fails to connect to the camera
   /// </summary>
   [Test]
-  public async Task CreateCamera_NoProviderReturnsBadRequest()
+  public async Task CreateCamera_UnreachableReturnsInternalError()
   {
     var response = await _client.PostAsJsonAsync("/api/v1/cameras",
-      new { address = "192.168.1.100" });
-    Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+      new { address = "http://192.0.2.1/onvif/device_service" });
+    Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.InternalServerError));
 
     var envelope = await ApiTestFixture.Envelope(response);
-    Assert.That(envelope.Result, Is.EqualTo(Result.BadRequest));
-    Assert.That(envelope.Message, Does.Contain("provider"));
+    Assert.That(envelope.Result, Is.EqualTo(Result.InternalError));
+    Assert.That(envelope.Message, Does.Contain("configure"));
   }
 
   /// <summary>

@@ -6,5 +6,12 @@
   <ItemGroup>
     <ProjectReference Include="../../src/Shared.Models/Shared.Models.csproj" />
     <ProjectReference Include="../../src/Shared.Protocol/Shared.Protocol.csproj" />
+    <ProjectReference Include="../../src/plugins/cameras/Onvif/Onvif.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="NUnit" />
+    <PackageReference Include="NUnit3TestAdapter" />
+    <PackageReference Include="NUnit.Analyzers" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
   </ItemGroup>
 </Project>

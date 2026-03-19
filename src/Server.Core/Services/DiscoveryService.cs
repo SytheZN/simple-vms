@@ -40,6 +40,7 @@ public sealed class DiscoveryService
           results.Add(new DiscoveredCameraDto
           {
             Address = cam.Address,
+            Hostname = cam.Hostname,
             Name = cam.Name,
             Manufacturer = cam.Manufacturer,
             Model = cam.Model,

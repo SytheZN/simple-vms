@@ -211,6 +211,7 @@ Trigger camera discovery.
 | Field | Type | Description |
 |-------|------|-------------|
 | `address` | string | Camera address |
+| `hostname` | string? | Reverse DNS hostname (if PTR record exists) |
 | `name` | string? | Device name (if available) |
 | `manufacturer` | string? | Device manufacturer |
 | `model` | string? | Device model |
