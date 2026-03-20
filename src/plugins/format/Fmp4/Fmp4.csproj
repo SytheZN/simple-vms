@@ -2,4 +2,7 @@
   <ItemGroup>
     <ProjectReference Include="../../../Shared.Models/Shared.Models.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="OneOf" />
+  </ItemGroup>
 </Project>

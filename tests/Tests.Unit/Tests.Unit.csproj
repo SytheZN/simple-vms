@@ -12,6 +12,7 @@
     <ProjectReference Include="../../src/plugins/cameras/Onvif/Onvif.csproj" />
     <ProjectReference Include="../../src/plugins/capture/Rtsp/Rtsp.csproj" />
     <ProjectReference Include="../../src/Server.Streaming/Server.Streaming.csproj" />
+    <ProjectReference Include="../../src/plugins/format/Fmp4/Fmp4.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="NUnit" />

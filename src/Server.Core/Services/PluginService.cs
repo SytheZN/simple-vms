@@ -18,7 +18,7 @@ public sealed class PluginService
     var plugins = (IEnumerable<PluginEntry>)_host.Plugins;
     if (type != null)
       plugins = plugins.Where(p => p.ExtensionPoints.Contains(type, StringComparer.OrdinalIgnoreCase));
-    var items = plugins.Select(ToDto).ToList();
+    var items = plugins.Select(ToDto).OrderBy(p => p.Name).ToList();
     return items;
   }
 
