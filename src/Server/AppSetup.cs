@@ -5,12 +5,14 @@ using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Server.Api;
 using Server.Core;
 using Server.Plugins;
+using Server.Streaming;
 using Shared.Models;
 
 namespace Server;
 
 public static class AppSetup
 {
+  private static StreamingService? _streamingService;
   public static void Configure(WebApplicationBuilder builder)
   {
     var config = builder.Configuration;
@@ -46,6 +48,11 @@ public static class AppSetup
       earlyLoggerFactory.CreateLogger<PluginHost>(), dataProviderConfig, eventBus, environment);
     pluginHost.Discover(pluginsPath);
     builder.Services.AddSingleton(pluginHost);
+    builder.Services.AddSingleton<IPluginHost>(pluginHost);
+
+    var tapRegistry = new StreamTapRegistry();
+    builder.Services.AddSingleton(tapRegistry);
+    builder.Services.AddSingleton<IStreamTap>(tapRegistry);
 
     builder.Services.AddApiServices();
 
@@ -80,7 +87,9 @@ public static class AppSetup
 
     app.Lifetime.ApplicationStopping.Register(() =>
     {
-      var pluginHost = app.Services.GetRequiredService<PluginHost>();
+      _streamingService?.StopAsync().GetAwaiter().GetResult();
+
+      var pluginHost = app.Services.GetRequiredService<IPluginHost>();
       pluginHost.StopAsync().GetAwaiter().GetResult();
     });
 
@@ -95,7 +104,7 @@ public static class AppSetup
     }
     else
     {
-      var pluginHost = app.Services.GetRequiredService<PluginHost>();
+      var pluginHost = app.Services.GetRequiredService<IPluginHost>();
       pluginHost.Initialize(dataOnly: true);
       _ = PollForCertsAsync(app, certManager, systemHealth);
     }
@@ -103,9 +112,23 @@ public static class AppSetup
 
   internal static async Task CompleteStartupAsync(WebApplication app)
   {
-    var pluginHost = app.Services.GetRequiredService<PluginHost>();
+    var pluginHost = app.Services.GetRequiredService<IPluginHost>();
+    var tapRegistry = app.Services.GetRequiredService<StreamTapRegistry>();
+    var statusTracker = app.Services.GetRequiredService<CameraStatusTracker>();
+    var eventBus = app.Services.GetRequiredService<IEventBus>();
+
+    pluginHost.SetStreamTap(tapRegistry);
+
     pluginHost.Initialize();
     await pluginHost.StartAsync(app.Lifetime.ApplicationStopping);
+
+    var cameraRegistry = new CameraRegistryImpl(pluginHost.DataProvider, statusTracker);
+    pluginHost.SetCameraRegistry(cameraRegistry);
+
+    _streamingService = new StreamingService(
+      pluginHost, tapRegistry, eventBus,
+      app.Services.GetRequiredService<ILoggerFactory>().CreateLogger<StreamingService>());
+    await _streamingService.StartAsync(app.Lifetime.ApplicationStopping);
   }
 
   private static bool TryInitializeCerts(WebApplication app, CertificateManager certManager)
