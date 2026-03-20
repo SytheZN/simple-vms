@@ -109,11 +109,9 @@ public sealed partial class OnvifProvider : ICameraProvider
     var eventsUri = config.Config.GetValueOrDefault("eventsUri");
     if (eventsUri == null) return null;
 
-    var credentials = new Credentials
-    {
-      Username = _config.Get("username", "admin"),
-      Password = _config.Get("password", "")
-    };
+    var credentials = Credentials.FromUserPass(
+      _config.Get("username", "admin"),
+      _config.Get("password", ""));
 
     var pullPoint = await _events.CreatePullPointAsync(eventsUri, credentials, ct);
 
@@ -142,9 +140,8 @@ public sealed partial class OnvifProvider : ICameraProvider
     return null;
   }
 
-  private Credentials ResolveCredentials(DiscoveryOptions options) => new()
-  {
-    Username = options.Username ?? _config.Get("username", "admin"),
-    Password = options.Password ?? _config.Get("password", "")
-  };
+  private Credentials ResolveCredentials(DiscoveryOptions options) =>
+    Credentials.FromUserPass(
+      options.Username ?? _config.Get("username", "admin"),
+      options.Password ?? _config.Get("password", ""));
 }

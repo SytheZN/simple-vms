@@ -33,8 +33,6 @@ public sealed class StreamingService : IAsyncDisposable
       return;
     }
 
-    var activationCount = 0;
-
     foreach (var camera in camerasResult.AsT0)
     {
       var streamsResult = await dataProvider.Streams.GetByCameraIdAsync(camera.Id, ct);
@@ -58,19 +56,11 @@ public sealed class StreamingService : IAsyncDisposable
           _eventBus, _logger);
 
         _tapRegistry.RegisterPipeline(pipeline);
-
-        if (stream.RecordingEnabled)
-        {
-          var result = await pipeline.ActivateAsync(ct);
-          if (result.IsT0)
-            activationCount++;
-        }
       }
     }
 
-    _logger.LogInformation(
-      "Streaming service started: {Total} pipeline(s), {Active} active",
-      _tapRegistry.Pipelines.Count, activationCount);
+    _logger.LogInformation("Streaming service started: {Count} pipeline(s) registered",
+      _tapRegistry.Pipelines.Count);
   }
 
   public async Task StopAsync()
@@ -99,25 +89,23 @@ public sealed class StreamingService : IAsyncDisposable
 
   private static CameraConnectionInfo BuildConnectionInfo(Camera camera, CameraStream stream)
   {
-    string? username = null;
-    string? password = null;
+    Dictionary<string, string>? credentials = null;
 
     if (camera.Credentials is { Length: > 0 } creds)
     {
-      var credStr = System.Text.Encoding.UTF8.GetString(creds);
-      var parts = credStr.Split(':', 2);
-      if (parts.Length == 2)
+      try
       {
-        username = parts[0];
-        password = parts[1];
+        credentials = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(creds);
+      }
+      catch (System.Text.Json.JsonException)
+      {
       }
     }
 
     return new CameraConnectionInfo
     {
       Uri = stream.Uri,
-      Username = username,
-      Password = password
+      Credentials = credentials
     };
   }
 }

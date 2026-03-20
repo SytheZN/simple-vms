@@ -25,9 +25,11 @@ public sealed class RtspConnection : IStreamConnection
   }
 
   public static async Task<RtspConnection> CreateAsync(
-    string uri, string? username, string? password, CancellationToken ct)
+    string uri, IReadOnlyDictionary<string, string>? credentials, CancellationToken ct)
   {
     var client = new RtspClient();
+    var username = credentials?.GetValueOrDefault("username");
+    var password = credentials?.GetValueOrDefault("password");
     var sdpText = await client.ConnectAndDescribeAsync(uri, username, password, ct);
     var mediaDescriptions = SdpParser.Parse(sdpText);
 

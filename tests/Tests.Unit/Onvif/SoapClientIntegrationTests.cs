@@ -29,7 +29,7 @@ public class SoapClientIntegrationTests
     using var http = new HttpClient(handler);
     var soap = new SoapClient(http);
     var device = new DeviceService(soap);
-    var creds = new Credentials { Username = "admin", Password = "pass" };
+    var creds = Credentials.FromUserPass("admin", "pass");
 
     var info = await device.GetDeviceInformationAsync("http://localhost/onvif/device_service", creds, CancellationToken.None);
 
@@ -57,7 +57,7 @@ public class SoapClientIntegrationTests
     using var http = new HttpClient(handler);
     var soap = new SoapClient(http);
     var device = new DeviceService(soap);
-    var creds = new Credentials { Username = "admin", Password = "pass" };
+    var creds = Credentials.FromUserPass("admin", "pass");
 
     var caps = await device.GetCapabilitiesAsync("http://localhost/onvif/device_service", creds, CancellationToken.None);
 
@@ -100,7 +100,7 @@ public class SoapClientIntegrationTests
     using var http = new HttpClient(handler);
     var soap = new SoapClient(http);
     var media = new MediaService(soap);
-    var creds = new Credentials { Username = "admin", Password = "pass" };
+    var creds = Credentials.FromUserPass("admin", "pass");
 
     var profiles = await media.GetProfilesAsync("http://localhost/onvif/media", creds, CancellationToken.None);
 
@@ -127,7 +127,7 @@ public class SoapClientIntegrationTests
     using var http = new HttpClient(handler);
     var soap = new SoapClient(http);
     var media = new MediaService(soap);
-    var creds = new Credentials { Username = "admin", Password = "pass" };
+    var creds = Credentials.FromUserPass("admin", "pass");
 
     var uri = await media.GetStreamUriAsync("http://localhost/onvif/media", creds, "MainProfile", CancellationToken.None);
 

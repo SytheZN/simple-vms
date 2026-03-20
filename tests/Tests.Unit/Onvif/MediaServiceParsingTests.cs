@@ -37,7 +37,7 @@ public class MediaServiceParsingTests
 
     var service = CreateService(responseXml);
     var profiles = await service.GetProfilesAsync(
-      "http://cam/media", new Credentials { Username = "admin", Password = "" },
+      "http://cam/media", Credentials.FromUserPass("admin", ""),
       CancellationToken.None);
 
     Assert.That(profiles, Has.Count.EqualTo(1));
@@ -70,7 +70,7 @@ public class MediaServiceParsingTests
 
     var service = CreateService(responseXml);
     var profiles = await service.GetProfilesAsync(
-      "http://cam/media", new Credentials { Username = "admin", Password = "" },
+      "http://cam/media", Credentials.FromUserPass("admin", ""),
       CancellationToken.None);
 
     Assert.That(profiles[0].Codec, Is.EqualTo("h265"));
@@ -94,7 +94,7 @@ public class MediaServiceParsingTests
 
     var service = CreateService(responseXml);
     var profiles = await service.GetProfilesAsync(
-      "http://cam/media", new Credentials { Username = "admin", Password = "" },
+      "http://cam/media", Credentials.FromUserPass("admin", ""),
       CancellationToken.None);
 
     Assert.That(profiles, Is.Empty);
@@ -119,7 +119,7 @@ public class MediaServiceParsingTests
 
     var service = CreateService(responseXml);
     var uri = await service.GetStreamUriAsync(
-      "http://cam/media", new Credentials { Username = "admin", Password = "" },
+      "http://cam/media", Credentials.FromUserPass("admin", ""),
       "prof1", CancellationToken.None);
 
     Assert.That(uri, Is.EqualTo("rtsp://192.168.1.10:554/stream1"));
@@ -143,7 +143,7 @@ public class MediaServiceParsingTests
 
     var service = CreateService(responseXml);
     var uri = await service.GetStreamUriAsync(
-      "http://cam/media", new Credentials { Username = "admin", Password = "" },
+      "http://cam/media", Credentials.FromUserPass("admin", ""),
       "prof1", CancellationToken.None);
 
     Assert.That(uri, Is.Null);

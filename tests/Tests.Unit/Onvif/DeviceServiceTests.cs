@@ -31,7 +31,7 @@ public class DeviceServiceTests
 
     var service = CreateService(responseXml);
     var info = await service.GetDeviceInformationAsync(
-      "http://cam/device_service", new Credentials { Username = "admin", Password = "" },
+      "http://cam/device_service", Credentials.FromUserPass("admin", ""),
       CancellationToken.None);
 
     Assert.That(info.Manufacturer, Is.EqualTo("Acme"));
@@ -65,7 +65,7 @@ public class DeviceServiceTests
 
     var service = CreateService(responseXml);
     var caps = await service.GetCapabilitiesAsync(
-      "http://cam/device_service", new Credentials { Username = "admin", Password = "" },
+      "http://cam/device_service", Credentials.FromUserPass("admin", ""),
       CancellationToken.None);
 
     Assert.That(caps.MediaUri, Is.EqualTo("http://cam/media"));
@@ -95,7 +95,7 @@ public class DeviceServiceTests
 
     var service = CreateService(responseXml);
     var caps = await service.GetCapabilitiesAsync(
-      "http://cam/device_service", new Credentials { Username = "admin", Password = "" },
+      "http://cam/device_service", Credentials.FromUserPass("admin", ""),
       CancellationToken.None);
 
     Assert.That(caps.HasPtz, Is.False);

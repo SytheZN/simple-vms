@@ -39,7 +39,7 @@ public class EventServiceParsingTests
 
     var service = CreateService(responseXml);
     var notifications = await service.PullMessagesAsync(
-      "http://cam/pullpoint", new Credentials { Username = "admin", Password = "" },
+      "http://cam/pullpoint", Credentials.FromUserPass("admin", ""),
       CancellationToken.None);
 
     Assert.That(notifications, Has.Count.EqualTo(1));
@@ -69,7 +69,7 @@ public class EventServiceParsingTests
 
     var service = CreateService(responseXml);
     var notifications = await service.PullMessagesAsync(
-      "http://cam/pullpoint", new Credentials { Username = "admin", Password = "" },
+      "http://cam/pullpoint", Credentials.FromUserPass("admin", ""),
       CancellationToken.None);
 
     Assert.That(notifications, Is.Empty);
@@ -100,7 +100,7 @@ public class EventServiceParsingTests
 
     var service = CreateService(responseXml);
     var notifications = await service.PullMessagesAsync(
-      "http://cam/pullpoint", new Credentials { Username = "admin", Password = "" },
+      "http://cam/pullpoint", Credentials.FromUserPass("admin", ""),
       CancellationToken.None);
 
     Assert.That(notifications, Has.Count.EqualTo(1));
@@ -128,7 +128,7 @@ public class EventServiceParsingTests
 
     var service = CreateService(responseXml);
     var notifications = await service.PullMessagesAsync(
-      "http://cam/pullpoint", new Credentials { Username = "admin", Password = "" },
+      "http://cam/pullpoint", Credentials.FromUserPass("admin", ""),
       CancellationToken.None);
 
     Assert.That(notifications, Has.Count.EqualTo(1));
@@ -157,7 +157,7 @@ public class EventServiceParsingTests
 
     var service = CreateService(responseXml);
     var info = await service.CreatePullPointAsync(
-      "http://cam/events", new Credentials { Username = "admin", Password = "" },
+      "http://cam/events", Credentials.FromUserPass("admin", ""),
       CancellationToken.None);
 
     Assert.That(info.SubscriptionUri, Is.EqualTo("http://cam/pullpoint/sub1"));

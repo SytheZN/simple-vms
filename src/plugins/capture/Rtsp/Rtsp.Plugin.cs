@@ -29,7 +29,7 @@ public sealed class RtspPlugin : IPlugin, ICaptureSource
     try
     {
       var connection = await RtspConnection.CreateAsync(
-        info.Uri, info.Username, info.Password, ct);
+        info.Uri, info.Credentials, ct);
       return connection;
     }
     catch (Exception ex)

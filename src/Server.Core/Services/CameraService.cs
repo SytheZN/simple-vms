@@ -78,8 +78,8 @@ public sealed class CameraService
         $"Camera at address {request.Address} already exists");
 
     var creds = request.Credentials != null
-      ? new Credentials { Username = request.Credentials.Username, Password = request.Credentials.Password }
-      : new Credentials { Username = "", Password = "" };
+      ? Credentials.FromUserPass(request.Credentials.Username, request.Credentials.Password)
+      : Credentials.FromUserPass("", "");
 
     CameraConfiguration config;
     try
@@ -101,7 +101,10 @@ public sealed class CameraService
       Name = request.Name ?? config.Name,
       Address = request.Address,
       ProviderId = provider.ProviderId,
+      Credentials = System.Text.Encoding.UTF8.GetBytes(
+        System.Text.Json.JsonSerializer.Serialize(creds.Values, CredentialsJsonContext.Default.IReadOnlyDictionaryStringString)),
       Capabilities = config.Capabilities,
+      Config = config.Config,
       CreatedAt = now,
       UpdatedAt = now
     };

@@ -13,7 +13,7 @@ public sealed class SoapClient(HttpClient http)
     CancellationToken ct = default)
   {
     var security = credentials != null
-      ? WsUsernameToken.Build(credentials.Username, credentials.Password)
+      ? WsUsernameToken.Build(credentials.Get("username") ?? "", credentials.Get("password") ?? "")
       : null;
     var envelope = XmlHelpers.BuildEnvelope(body, security);
 

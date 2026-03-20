@@ -20,12 +20,15 @@ public sealed class RtspClient : IAsyncDisposable
   private NetworkStream? _stream;
   private int _cseq;
   private string? _session;
+  private int _sessionTimeout = 60;
   private string? _authHeader;
   private string? _realm;
   private string? _nonce;
   private string? _username;
   private string? _password;
   private Uri _uri = null!;
+  private Timer? _keepaliveTimer;
+  private readonly Lock _writeLock = new();
 
   public RtspState State { get; private set; } = RtspState.Disconnected;
 
@@ -72,6 +75,16 @@ public sealed class RtspClient : IAsyncDisposable
         var sessionValue = header["Session:".Length..].Trim();
         var semicolonIdx = sessionValue.IndexOf(';');
         _session = semicolonIdx >= 0 ? sessionValue[..semicolonIdx] : sessionValue;
+
+        var timeoutIdx = sessionValue.IndexOf("timeout=", StringComparison.OrdinalIgnoreCase);
+        if (timeoutIdx >= 0)
+        {
+          var timeoutStr = sessionValue[(timeoutIdx + 8)..];
+          var endIdx = timeoutStr.IndexOfAny([';', ' ', ',']);
+          if (endIdx > 0) timeoutStr = timeoutStr[..endIdx];
+          if (int.TryParse(timeoutStr, out var timeout) && timeout > 0)
+            _sessionTimeout = timeout;
+        }
       }
     }
 
@@ -90,10 +103,14 @@ public sealed class RtspClient : IAsyncDisposable
       throw new InvalidOperationException($"PLAY failed with status {response.StatusCode}");
 
     State = RtspState.Playing;
+    StartKeepalive();
   }
 
   public async Task TeardownAsync(CancellationToken ct)
   {
+    _keepaliveTimer?.Dispose();
+    _keepaliveTimer = null;
+
     if (_stream == null || State == RtspState.Disconnected || State == RtspState.Teardown)
       return;
 
@@ -108,6 +125,41 @@ public sealed class RtspClient : IAsyncDisposable
     }
 
     State = RtspState.Teardown;
+  }
+
+  private void StartKeepalive()
+  {
+    var interval = TimeSpan.FromSeconds(Math.Max(_sessionTimeout / 2, 5));
+    _keepaliveTimer = new Timer(_ => SendKeepalive(), null, interval, interval);
+  }
+
+  private void SendKeepalive()
+  {
+    if (_stream == null || State != RtspState.Playing)
+      return;
+
+    try
+    {
+      var cseq = Interlocked.Increment(ref _cseq);
+      var sb = new StringBuilder();
+      sb.Append($"OPTIONS {_uri.AbsoluteUri} RTSP/1.0\r\n");
+      sb.Append($"CSeq: {cseq}\r\n");
+      sb.Append("User-Agent: SimpleVMS/1.0\r\n");
+      if (_session != null)
+        sb.Append($"Session: {_session}\r\n");
+      sb.Append("\r\n");
+
+      var bytes = Encoding.ASCII.GetBytes(sb.ToString());
+      lock (_writeLock)
+      {
+        _stream.Write(bytes);
+        _stream.Flush();
+      }
+    }
+    catch
+    {
+      // connection is dead, read loop will detect it
+    }
   }
 
   public async Task<(byte Channel, ReadOnlyMemory<byte> Payload)?> ReadInterleavedFrameAsync(
@@ -322,6 +374,9 @@ public sealed class RtspClient : IAsyncDisposable
 
   public async ValueTask DisposeAsync()
   {
+    _keepaliveTimer?.Dispose();
+    _keepaliveTimer = null;
+
     if (State == RtspState.Playing)
     {
       try { await TeardownAsync(CancellationToken.None); }
