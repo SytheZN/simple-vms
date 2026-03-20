@@ -4,7 +4,7 @@ using Shared.Models;
 
 namespace Server.Plugins;
 
-public sealed class PluginHost
+public sealed class PluginHost : IPluginHost
 {
   private readonly List<PluginEntry> _plugins = [];
   private readonly ILogger<PluginHost> _logger;
@@ -40,6 +40,15 @@ public sealed class PluginHost
   public IReadOnlyList<IStorageProvider> StorageProviders => _storageProviders;
   public IReadOnlyList<IAuthProvider> AuthProviders => _authProviders;
   public IReadOnlyList<IAuthzProvider> AuthzProviders => _authzProviders;
+
+  private IStreamTap? _streamTap;
+  private ICameraRegistry? _cameraRegistry;
+
+  public void SetStreamTap(IStreamTap streamTap) => _streamTap = streamTap;
+  public void SetCameraRegistry(ICameraRegistry cameraRegistry) => _cameraRegistry = cameraRegistry;
+
+  public IStreamFormat? FindFormat(Type inputType) =>
+    _streamFormats.FirstOrDefault(f => f.InputType == inputType);
 
   public PluginHost(
     ILogger<PluginHost> logger,
@@ -173,7 +182,9 @@ public sealed class PluginHost
         : new InMemoryConfig(),
       Environment = _environment,
       EventBus = _eventBus,
-      DataStore = _dataProvider?.GetDataStore(entry.Metadata.Id)
+      DataStore = _dataProvider?.GetDataStore(entry.Metadata.Id),
+      StreamTap = _streamTap,
+      CameraRegistry = _cameraRegistry
     };
   }
 

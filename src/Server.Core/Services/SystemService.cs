@@ -6,10 +6,10 @@ namespace Server.Core.Services;
 
 public sealed class SystemService
 {
-  private readonly PluginHost _plugins;
+  private readonly IPluginHost _plugins;
   private readonly SystemHealth _health;
 
-  public SystemService(PluginHost plugins, SystemHealth health)
+  public SystemService(IPluginHost plugins, SystemHealth health)
   {
     _plugins = plugins;
     _health = health;

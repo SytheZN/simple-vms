@@ -6,10 +6,10 @@ namespace Server.Core.Services;
 
 public sealed class CameraService
 {
-  private readonly PluginHost _plugins;
+  private readonly IPluginHost _plugins;
   private readonly CameraStatusTracker _status;
 
-  public CameraService(PluginHost plugins, CameraStatusTracker status)
+  public CameraService(IPluginHost plugins, CameraStatusTracker status)
   {
     _plugins = plugins;
     _status = status;

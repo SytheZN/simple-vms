@@ -6,9 +6,9 @@ namespace Server.Core.Services;
 
 public sealed class EventService
 {
-  private readonly PluginHost _plugins;
+  private readonly IPluginHost _plugins;
 
-  public EventService(PluginHost plugins)
+  public EventService(IPluginHost plugins)
   {
     _plugins = plugins;
   }

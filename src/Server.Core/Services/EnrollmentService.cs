@@ -14,12 +14,12 @@ public sealed class EnrollmentService
 
   private readonly ConcurrentDictionary<string, ulong> _pending = new();
   private readonly ICertificateService _certs;
-  private readonly PluginHost _plugins;
+  private readonly IPluginHost _plugins;
   private readonly ServerEndpoints _endpoints;
 
   public EnrollmentService(
     ICertificateService certs,
-    PluginHost plugins,
+    IPluginHost plugins,
     ServerEndpoints endpoints)
   {
     _certs = certs;

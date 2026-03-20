@@ -2,6 +2,7 @@ using System.Net;
 using Microsoft.Extensions.DependencyInjection;
 using Server.Plugins;
 using Shared.Models;
+
 using Shared.Models.Dto;
 
 namespace Tests.Integration.Api;
@@ -19,7 +20,7 @@ public sealed class RecordingTests
   public async Task Setup()
   {
     _client = ApiTestFixture.Client;
-    _data = ApiTestFixture.App.Services.GetRequiredService<PluginHost>().DataProvider;
+    _data = ApiTestFixture.App.Services.GetRequiredService<IPluginHost>().DataProvider;
 
     _cameraId = Guid.NewGuid();
     _streamId = Guid.NewGuid();

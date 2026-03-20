@@ -6,10 +6,10 @@ namespace Server.Core.Services;
 
 public sealed class ClientService
 {
-  private readonly PluginHost _plugins;
+  private readonly IPluginHost _plugins;
   private readonly ConnectionTracker _connections;
 
-  public ClientService(PluginHost plugins, ConnectionTracker connections)
+  public ClientService(IPluginHost plugins, ConnectionTracker connections)
   {
     _plugins = plugins;
     _connections = connections;

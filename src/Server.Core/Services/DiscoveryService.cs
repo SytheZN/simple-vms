@@ -6,9 +6,9 @@ namespace Server.Core.Services;
 
 public sealed class DiscoveryService
 {
-  private readonly PluginHost _plugins;
+  private readonly IPluginHost _plugins;
 
-  public DiscoveryService(PluginHost plugins)
+  public DiscoveryService(IPluginHost plugins)
   {
     _plugins = plugins;
   }

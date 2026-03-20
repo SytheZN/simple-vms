@@ -19,7 +19,7 @@ public sealed class EventTests
   public async Task Setup()
   {
     _client = ApiTestFixture.Client;
-    _data = ApiTestFixture.App.Services.GetRequiredService<PluginHost>().DataProvider;
+    _data = ApiTestFixture.App.Services.GetRequiredService<IPluginHost>().DataProvider;
 
     _cameraId = Guid.NewGuid();
     _eventId = Guid.NewGuid();

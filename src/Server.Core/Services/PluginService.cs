@@ -6,9 +6,9 @@ namespace Server.Core.Services;
 
 public sealed class PluginService
 {
-  private readonly PluginHost _host;
+  private readonly IPluginHost _host;
 
-  public PluginService(PluginHost host)
+  public PluginService(IPluginHost host)
   {
     _host = host;
   }

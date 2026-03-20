@@ -6,9 +6,9 @@ namespace Server.Core.Services;
 
 public sealed class RecordingService
 {
-  private readonly PluginHost _plugins;
+  private readonly IPluginHost _plugins;
 
-  public RecordingService(PluginHost plugins)
+  public RecordingService(IPluginHost plugins)
   {
     _plugins = plugins;
   }

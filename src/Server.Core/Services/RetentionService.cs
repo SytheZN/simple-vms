@@ -9,9 +9,9 @@ public sealed class RetentionService
   private const string ModeKey = "retention.mode";
   private const string ValueKey = "retention.value";
 
-  private readonly PluginHost _plugins;
+  private readonly IPluginHost _plugins;
 
-  public RetentionService(PluginHost plugins)
+  public RetentionService(IPluginHost plugins)
   {
     _plugins = plugins;
   }
