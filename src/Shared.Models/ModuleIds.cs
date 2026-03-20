@@ -32,4 +32,7 @@ public static class ModuleIds
   public const ushort PluginOnvifMedia = 0x1012;
   public const ushort PluginOnvifEvents = 0x1013;
   public const ushort PluginOnvifSoap = 0x1014;
+
+  public const ushort Streaming = 0x000C;
+  public const ushort PluginRtspCapture = 0x1020;
 }

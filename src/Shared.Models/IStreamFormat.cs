@@ -4,19 +4,14 @@ public interface IStreamFormat
 {
   string FormatId { get; }
   string FileExtension { get; }
-  ISegmentWriter CreateWriter(Stream output, CodecInfo codec);
-  ISegmentReader CreateReader(Stream input);
-}
-
-public interface ISegmentWriter : IAsyncDisposable
-{
-  Task WriteNalUnitAsync(NalUnit unit, CancellationToken ct);
-  Task FinalizeAsync(CancellationToken ct);
-  IReadOnlyList<KeyframeEntry> Keyframes { get; }
+  Type InputType { get; }
+  Type OutputType { get; }
+  OneOf<IVideoStream, Error> CreatePipeline(IDataStream input, StreamInfo info);
+  OneOf<ISegmentReader, Error> CreateReader(Stream input);
 }
 
 public interface ISegmentReader : IAsyncDisposable
 {
-  Task SeekToKeyframeAsync(long byteOffset, CancellationToken ct);
-  IAsyncEnumerable<Fragment> ReadFragmentsAsync(CancellationToken ct);
+  Task<OneOf<Success, Error>> SeekAsync(long byteOffset, CancellationToken ct);
+  IAsyncEnumerable<IDataUnit> ReadAsync(CancellationToken ct);
 }

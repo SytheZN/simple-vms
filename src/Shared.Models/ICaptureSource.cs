@@ -3,11 +3,12 @@ namespace Shared.Models;
 public interface ICaptureSource
 {
   string Protocol { get; }
-  Task<IStreamConnection> ConnectAsync(CameraConnectionInfo info, CancellationToken ct);
+  Task<OneOf<IStreamConnection, Error>> ConnectAsync(CameraConnectionInfo info, CancellationToken ct);
 }
 
 public interface IStreamConnection : IAsyncDisposable
 {
-  IAsyncEnumerable<NalUnit> ReadNalUnitsAsync(CancellationToken ct);
   StreamInfo Info { get; }
+  IDataStream DataStream { get; }
+  Task Completed { get; }
 }
