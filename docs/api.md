@@ -165,7 +165,7 @@ Update camera configuration.
 | `name` | string? | Display name |
 | `credentials` | object? | Updated credentials |
 | `streams` | object[]? | Per-stream config (recording enabled/disabled) |
-| `segmentDuration` | int? | Target segment duration in seconds (null = use global default, actual duration rounds to the nearest keyframe boundary) |
+| `segmentDuration` | int? | Target segment duration in seconds (null = use global default, actual duration rounds to the nearest sync point boundary) |
 | `retention` | object? | Retention policy override for this camera (see retention endpoint for shape) |
 
 Retention override object:
@@ -183,7 +183,7 @@ Remove a camera. Stops streaming and recording. Recordings are retained accordin
 
 #### POST /api/v1/cameras/{id}/restart
 
-Restart the connection to a camera (disconnect and reconnect RTSP).
+Restart the connection to a camera (disconnect and reconnect).
 
 #### GET /api/v1/cameras/{id}/snapshot
 
@@ -385,7 +385,7 @@ Update server settings.
 |-------|------|-------------|
 | `serverName` | string? | Display name for this server |
 | `externalEndpoint` | string? | External hostname/IP for enrollment payloads |
-| `segmentDuration` | int? | Default recording segment duration in seconds (default: 300). Actual duration rounds to the nearest keyframe boundary. |
+| `segmentDuration` | int? | Default recording segment duration in seconds (default: 300). Actual duration rounds to the nearest sync point boundary. |
 | `discoverySubnets` | string[]? | Subnets to include in discovery scans |
 | `defaultCredentials` | object? | Default camera credentials for discovery |
 

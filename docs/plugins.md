@@ -93,13 +93,66 @@ The `POST /api/v1/plugins/{id}/start` and `POST /api/v1/plugins/{id}/stop` endpo
 | `stopped` | User-stopped via `IUserStartable` (only for plugins that implement it) |
 | `error` | Start failed or unhandled exception |
 
+## Stream Pipeline Types
+
+The stream pipeline uses typed streams and data units to connect plugins. These types live in `Shared.Models` (base interfaces) and `Shared.Models/Formats/` (format-specific data unit and parameter types).
+
+### Base Interfaces
+
+```csharp
+public interface IDataUnit
+{
+    ReadOnlyMemory<byte> Data { get; }
+    ulong Timestamp { get; }
+    bool IsSyncPoint { get; }
+}
+
+public interface IDataStream
+{
+    StreamInfo Info { get; }
+    Type FrameType { get; }
+}
+
+public interface IDataStream<T> : IDataStream where T : IDataUnit
+{
+    IAsyncEnumerable<T> ReadAsync(CancellationToken ct);
+}
+
+public interface IVideoStream
+{
+    StreamInfo Info { get; }
+    Type FrameType { get; }
+}
+
+public interface IVideoStream<T> : IVideoStream where T : IDataUnit
+{
+    IAsyncEnumerable<T> ReadAsync(CancellationToken ct);
+}
+
+public sealed class StreamInfo
+{
+    public required string DataFormat { get; init; }
+    public object? FormatParameters { get; init; }
+    public string? Resolution { get; init; }
+    public int? Fps { get; init; }
+}
+```
+
+`IDataStream<T>` carries raw codec data from capture sources. `IVideoStream<T>` carries muxed container data from format plugins. The non-generic base interfaces (`IDataStream`, `IVideoStream`) allow the server core to wire the pipeline by matching `FrameType` without knowing the generic type parameter at compile time.
+
+`StreamInfo.FormatParameters` is `object?` - plugins within the same assembly cast it to the expected type (e.g. `H264Parameters`). Plugins in different assemblies that handle the same format reference the shared type from `Shared.Models/Formats/`.
+
+### Format Types
+
+Format-specific data unit and parameter types live in `Shared.Models/Formats/`. These are the typed interop contract between capture sources and format plugins - compatible pipeline stages reference the same types. Each data unit type implements `IDataUnit`. Each codec may also define a parameters type carried on `StreamInfo.FormatParameters` for out-of-band configuration (e.g. H.264 SPS/PPS).
+
 ## Extension Points
 
 Extension points are interfaces defined in the `Shared.Models` assembly. A plugin provides extension points by implementing the corresponding interfaces on its `IPlugin` class. The host discovers them via reflection. When multiple plugins implement the same extension point, the system uses all of them.
 
 ### ICaptureSource
 
-Acquires video from a source and produces raw NAL units.
+Connects to a source and produces a typed data stream. The capture source handles all transport concerns (protocol negotiation, transport-layer demuxing) and outputs raw codec data as typed `IDataStream<T>`. For example, an RTSP capture source handles RTSP signaling and RTP depacketization, outputting `IDataStream<H264NalUnit>`. A vendor SDK capture source handles the proprietary protocol and outputs the same `IDataStream<H264NalUnit>` - downstream plugins are agnostic to the transport.
 
 ```csharp
 public interface ICaptureSource
@@ -110,41 +163,40 @@ public interface ICaptureSource
 
 public interface IStreamConnection : IAsyncDisposable
 {
-    Task<OneOf<IAsyncEnumerable<NalUnit>, Error>> ReadNalUnitsAsync(CancellationToken ct);
     StreamInfo Info { get; }
+    IDataStream DataStream { get; }
 }
 ```
 
-Plugins could implement capture from RTSP (TCP interleaved), files, RTMP, or proprietary protocols.
+Plugins could implement capture from RTSP (TCP interleaved), files, RTMP, vendor SDKs (e.g. HikVision), or USB (V4L2).
 
 ### IStreamFormat
 
-Muxes stream data into a container format for storage and demuxes for playback. Handles any streamable data type - video (H.264/265), audio, motion metadata, or future data types.
+Consumes a data stream and produces a video stream in a container format. Declares which input types it accepts and what output type it produces. The server core matches capture source output types to format plugin input types when building the stream pipeline.
+
+A single plugin assembly can implement `IStreamFormat` multiple times for different input types (e.g. an fMP4 plugin that accepts both `H264NalUnit` and `H265NalUnit`). Since both the format plugin and the capture source reference the same data unit types from `Shared.Models/Formats/`, they interoperate without any knowledge of each other.
 
 ```csharp
 public interface IStreamFormat
 {
     string FormatId { get; }
     string FileExtension { get; }
-    OneOf<ISegmentWriter, Error> CreateWriter(Stream output, CodecInfo codec);
+    Type InputType { get; }
+    Type OutputType { get; }
+    OneOf<IVideoStream, Error> CreatePipeline(IDataStream input, StreamInfo info);
     OneOf<ISegmentReader, Error> CreateReader(Stream input);
-}
-
-public interface ISegmentWriter : IAsyncDisposable
-{
-    Task<OneOf<Success, Error>> WriteNalUnitAsync(NalUnit unit, CancellationToken ct);
-    Task<OneOf<Success, Error>> FinalizeAsync(CancellationToken ct);
-    IReadOnlyList<KeyframeEntry> Keyframes { get; }
 }
 
 public interface ISegmentReader : IAsyncDisposable
 {
-    Task<OneOf<Success, Error>> SeekToKeyframeAsync(long byteOffset, CancellationToken ct);
-    Task<OneOf<IAsyncEnumerable<Fragment>, Error>> ReadFragmentsAsync(CancellationToken ct);
+    Task<OneOf<Success, Error>> SeekAsync(long byteOffset, CancellationToken ct);
+    IAsyncEnumerable<IDataUnit> ReadAsync(CancellationToken ct);
 }
 ```
 
-Plugins could implement fragmented MP4, MKV, raw HEVC, or other formats. Metadata profiles (e.g. motion) use a lightweight format suited to their data type.
+The format plugin casts the `IDataStream` to its expected generic type (e.g. `IDataStream<H264NalUnit>`) - this cast is safe because the server core has already verified the type match. The returned `IVideoStream` produces typed muxed output (e.g. `IVideoStream<Fmp4Fragment>`).
+
+Plugins could implement fragmented MP4, MKV, or lightweight metadata formats (e.g. motion grid).
 
 ### ICameraProvider
 
@@ -210,7 +262,7 @@ public interface IVideoAnalyzer
 }
 ```
 
-The analyzer is responsible for its own pipeline: it subscribes to raw NAL units via `IStreamTap`, decodes them (CPU or GPU), performs analysis, and publishes results to `IEventBus`. The server never decodes video - that is entirely the analyzer plugin's concern.
+The analyzer is responsible for its own pipeline: it subscribes to the raw data stream via `IStreamTap`, decodes the data units (CPU or GPU), performs analysis, and publishes results to `IEventBus`. The server never decodes video - that is entirely the analyzer plugin's concern.
 
 Analysis results flow through the normal event filter > notification pipeline.
 
@@ -374,16 +426,16 @@ Event types include camera status changes, stream lifecycle, recording segment c
 
 ### IStreamTap
 
-Subscribe to raw NAL unit streams from active cameras.
+Subscribe to the raw data stream (`IDataStream`) from active cameras. This is the pre-mux data - the typed output of the capture source before it reaches the format plugin.
 
 ```csharp
 public interface IStreamTap
 {
-    Task<OneOf<IAsyncEnumerable<NalUnit>, Error>> TapAsync(Guid cameraId, string profile, CancellationToken ct);
+    Task<OneOf<IDataStream, Error>> TapAsync(Guid cameraId, string profile, CancellationToken ct);
 }
 ```
 
-Used by video analyzers and any plugin that needs access to the raw video stream without intercepting the recording pipeline.
+The subscriber casts the returned `IDataStream` to the expected generic type based on the stream's data format (available from `StreamInfo`). Used by video analyzers and any plugin that needs access to the raw codec data without intercepting the muxing or recording pipeline.
 
 ### IRecordingAccess
 

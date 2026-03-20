@@ -6,7 +6,7 @@ A network video management system designed for home and power users. It supports
 
 ## Design Principles
 
-- **No transcoding** - video passes through as opaque NAL units; the server never decodes or re-encodes
+- **No transcoding** - video passes through as opaque data units; the server never decodes or re-encodes
 - **Single port access** - all client communication (API, live video, playback, events) over one QUIC/UDP port
 - **Plugin-first** - all major subsystems (capture, storage, formats, detection) are behind extension point interfaces; there are no privileged internal code paths
 - **CPU-only by default** - the server must run efficiently on hardware without a GPU; hardware acceleration is a future plugin concern
@@ -50,14 +50,15 @@ graph TB
 
 ```
 Shared.Models             > Domain models, DTOs, extension point interfaces, events
+Shared.Models/Formats     > Typed data unit and format parameter types for plugin interop
 Shared.Protocol           > QUIC protocol definitions, framing, stream types
 
 Server                    > ASP.NET Core host, startup, DI composition
 Server.Core               > Domain services, orchestration, scheduling
 Server.Api                > HTTP endpoints (web UI, enrollment), middleware
 Server.Onvif              > ONVIF client (discovery, device, media, events, analytics)
-Server.Streaming          > RTSP ingest, NAL demux, live stream fan-out
-Server.Recording          > fMP4 segment writer, keyframe indexer, retention engine
+Server.Streaming          > Stream pipeline orchestration, data/video stream fan-out
+Server.Recording          > Segment writer, keyframe indexer, retention engine
 Server.Tunnel             > QUIC listener, mutual TLS, stream dispatch
 Server.Plugins            > Plugin host, discovery, lifecycle management
 
@@ -73,35 +74,45 @@ Client.Web                > Vue.js SPA (built assets embedded in Server)
 
 All internal interfaces return `OneOf<T, Error>` for anticipated failure conditions (not found, conflicts, storage failures). The `Error` type carries a `Result` code, `DebugTag`, and message - the same structure used in the API response envelope. At the API boundary, `OneOf<T, Error>` is converted to a `ResponseEnvelope` for the wire. Unanticipated failures (bugs, invariant violations) remain as exceptions and are not caught. See [response-model.md](response-model.md) for details.
 
-### Data Flow: Camera to Client
+### Stream Pipeline
+
+The server builds a per-stream processing pipeline by wiring together compatible plugins. Each stage produces a typed stream that the next stage consumes. The server core matches plugins by their declared input/output types and assembles the pipeline automatically.
+
+```mermaid
+graph LR
+    cam["Camera"] --> capture["Capture Source"]
+    capture --> |"IDataStream&lt;T&gt;"| dfan["Data Stream<br/>Fan-out"]
+    dfan --> |"IDataStream&lt;T&gt;"| muxer["Stream Format"]
+    dfan --> |"IDataStream&lt;T&gt;"| tap["IStreamTap<br/>Subscribers"]
+    muxer --> |"IVideoStream&lt;T&gt;"| vfan["Video Stream<br/>Fan-out"]
+    vfan --> |"IVideoStream&lt;T&gt;"| rec["Recording"]
+    vfan --> |"IVideoStream&lt;T&gt;"| live["Live Streaming"]
+    rec --> storage["Storage"]
+    rec --> db["Database"]
+```
+
+1. The camera provider identifies available streams and their codecs
+2. The server matches an `ICaptureSource` plugin by protocol and connects
+3. The capture source handles all transport concerns (e.g. RTSP negotiation, RTP depacketization) and produces a typed data stream (`IDataStream<T>`)
+4. The data stream fans out to `IStreamTap` subscribers and to the matched `IStreamFormat` plugin
+5. The `IStreamFormat` muxes the data stream into a container format, producing a typed video stream (`IVideoStream<T>`)
+6. The video stream fans out to the recording pipeline and live stream handlers
+
+### Data Flow: Playback
 
 ```mermaid
 sequenceDiagram
-    participant Camera
-    participant Server
-    participant NFS
-    participant Database
     participant Client
-
-    Camera->>Server: RTSP/TCP stream
-
-    Note over Server: Stream Ingestor<br/>1. RTP demux<br/>2. NAL extract<br/>3. Fan-out
-
-    par Recording
-        Server->>NFS: fMP4 segment
-        Server->>Database: Keyframe index
-    and Live view
-        Server->>Client: QUIC stream (fMP4 fragments)
-    end
-
-    Note over Client: Playback request
+    participant Server
+    participant Database
+    participant NFS
 
     Client->>Server: QUIC stream (timestamp)
     Server->>Database: Lookup nearest keyframe
     Database-->>Server: Segment + byte offset
     Server->>NFS: Seek to offset
-    NFS-->>Server: fMP4 data
-    Server->>Client: QUIC stream (fMP4 from keyframe)
+    NFS-->>Server: Segment data
+    Server->>Client: QUIC stream (muxed fragments)
 ```
 
 ### Internal Event Bus
@@ -129,29 +140,16 @@ Metadata profiles do not have their own retention. A metadata segment is retaine
 
 The ONVIF provider registers a `motion` profile on cameras that support analytics metadata. The motion data (active cell grids, regions) is recorded as timestamped segments and can be played back in sync with video.
 
-### Recording: Segment Format
+### Recording: Segments
 
-Recordings are stored as **fragmented MP4 (fMP4)** files:
+Recordings are stored as segments in the container format produced by the active `IStreamFormat` plugin:
 
-- No transcoding - NAL units from RTSP are remuxed into ISO BMFF containers
-- 5-minute segments by default (configurable per camera, actual duration rounds to the nearest keyframe boundary)
+- No transcoding - data units from the capture source are muxed into a container format by the format plugin
+- 5-minute segments by default (configurable per camera, actual duration rounds to the nearest sync point boundary)
 - Each segment is independently playable
-- Keyframe byte offsets indexed in the database for sub-second seek
+- Sync point byte offsets indexed in the database for sub-second seek
 
-Segment write pipeline:
-
-```mermaid
-graph LR
-    nal["NAL units"] --> muxer["fMP4 Muxer\n(pure C#)"]
-    muxer --> nfs["File write (NFS)"]
-    muxer --> db["Index update (Database)"]
-```
-
-The muxer handles:
-- H.264: Annex B > AVC (length-prefixed NALUs), SPS/PPS in `avcC` box
-- H.265: Annex B > HEVC (length-prefixed NALUs), VPS/SPS/PPS in `hvcC` box
-- Timing derived from RTP timestamps
-- ISO BMFF box layout: `ftyp`, `moov` (with `mvex`), then repeating `moof`+`mdat`
+The recording pipeline subscribes to the video stream fan-out. It accumulates muxed output into segment files via `IStorageProvider`, tracks sync point byte offsets as they are written, and finalizes the segment when the duration target is reached.
 
 ### Storage Layout
 
@@ -202,8 +200,8 @@ See [plugins.md](plugins.md) for full specification.
 
 | Interface | Purpose | Included Plugins |
 |-----------|---------|-----------------|
-| `ICaptureSource` | Acquire video from a source | RTSP (TCP interleaved) |
-| `IStreamFormat` | Mux/demux stream container format (video, audio, metadata) | Fragmented MP4 |
+| `ICaptureSource` | Connect to a source, produce typed `IDataStream<T>` | RTSP (TCP interleaved) |
+| `IStreamFormat` | Consume `IDataStream<T>`, produce typed `IVideoStream<T>` | fMP4 (H.264/H.265) |
 | `ICameraProvider` | Camera-specific behavior, discovery | ONVIF, Generic RTSP |
 | `IEventFilter` | Process and filter events | Motion zone filter |
 | `INotificationSink` | Deliver notifications | Client push (QUIC) |
@@ -220,7 +218,7 @@ Plugins receive these services from the plugin host via `PluginContext` (see [pl
 | Service | Purpose |
 |---------|---------|
 | `IEventBus` | Publish and subscribe to system events |
-| `IStreamTap` | Subscribe to raw NAL unit streams from cameras |
+| `IStreamTap` | Subscribe to raw data streams (`IDataStream`) from cameras |
 | `IRecordingAccess` | Query and read recording segments |
 | `ICameraRegistry` | Enumerate cameras and stream profiles |
 | `IConfig` | Read and write plugin-specific configuration |
@@ -250,7 +248,7 @@ Target resource usage for 32 cameras, dual stream each (main 1080p + sub 360p):
 
 | Resource | Budget | Notes |
 |----------|--------|-------|
-| CPU | < 2 cores sustained | No decode; RTSP demux + fMP4 mux only |
+| CPU | < 2 cores sustained | No decode; transport demux + container mux only |
 | Memory | < 512 MB | Per-stream buffers (~2 MB each), DB pool, framework |
 | Disk I/O | Pass-through | Bound by camera bitrate sum, written to NFS |
 | Network (ingest) | ~256 Mbps | 32 × 8 Mbps main + 32 × 512 Kbps sub |
