@@ -109,10 +109,13 @@ public class H265MuxerTests
 
     Assert.That(boxTypes[0], Is.EqualTo("ftyp"));
     Assert.That(boxTypes[1], Is.EqualTo("moov"));
-    for (var i = 2; i < boxTypes.Count; i += 2)
+    var i = 2;
+    while (i < boxTypes.Count)
     {
+      if (boxTypes[i] == "emsg") i++;
       Assert.That(boxTypes[i], Is.EqualTo("moof"), $"Box {i}");
       Assert.That(boxTypes[i + 1], Is.EqualTo("mdat"), $"Box {i + 1}");
+      i += 2;
     }
   }
 

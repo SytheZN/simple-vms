@@ -83,4 +83,56 @@ public class TimestampConverterTests
 
     Assert.That(result, Is.EqualTo(0UL));
   }
+
+  /// <summary>
+  /// SCENARIO:
+  /// RTP timestamp wraps around at 2^32 (~13.3h at 90kHz)
+  ///
+  /// ACTION:
+  /// Feed timestamps approaching uint32 max then crossing to small values
+  ///
+  /// EXPECTED RESULT:
+  /// Decode times continue monotonically across the wrap
+  /// </summary>
+  [Test]
+  public void RtpWrap_ContinuesMonotonically()
+  {
+    var converter = new TimestampConverter(90000);
+    var near_max = 0xFFFF_0000u;
+
+    var t0 = converter.ToDecodeTime(near_max);
+    var t1 = converter.ToDecodeTime(near_max + 3000);
+    var t2 = converter.ToDecodeTime(near_max + 0x10000u + 3000);
+
+    Assert.That(t1 - t0, Is.EqualTo(3000UL));
+    Assert.That(t2 - t1, Is.EqualTo(0x10000UL));
+    Assert.That(t2, Is.GreaterThan(t1));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Multiple wraps over a long-running stream
+  ///
+  /// ACTION:
+  /// Simulate two full wraps
+  ///
+  /// EXPECTED RESULT:
+  /// Decode time reflects the total elapsed ticks across both wraps
+  /// </summary>
+  [Test]
+  public void MultipleWraps_AccumulateCorrectly()
+  {
+    var converter = new TimestampConverter(90000);
+    converter.ToDecodeTime(0);
+
+    converter.ToDecodeTime(0xFFFF_FFFFu);
+    var afterFirst = converter.ToDecodeTime(1000);
+
+    Assert.That(afterFirst, Is.EqualTo(0x1_0000_0000UL + 1000));
+
+    converter.ToDecodeTime(0xFFFF_FFFFu);
+    var afterSecond = converter.ToDecodeTime(500);
+
+    Assert.That(afterSecond, Is.EqualTo(0x2_0000_0000UL + 500));
+  }
 }

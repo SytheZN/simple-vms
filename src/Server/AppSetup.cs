@@ -8,6 +8,7 @@ using Server.Logging;
 using Server.Plugins;
 using Server.Streaming;
 using Shared.Models;
+using Shared.Models.Events;
 
 namespace Server;
 
@@ -64,6 +65,16 @@ public static class AppSetup
 
     builder.Services.AddApiServices();
 
+    if (builder.Environment.IsDevelopment())
+    {
+      builder.Services.AddCors(options =>
+        options.AddDefaultPolicy(policy =>
+          policy.SetIsOriginAllowed(_ => true)
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials()));
+    }
+
     builder.WebHost.ConfigureKestrel((ctx, kestrel) =>
     {
       var httpPort = ctx.Configuration.GetValue("http-port", 8080);
@@ -77,6 +88,9 @@ public static class AppSetup
 
   public static async Task InitializeAsync(WebApplication app)
   {
+    if (app.Environment.IsDevelopment())
+      app.UseCors();
+
     app.UseWebSockets();
     app.UseApiMiddleware();
     app.UseDefaultFiles();
@@ -130,6 +144,7 @@ public static class AppSetup
     var eventBus = app.Services.GetRequiredService<IEventBus>();
 
     pluginHost.SetStreamTap(tapRegistry);
+    WatchCameraStatus(eventBus, statusTracker, app.Lifetime.ApplicationStopping);
 
     pluginHost.Initialize();
     await pluginHost.StartAsync(app.Lifetime.ApplicationStopping);
@@ -154,6 +169,16 @@ public static class AppSetup
     }
 
     return certManager.TryLoadCerts();
+  }
+
+  private static void WatchCameraStatus(
+    IEventBus eventBus, CameraStatusTracker statusTracker, CancellationToken ct)
+  {
+    _ = Task.Run(async () =>
+    {
+      await foreach (var evt in eventBus.SubscribeAsync<CameraStatusChanged>(ct))
+        statusTracker.SetStatus(evt.CameraId, evt.Status);
+    }, ct);
   }
 
   private static async Task PollForCertsAsync(

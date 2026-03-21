@@ -1,9 +1,16 @@
 import { ref, onBeforeUnmount, type Ref } from 'vue'
 import { api } from '@/api/client'
 
+export interface WallClockSync {
+  wallClockUs: number
+  presentationTimeSec: number
+}
+
 export interface LiveStreamState {
   status: Ref<'idle' | 'connecting' | 'streaming' | 'error' | 'blocked'>
   error: Ref<string>
+  lagMs: Ref<number>
+  wallClockSync: Ref<WallClockSync | null>
   start: (videoEl: HTMLVideoElement) => void
   stop: () => void
 }
@@ -11,14 +18,59 @@ export interface LiveStreamState {
 export function useLiveStream(cameraId: Ref<string>, profile: Ref<string>): LiveStreamState {
   const status = ref<'idle' | 'connecting' | 'streaming' | 'error' | 'blocked'>('idle')
   const error = ref('')
+  const lagMs = ref(0)
+  const wallClockSync = ref<WallClockSync | null>(null)
 
   let ws: WebSocket | null = null
+  let lagTimer: ReturnType<typeof setInterval> | null = null
+  let timescale = 90000
   let mediaSource: MediaSource | null = null
   let sourceBuffer: SourceBuffer | null = null
   let queue: ArrayBuffer[] = []
   let videoEl: HTMLVideoElement | null = null
   let abortController: AbortController | null = null
   let playAttempted = false
+
+  const EMSG_SCHEME = 'urn:vms:wallclock'
+
+  function parseEmsg(data: ArrayBuffer): boolean {
+    if (data.byteLength < 12) return false
+    const view = new DataView(data)
+    const boxSize = view.getUint32(0)
+    if (boxSize > data.byteLength) return false
+    const boxType = String.fromCharCode(
+      view.getUint8(4), view.getUint8(5), view.getUint8(6), view.getUint8(7))
+    if (boxType !== 'emsg') return false
+
+    const version = view.getUint8(8)
+    if (version !== 1) return false
+
+    timescale = view.getUint32(12)
+    const presentationTime = Number(view.getBigUint64(16))
+    const presentationTimeSec = presentationTime / timescale
+
+    let offset = 32
+    const bytes = new Uint8Array(data)
+
+    // skip scheme_uri (null-terminated)
+    const schemeStart = offset
+    while (offset < boxSize && bytes[offset] !== 0) offset++
+    const scheme = String.fromCharCode(...bytes.slice(schemeStart, offset))
+    offset++ // skip null
+
+    if (scheme !== EMSG_SCHEME) return false
+
+    // skip value (null-terminated)
+    while (offset < boxSize && bytes[offset] !== 0) offset++
+    offset++
+
+    if (offset + 8 > boxSize) return false
+    const payloadView = new DataView(data, offset, 8)
+    const wallClockUs = Number(payloadView.getBigUint64(0))
+
+    wallClockSync.value = { wallClockUs, presentationTimeSec }
+    return true
+  }
 
   function wsUrl(): string {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -93,10 +145,13 @@ export function useLiveStream(cameraId: Ref<string>, profile: Ref<string>): Live
 
       ws.onopen = () => {
         status.value = 'streaming'
+        startLagMonitor()
       }
 
       ws.onmessage = (ev: MessageEvent) => {
-        queue.push(ev.data as ArrayBuffer)
+        const data = ev.data as ArrayBuffer
+        parseEmsg(data)
+        queue.push(data)
         appendNext()
       }
 
@@ -112,7 +167,25 @@ export function useLiveStream(cameraId: Ref<string>, profile: Ref<string>): Live
     })
   }
 
+  function startLagMonitor() {
+    stopLagMonitor()
+    lagTimer = setInterval(() => {
+      if (!videoEl || !videoEl.buffered.length) return
+      const bufferedEnd = videoEl.buffered.end(videoEl.buffered.length - 1)
+      lagMs.value = Math.round((bufferedEnd - videoEl.currentTime) * 1000)
+    }, 1000)
+  }
+
+  function stopLagMonitor() {
+    if (lagTimer) {
+      clearInterval(lagTimer)
+      lagTimer = null
+    }
+    lagMs.value = 0
+  }
+
   function stopStream() {
+    stopLagMonitor()
     if (ws) {
       ws.onclose = null
       ws.onerror = null
@@ -148,5 +221,5 @@ export function useLiveStream(cameraId: Ref<string>, profile: Ref<string>): Live
 
   onBeforeUnmount(stop)
 
-  return { status, error, start, stop }
+  return { status, error, lagMs, wallClockSync, start, stop }
 }

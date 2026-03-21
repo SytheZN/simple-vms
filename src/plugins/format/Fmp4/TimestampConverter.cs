@@ -3,7 +3,9 @@ namespace Format.Fmp4;
 public sealed class TimestampConverter
 {
   private readonly uint _timescale;
-  private ulong _baseTimestamp;
+  private uint _baseRtp;
+  private uint _prevRtp;
+  private ulong _wrapOffset;
   private bool _initialized;
 
   public TimestampConverter(uint timescale = 90000)
@@ -15,13 +17,22 @@ public sealed class TimestampConverter
 
   public ulong ToDecodeTime(ulong timestamp)
   {
+    var rtp32 = (uint)timestamp;
+
     if (!_initialized)
     {
-      _baseTimestamp = timestamp;
+      _baseRtp = rtp32;
+      _prevRtp = rtp32;
+      _wrapOffset = 0;
       _initialized = true;
+      return 0;
     }
 
-    return timestamp - _baseTimestamp;
+    if (rtp32 < _prevRtp && (_prevRtp - rtp32) > 0x80000000u)
+      _wrapOffset += 0x1_0000_0000UL;
+
+    _prevRtp = rtp32;
+    return _wrapOffset + rtp32 - _baseRtp;
   }
 
   public uint DurationBetween(ulong from, ulong to)
@@ -32,6 +43,8 @@ public sealed class TimestampConverter
   public void Reset()
   {
     _initialized = false;
-    _baseTimestamp = 0;
+    _baseRtp = 0;
+    _prevRtp = 0;
+    _wrapOffset = 0;
   }
 }

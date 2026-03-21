@@ -745,7 +745,7 @@ function toggleDark() {
                 <div class="timeline-tick" style="left: 50%;">15:00</div>
                 <div class="timeline-tick" style="left: 66.6%;">16:00</div>
                 <div class="timeline-tick" style="left: 83.3%;">17:00</div>
-                <div class="timeline-tick" style="left: 100%; transform: translateX(-100%);">18:00</div>
+                <div class="timeline-tick" style="left: 100%;">18:00</div>
               </div>
             </div>
             <div class="flex items-center gap-4 text-xs text-text-muted">

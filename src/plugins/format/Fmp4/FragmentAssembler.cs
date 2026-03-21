@@ -33,11 +33,21 @@ public sealed class FragmentAssembler
     var moofBytes = MoofBuilder.Build(_sequenceNumber, baseDecodeTime, samples);
     var mdatBytes = MdatBuilder.Build(annexBNals);
 
-    var moofOffset = _bytesWritten;
+    byte[]? emsgBytes = null;
+    if (isKeyframe)
+    {
+      var wallClockUs = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000;
+      emsgBytes = EmsgBuilder.Build(wallClockUs, baseDecodeTime, _timestamps.Timescale);
+    }
 
-    var fragmentData = new byte[moofBytes.Length + mdatBytes.Length];
-    moofBytes.CopyTo(fragmentData, 0);
-    mdatBytes.CopyTo(fragmentData, moofBytes.Length);
+    var emsgLen = emsgBytes?.Length ?? 0;
+    var moofOffset = _bytesWritten + emsgLen;
+
+    var fragmentData = new byte[emsgLen + moofBytes.Length + mdatBytes.Length];
+    if (emsgBytes != null)
+      emsgBytes.CopyTo(fragmentData, 0);
+    moofBytes.CopyTo(fragmentData, emsgLen);
+    mdatBytes.CopyTo(fragmentData, emsgLen + moofBytes.Length);
 
     _bytesWritten += fragmentData.Length;
 
