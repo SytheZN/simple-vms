@@ -13,6 +13,7 @@
     <ProjectReference Include="../../src/plugins/capture/Rtsp/Rtsp.csproj" />
     <ProjectReference Include="../../src/Server.Streaming/Server.Streaming.csproj" />
     <ProjectReference Include="../../src/plugins/format/Fmp4/Fmp4.csproj" />
+    <ProjectReference Include="../../src/plugins/storage/Filesystem/Filesystem.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="NUnit" />

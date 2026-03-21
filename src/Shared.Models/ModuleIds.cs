@@ -38,4 +38,5 @@ public static class ModuleIds
 
   public const ushort PluginRtspCapture = 0x1020;
   public const ushort PluginFmp4 = 0x1030;
+  public const ushort PluginFilesystemStorage = 0x1040;
 }
