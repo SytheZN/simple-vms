@@ -150,7 +150,7 @@ public static class MoovBuilder
     w.WriteUInt16(1);
     w.WriteZeros(32);
     w.WriteUInt16(0x0018);
-    w.WriteInt32(-1);
+    w.WriteUInt16(0xFFFF);
 
     w.StartBox(codecConfigBoxType);
     w.WriteBytes(codecConfig);

@@ -44,10 +44,10 @@ public class HvcCBuilderTests
     var profileIdc = profileByte & 0x1F;
     Assert.That(profileIdc, Is.EqualTo(1));
 
-    var lengthSizeMinusOne = hvcC[20] & 0x03;
+    var lengthSizeMinusOne = hvcC[21] & 0x03;
     Assert.That(lengthSizeMinusOne, Is.EqualTo(3));
 
-    Assert.That(hvcC[21], Is.EqualTo(3));
+    Assert.That(hvcC[22], Is.EqualTo(3));
   }
 
   /// <summary>
@@ -67,7 +67,7 @@ public class HvcCBuilderTests
     var spsInfo = H265SpsParser.ParseSps(TestSps);
     var hvcC = HvcCBuilder.Build(TestVps, TestSps, TestPps, vpsInfo, spsInfo);
 
-    var offset = 22;
+    var offset = 23;
 
     Assert.That(hvcC[offset], Is.EqualTo(32));
     var vpsCount = (hvcC[offset + 1] << 8) | hvcC[offset + 2];

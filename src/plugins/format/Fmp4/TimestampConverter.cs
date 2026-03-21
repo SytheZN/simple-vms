@@ -13,22 +13,20 @@ public sealed class TimestampConverter
 
   public uint Timescale => _timescale;
 
-  public ulong ToDecodeTime(ulong unixMicros)
+  public ulong ToDecodeTime(ulong timestamp)
   {
     if (!_initialized)
     {
-      _baseTimestamp = unixMicros;
+      _baseTimestamp = timestamp;
       _initialized = true;
     }
 
-    var deltaMicros = unixMicros - _baseTimestamp;
-    return deltaMicros * _timescale / 1_000_000;
+    return timestamp - _baseTimestamp;
   }
 
-  public uint DurationBetween(ulong fromMicros, ulong toMicros)
+  public uint DurationBetween(ulong from, ulong to)
   {
-    var deltaMicros = toMicros - fromMicros;
-    return (uint)(deltaMicros * _timescale / 1_000_000);
+    return (uint)(to - from);
   }
 
   public void Reset()

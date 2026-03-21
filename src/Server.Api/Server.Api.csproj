@@ -9,5 +9,6 @@
     <ProjectReference Include="../Shared.Models/Shared.Models.csproj" />
     <ProjectReference Include="../Server.Core/Server.Core.csproj" />
     <ProjectReference Include="../Server.Plugins/Server.Plugins.csproj" />
+    <ProjectReference Include="../Server.Streaming/Server.Streaming.csproj" />
   </ItemGroup>
 </Project>

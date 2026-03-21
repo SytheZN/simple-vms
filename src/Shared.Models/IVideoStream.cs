@@ -2,7 +2,8 @@ namespace Shared.Models;
 
 public interface IVideoStream
 {
-  StreamInfo Info { get; }
+  VideoStreamInfo Info { get; }
+  ReadOnlyMemory<byte> Header { get; }
   Type FrameType { get; }
 }
 

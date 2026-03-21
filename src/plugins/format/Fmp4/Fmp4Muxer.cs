@@ -22,6 +22,7 @@ public sealed class Fmp4Muxer
   private byte[]? _currentSps;
   private byte[]? _currentPps;
   private byte[]? _currentVps;
+  private uint _lastDuration;
 
   public Fmp4Muxer(
     MuxerCodec codec,
@@ -38,16 +39,60 @@ public sealed class Fmp4Muxer
 
   public byte[]? InitSegment => _initSegment;
 
-  public byte[] BuildInitSegment(ReadOnlySpan<byte> sps, ReadOnlySpan<byte> pps, ReadOnlySpan<byte> vps)
+  public async Task<VideoStreamInfo> InitAsync(int fps, CancellationToken ct)
+  {
+    if (_codec == MuxerCodec.H264)
+    {
+      var typed = (IDataStream<H264NalUnit>)_input;
+      await foreach (var nal in typed.ReadAsync(ct))
+      {
+        var rawNal = NalConverter.StripStartCode(nal.Data.Span);
+        if (nal.NalType == H264NalType.Sps)
+          _currentSps = rawNal.ToArray();
+        else if (nal.NalType == H264NalType.Pps)
+          _currentPps = rawNal.ToArray();
+
+        if (_currentSps != null && _currentPps != null)
+          return BuildInitSegment(_currentSps, _currentPps, [], fps).Info;
+      }
+    }
+    else
+    {
+      var typed = (IDataStream<H265NalUnit>)_input;
+      await foreach (var nal in typed.ReadAsync(ct))
+      {
+        var rawNal = NalConverter.StripStartCode(nal.Data.Span);
+        if (nal.NalType == H265NalType.Vps)
+          _currentVps = rawNal.ToArray();
+        else if (nal.NalType == H265NalType.Sps)
+          _currentSps = rawNal.ToArray();
+        else if (nal.NalType == H265NalType.Pps)
+          _currentPps = rawNal.ToArray();
+
+        if (_currentVps != null && _currentSps != null && _currentPps != null)
+          return BuildInitSegment(_currentSps, _currentPps, _currentVps, fps).Info;
+      }
+    }
+
+    throw new OperationCanceledException("Stream ended before SPS/PPS received");
+  }
+
+  public (byte[] Segment, VideoStreamInfo Info) BuildInitSegment(
+    ReadOnlySpan<byte> sps, ReadOnlySpan<byte> pps, ReadOnlySpan<byte> vps, int fps = 0)
   {
     var ftyp = FtypBuilder.Build();
     byte[] moov;
+    string mimeType;
+    int width, height;
 
     if (_codec == MuxerCodec.H264)
     {
       var spsInfo = H264SpsParser.Parse(sps);
       var avcC = AvcCBuilder.Build(sps, pps, spsInfo);
       moov = MoovBuilder.BuildH264(spsInfo.Width, spsInfo.Height, _timestamps.Timescale, avcC);
+      mimeType = $"video/mp4; codecs=\"avc1.{spsInfo.ProfileIdc:X2}{spsInfo.ProfileCompatibility:X2}{spsInfo.LevelIdc:X2}\"";
+      width = spsInfo.Width;
+      height = spsInfo.Height;
     }
     else
     {
@@ -55,6 +100,11 @@ public sealed class Fmp4Muxer
       var spsInfo = H265SpsParser.ParseSps(sps);
       var hvcC = HvcCBuilder.Build(vps, sps, pps, vpsInfo, spsInfo);
       moov = MoovBuilder.BuildH265(spsInfo.Width, spsInfo.Height, _timestamps.Timescale, hvcC);
+      var ptl = spsInfo.Ptl;
+      var tier = ptl.GeneralTierFlag ? 'H' : 'L';
+      mimeType = $"video/mp4; codecs=\"hev1.{ptl.GeneralProfileIdc}.{ptl.GeneralProfileCompatibilityFlags:X}.{tier}{ptl.GeneralLevelIdc}\"";
+      width = spsInfo.Width;
+      height = spsInfo.Height;
     }
 
     var init = new byte[ftyp.Length + moov.Length];
@@ -63,7 +113,16 @@ public sealed class Fmp4Muxer
 
     _initSegment = init;
     _assembler.AddHeaderBytes(init.Length);
-    return init;
+
+    var info = new VideoStreamInfo
+    {
+      DataFormat = "fmp4",
+      MimeType = mimeType,
+      Resolution = $"{width}x{height}",
+      Fps = fps
+    };
+
+    return (init, info);
   }
 
   public bool TryUpdateParameters(ReadOnlySpan<byte> sps, ReadOnlySpan<byte> pps, ReadOnlySpan<byte> vps)
@@ -132,7 +191,7 @@ public sealed class Fmp4Muxer
       {
         if (TryUpdateParameters(pendingSps, pendingPps, []))
         {
-          var init = BuildInitSegment(pendingSps, pendingPps, []);
+          var (init, _) = BuildInitSegment(pendingSps, pendingPps, []);
           yield return new Fmp4Fragment
           {
             Data = init,
@@ -145,7 +204,7 @@ public sealed class Fmp4Muxer
 
       if (currentTimestamp != null && nal.Timestamp != currentTimestamp)
       {
-        var fragment = EmitAccessUnit(accessUnit, currentTimestamp.Value);
+        var fragment = EmitAccessUnit(accessUnit, currentTimestamp.Value, nal.Timestamp);
         if (fragment != null)
           yield return fragment;
         accessUnit.Clear();
@@ -157,7 +216,7 @@ public sealed class Fmp4Muxer
 
     if (accessUnit.Count > 0 && currentTimestamp != null)
     {
-      var fragment = EmitAccessUnit(accessUnit, currentTimestamp.Value);
+      var fragment = EmitAccessUnit(accessUnit, currentTimestamp.Value, null);
       if (fragment != null)
         yield return fragment;
     }
@@ -199,7 +258,7 @@ public sealed class Fmp4Muxer
       {
         if (TryUpdateParameters(pendingSps, pendingPps, pendingVps))
         {
-          var init = BuildInitSegment(pendingSps, pendingPps, pendingVps);
+          var (init, _) = BuildInitSegment(pendingSps, pendingPps, pendingVps);
           yield return new Fmp4Fragment
           {
             Data = init,
@@ -212,7 +271,7 @@ public sealed class Fmp4Muxer
 
       if (currentTimestamp != null && nal.Timestamp != currentTimestamp)
       {
-        var fragment = EmitAccessUnit(accessUnit, currentTimestamp.Value);
+        var fragment = EmitAccessUnit(accessUnit, currentTimestamp.Value, nal.Timestamp);
         if (fragment != null)
           yield return fragment;
         accessUnit.Clear();
@@ -224,13 +283,13 @@ public sealed class Fmp4Muxer
 
     if (accessUnit.Count > 0 && currentTimestamp != null)
     {
-      var fragment = EmitAccessUnit(accessUnit, currentTimestamp.Value);
+      var fragment = EmitAccessUnit(accessUnit, currentTimestamp.Value, null);
       if (fragment != null)
         yield return fragment;
     }
   }
 
-  private Fmp4Fragment? EmitAccessUnit<T>(List<T> accessUnit, ulong timestamp) where T : IDataUnit
+  private Fmp4Fragment? EmitAccessUnit<T>(List<T> accessUnit, ulong timestamp, ulong? nextTimestamp) where T : IDataUnit
   {
     if (accessUnit.Count == 0 || _initSegment == null)
       return null;
@@ -245,12 +304,16 @@ public sealed class Fmp4Muxer
       totalNalSize += NalConverter.LengthPrefixedSize(nal.Data.Span);
     }
 
-    var defaultDuration = _timestamps.Timescale / 30;
+    var duration = nextTimestamp != null
+      ? _timestamps.DurationBetween(timestamp, nextTimestamp.Value)
+      : _lastDuration > 0 ? _lastDuration : _timestamps.Timescale / 30;
+    _lastDuration = duration;
+
     var samples = new List<SampleEntry>
     {
       new()
       {
-        Duration = defaultDuration,
+        Duration = duration,
         Size = totalNalSize,
         IsKeyframe = isKeyframe,
         CompositionOffset = 0

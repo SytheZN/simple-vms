@@ -26,6 +26,7 @@ public static class HvcCBuilder
 
     w.WriteUInt8(ptl.GeneralLevelIdc);
     w.WriteUInt16(0xF000);
+    w.WriteUInt8(0xFC);
     w.WriteUInt8((byte)(0xFC | (spsInfo.ChromaFormatIdc & 0x03)));
     w.WriteUInt8((byte)(0xF8 | ((spsInfo.BitDepthLuma - 8) & 0x07)));
     w.WriteUInt8((byte)(0xF8 | ((spsInfo.BitDepthChroma - 8) & 0x07)));

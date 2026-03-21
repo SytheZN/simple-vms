@@ -34,6 +34,8 @@ public static class ModuleIds
   public const ushort PluginOnvifSoap = 0x1014;
 
   public const ushort Streaming = 0x000C;
+  public const ushort LiveStreaming = 0x000D;
+
   public const ushort PluginRtspCapture = 0x1020;
   public const ushort PluginFmp4 = 0x1030;
 }

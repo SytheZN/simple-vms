@@ -17,6 +17,7 @@ import type {
   ServerSettings,
   PluginListItem,
   SettingGroup,
+  StreamMetadata,
 } from '@/types/api'
 
 class ApiError extends Error {
@@ -136,6 +137,11 @@ export const api = {
     validateField: (id: string, key: string, value: unknown) => post<void>(`/api/v1/plugins/${id}/config/validate`, { key, value }),
     start: (id: string) => post<void>(`/api/v1/plugins/${id}/start`),
     stop: (id: string) => post<void>(`/api/v1/plugins/${id}/stop`),
+  },
+
+  live: {
+    metadata: (cameraId: string, profile: string) =>
+      request<StreamMetadata>('OPTIONS', `/api/v1/live/${cameraId}/${profile}`),
   },
 }
 

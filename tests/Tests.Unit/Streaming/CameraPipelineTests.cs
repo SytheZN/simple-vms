@@ -15,78 +15,20 @@ public class CameraPipelineTests
   /// Pipeline is constructed with a mock capture source that succeeds
   ///
   /// ACTION:
-  /// Activate the pipeline
+  /// Construct the pipeline
   ///
   /// EXPECTED RESULT:
-  /// IsActive becomes true, CameraStatusChanged "online" and StreamStarted events published
+  /// IsConstructed becomes true
   /// </summary>
   [Test]
-  public async Task Activate_SuccessfulConnect_BecomesActive()
+  public async Task Construct_SuccessfulConnect_BecomesConstructed()
   {
-    var eventBus = new RecordingEventBus();
-    var pipeline = CreatePipeline(eventBus: eventBus);
+    var pipeline = CreatePipeline();
 
-    var result = await pipeline.ActivateAsync(CancellationToken.None);
+    var result = await pipeline.ConstructAsync(CancellationToken.None);
 
     Assert.That(result.IsT0, Is.True);
-    Assert.That(pipeline.IsActive, Is.True);
-
-    var statusEvent = eventBus.Published.OfType<CameraStatusChanged>().FirstOrDefault();
-    Assert.That(statusEvent, Is.Not.Null);
-    Assert.That(statusEvent!.Status, Is.EqualTo("online"));
-
-    var streamEvent = eventBus.Published.OfType<StreamStarted>().FirstOrDefault();
-    Assert.That(streamEvent, Is.Not.Null);
-    Assert.That(streamEvent!.DataFormat, Is.EqualTo("h264"));
-
-    await pipeline.DisposeAsync();
-  }
-
-  /// <summary>
-  /// SCENARIO:
-  /// Pipeline is activated then deactivated
-  ///
-  /// ACTION:
-  /// Deactivate
-  ///
-  /// EXPECTED RESULT:
-  /// IsActive becomes false, connection is disposed
-  /// </summary>
-  [Test]
-  public async Task Deactivate_AfterActivation_BecomesInactive()
-  {
-    var connection = new MockStreamConnection();
-    var pipeline = CreatePipeline(connection: connection);
-
-    await pipeline.ActivateAsync(CancellationToken.None);
-    Assert.That(pipeline.IsActive, Is.True);
-
-    await pipeline.DeactivateAsync();
-    Assert.That(pipeline.IsActive, Is.False);
-    Assert.That(connection.Disposed, Is.True);
-  }
-
-  /// <summary>
-  /// SCENARIO:
-  /// Pipeline is activated twice
-  ///
-  /// ACTION:
-  /// Call ActivateAsync twice
-  ///
-  /// EXPECTED RESULT:
-  /// Second call returns success without reconnecting
-  /// </summary>
-  [Test]
-  public async Task Activate_WhenAlreadyActive_ReturnsSuccess()
-  {
-    var captureSource = new MockCaptureSource();
-    var pipeline = CreatePipeline(captureSource: captureSource);
-
-    await pipeline.ActivateAsync(CancellationToken.None);
-    var result = await pipeline.ActivateAsync(CancellationToken.None);
-
-    Assert.That(result.IsT0, Is.True);
-    Assert.That(captureSource.ConnectCount, Is.EqualTo(1));
+    Assert.That(pipeline.IsConstructed, Is.True);
 
     await pipeline.DisposeAsync();
   }
@@ -96,13 +38,13 @@ public class CameraPipelineTests
   /// Capture source returns an error on connect
   ///
   /// ACTION:
-  /// Activate the pipeline
+  /// Construct the pipeline
   ///
   /// EXPECTED RESULT:
-  /// Returns the error, IsActive remains false
+  /// Returns the error, IsConstructed remains false
   /// </summary>
   [Test]
-  public async Task Activate_ConnectFails_ReturnsError()
+  public async Task Construct_ConnectFails_ReturnsError()
   {
     var captureSource = new MockCaptureSource
     {
@@ -110,15 +52,15 @@ public class CameraPipelineTests
     };
     var pipeline = CreatePipeline(captureSource: captureSource);
 
-    var result = await pipeline.ActivateAsync(CancellationToken.None);
+    var result = await pipeline.ConstructAsync(CancellationToken.None);
 
     Assert.That(result.IsT1, Is.True);
-    Assert.That(pipeline.IsActive, Is.False);
+    Assert.That(pipeline.IsConstructed, Is.False);
   }
 
   /// <summary>
   /// SCENARIO:
-  /// Pipeline is activated and a subscriber calls SubscribeDataAsync
+  /// Pipeline is constructed and a subscriber calls SubscribeDataAsync
   ///
   /// ACTION:
   /// Subscribe to the data stream
@@ -127,9 +69,10 @@ public class CameraPipelineTests
   /// Returns an IDataStream subscriber from the fan-out
   /// </summary>
   [Test]
-  public async Task SubscribeData_WhenActive_ReturnsStream()
+  public async Task SubscribeData_WhenConstructed_ReturnsStream()
   {
     var pipeline = CreatePipeline();
+    await pipeline.ConstructAsync(CancellationToken.None);
 
     var result = await pipeline.SubscribeDataAsync(CancellationToken.None);
 
@@ -142,29 +85,23 @@ public class CameraPipelineTests
 
   /// <summary>
   /// SCENARIO:
-  /// Pipeline is not active when SubscribeDataAsync is called
+  /// Pipeline is not constructed when SubscribeDataAsync is called
   ///
   /// ACTION:
   /// Subscribe to the data stream
   ///
   /// EXPECTED RESULT:
-  /// Pipeline activates automatically, then returns a subscriber
+  /// Returns Unavailable error
   /// </summary>
   [Test]
-  public async Task SubscribeData_WhenInactive_ActivatesFirst()
+  public async Task SubscribeData_WhenNotConstructed_ReturnsError()
   {
-    var captureSource = new MockCaptureSource();
-    var pipeline = CreatePipeline(captureSource: captureSource);
-
-    Assert.That(pipeline.IsActive, Is.False);
+    var pipeline = CreatePipeline();
 
     var result = await pipeline.SubscribeDataAsync(CancellationToken.None);
 
-    Assert.That(result.IsT0, Is.True);
-    Assert.That(pipeline.IsActive, Is.True);
-    Assert.That(captureSource.ConnectCount, Is.EqualTo(1));
-
-    await pipeline.DisposeAsync();
+    Assert.That(result.IsT1, Is.True);
+    Assert.That(result.AsT1.Result, Is.EqualTo(Result.Unavailable));
   }
 
   /// <summary>
@@ -191,108 +128,180 @@ public class CameraPipelineTests
 
   /// <summary>
   /// SCENARIO:
-  /// Pipeline activated, connection's Completed task finishes (simulating disconnect)
+  /// Pipeline is constructed, connection is disposed after construction
   ///
   /// ACTION:
-  /// Complete the mock connection
+  /// Check connection state after construction
   ///
   /// EXPECTED RESULT:
-  /// Pipeline publishes offline status and StreamStopped events
+  /// Connection used for construction is disposed (pipeline disconnects after init)
   /// </summary>
   [Test]
-  public async Task ConnectionDrop_PublishesOfflineEvents()
-  {
-    var eventBus = new RecordingEventBus();
-    var connection = new MockStreamConnection();
-    var pipeline = CreatePipeline(connection: connection, eventBus: eventBus);
-
-    await pipeline.ActivateAsync(CancellationToken.None);
-    eventBus.Published.Clear();
-
-    connection.Complete();
-    await Task.Delay(100);
-
-    var statusEvent = eventBus.Published.OfType<CameraStatusChanged>()
-      .FirstOrDefault(e => e.Status == "offline");
-    Assert.That(statusEvent, Is.Not.Null);
-
-    var stopEvent = eventBus.Published.OfType<StreamStopped>().FirstOrDefault();
-    Assert.That(stopEvent, Is.Not.Null);
-
-    await pipeline.DisposeAsync();
-  }
-
-  /// <summary>
-  /// SCENARIO:
-  /// Pipeline activated, connection drops, capture source succeeds on reconnect
-  ///
-  /// ACTION:
-  /// Complete the mock connection, then allow reconnect
-  ///
-  /// EXPECTED RESULT:
-  /// Pipeline reconnects and publishes online status again
-  /// </summary>
-  [Test]
-  public async Task ConnectionDrop_Reconnects()
-  {
-    var eventBus = new RecordingEventBus();
-    var captureSource = new MockCaptureSource();
-    var pipeline = CreatePipeline(captureSource: captureSource, eventBus: eventBus);
-
-    await pipeline.ActivateAsync(CancellationToken.None);
-    Assert.That(captureSource.ConnectCount, Is.EqualTo(1));
-
-    var firstConnection = captureSource.Connection;
-    captureSource.Connection = new MockStreamConnection();
-    firstConnection.Complete();
-
-    await Task.Delay(2000);
-
-    Assert.That(captureSource.ConnectCount, Is.GreaterThan(1));
-    Assert.That(pipeline.IsActive, Is.True);
-
-    var onlineEvents = eventBus.Published.OfType<CameraStatusChanged>()
-      .Where(e => e.Status == "online").ToList();
-    Assert.That(onlineEvents, Has.Count.GreaterThanOrEqualTo(2));
-
-    await pipeline.DisposeAsync();
-  }
-
-  /// <summary>
-  /// SCENARIO:
-  /// Pipeline activated, subscriber reads then finishes (fan-out becomes empty)
-  ///
-  /// ACTION:
-  /// Subscribe, read, let the subscription's ReadAsync complete
-  ///
-  /// EXPECTED RESULT:
-  /// OnFanOutEmpty fires and pipeline deactivates
-  /// </summary>
-  [Test]
-  public async Task FanOutEmpty_DeactivatesPipeline()
+  public async Task Construct_DisposesConnectionAfterInit()
   {
     var connection = new MockStreamConnection();
     var pipeline = CreatePipeline(connection: connection);
 
-    var subResult = await pipeline.SubscribeDataAsync(CancellationToken.None);
-    Assert.That(subResult.IsT0, Is.True);
-    Assert.That(pipeline.IsActive, Is.True);
+    await pipeline.ConstructAsync(CancellationToken.None);
 
-    connection.CompleteDataStream();
-
-    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-    try
-    {
-      await foreach (var _ in ((IDataStream<Shared.Models.Formats.H264NalUnit>)subResult.AsT0)
-        .ReadAsync(cts.Token)) { }
-    }
-    catch (OperationCanceledException) { }
-
-    await Task.Delay(200);
-
-    Assert.That(pipeline.IsActive, Is.False);
+    Assert.That(connection.Disposed, Is.True);
+    Assert.That(pipeline.IsConstructed, Is.True);
 
     await pipeline.DisposeAsync();
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Pipeline is constructed twice
+  ///
+  /// ACTION:
+  /// Call ConstructAsync twice
+  ///
+  /// EXPECTED RESULT:
+  /// Second call returns success without reconnecting
+  /// </summary>
+  [Test]
+  public async Task Construct_WhenAlreadyConstructed_ReturnsSuccess()
+  {
+    var captureSource = new MockCaptureSource();
+    var pipeline = CreatePipeline(captureSource: captureSource);
+
+    await pipeline.ConstructAsync(CancellationToken.None);
+    var result = await pipeline.ConstructAsync(CancellationToken.None);
+
+    Assert.That(result.IsT0, Is.True);
+    Assert.That(captureSource.ConnectCount, Is.EqualTo(1));
+
+    await pipeline.DisposeAsync();
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Pipeline is constructed and video subscribe is called without format plugin
+  ///
+  /// ACTION:
+  /// Call SubscribeVideoAsync (no format plugin registered)
+  ///
+  /// EXPECTED RESULT:
+  /// Returns Unavailable error since no video pipeline exists
+  /// </summary>
+  [Test]
+  public async Task SubscribeVideo_NoFormatPlugin_ReturnsError()
+  {
+    var pipeline = CreatePipeline();
+    await pipeline.ConstructAsync(CancellationToken.None);
+
+    var result = await pipeline.SubscribeVideoAsync(CancellationToken.None);
+
+    Assert.That(result.IsT1, Is.True);
+    Assert.That(result.AsT1.Result, Is.EqualTo(Result.Unavailable));
+
+    await pipeline.DisposeAsync();
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Pipeline is not constructed when SubscribeVideoAsync is called
+  ///
+  /// ACTION:
+  /// Subscribe to the video stream
+  ///
+  /// EXPECTED RESULT:
+  /// Returns Unavailable error
+  /// </summary>
+  [Test]
+  public async Task SubscribeVideo_WhenNotConstructed_ReturnsError()
+  {
+    var pipeline = CreatePipeline();
+
+    var result = await pipeline.SubscribeVideoAsync(CancellationToken.None);
+
+    Assert.That(result.IsT1, Is.True);
+    Assert.That(result.AsT1.Result, Is.EqualTo(Result.Unavailable));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Pipeline is disposed
+  ///
+  /// ACTION:
+  /// Call SubscribeVideoAsync
+  ///
+  /// EXPECTED RESULT:
+  /// Returns Unavailable error
+  /// </summary>
+  [Test]
+  public async Task SubscribeVideo_WhenDisposed_ReturnsError()
+  {
+    var pipeline = CreatePipeline();
+    await pipeline.DisposeAsync();
+
+    var result = await pipeline.SubscribeVideoAsync(CancellationToken.None);
+
+    Assert.That(result.IsT1, Is.True);
+    Assert.That(result.AsT1.Result, Is.EqualTo(Result.Unavailable));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Pipeline constructed, VideoInfo is null (no format plugin)
+  ///
+  /// ACTION:
+  /// Read VideoInfo
+  ///
+  /// EXPECTED RESULT:
+  /// Returns null
+  /// </summary>
+  [Test]
+  public async Task VideoInfo_NoFormatPlugin_ReturnsNull()
+  {
+    var pipeline = CreatePipeline();
+    await pipeline.ConstructAsync(CancellationToken.None);
+
+    Assert.That(pipeline.VideoInfo, Is.Null);
+
+    await pipeline.DisposeAsync();
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Pipeline constructed, VideoHeader is empty (no format plugin)
+  ///
+  /// ACTION:
+  /// Read VideoHeader
+  ///
+  /// EXPECTED RESULT:
+  /// Returns empty
+  /// </summary>
+  [Test]
+  public async Task VideoHeader_NoFormatPlugin_ReturnsEmpty()
+  {
+    var pipeline = CreatePipeline();
+    await pipeline.ConstructAsync(CancellationToken.None);
+
+    Assert.That(pipeline.VideoHeader.IsEmpty, Is.True);
+
+    await pipeline.DisposeAsync();
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// OnParameterMismatch callback is set
+  ///
+  /// ACTION:
+  /// Read the property
+  ///
+  /// EXPECTED RESULT:
+  /// Can be set and retrieved
+  /// </summary>
+  [Test]
+  public void OnParameterMismatch_CanBeSet()
+  {
+    var pipeline = CreatePipeline();
+    var called = false;
+    pipeline.OnParameterMismatch = () => called = true;
+    pipeline.OnParameterMismatch!.Invoke();
+    Assert.That(called, Is.True);
   }
 
   private static CameraPipeline CreatePipeline(

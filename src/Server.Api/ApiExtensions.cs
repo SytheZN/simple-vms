@@ -42,6 +42,8 @@ public static class ApiExtensions
     RetentionEndpoints.Map(app);
     SystemEndpoints.Map(app);
     PluginEndpoints.Map(app);
+    LiveStreamEndpoints.Map(app);
+    PlaybackEndpoints.Map(app);
     return app;
   }
 }

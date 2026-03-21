@@ -1,125 +1,134 @@
 using System.Threading.Channels;
+using Microsoft.Extensions.Logging;
 using Shared.Models;
 
 namespace Server.Streaming;
 
 public sealed class DataStreamFanOut<T> : IDataStream<T>, IAsyncDisposable where T : IDataUnit
 {
-  private readonly IDataStream<T> _source;
   private readonly List<Channel<T>> _subscribers = [];
   private readonly Lock _lock = new();
-  private readonly CancellationTokenSource _cts = new();
-  private Task? _readLoop;
+  private int _demandCount;
 
-  public StreamInfo Info => _source.Info;
+  public StreamInfo Info { get; }
   public Type FrameType => typeof(T);
   public int SubscriberCount { get { lock (_lock) return _subscribers.Count; } }
+  public Action? OnDemand { get; set; }
   public Action? OnEmpty { get; set; }
+  public ILogger? Logger { get; set; }
 
-  public DataStreamFanOut(IDataStream<T> source)
+  public DataStreamFanOut(StreamInfo info)
   {
-    _source = source;
+    Info = info;
   }
 
-  public void Start()
+  public void Write(T item)
   {
-    _readLoop = Task.Run(async () =>
-    {
-      try
-      {
-        await foreach (var item in _source.ReadAsync(_cts.Token))
-        {
-          Channel<T>[] snapshot;
-          lock (_lock)
-            snapshot = [.. _subscribers];
+    Channel<T>[] snapshot;
+    lock (_lock)
+      snapshot = [.. _subscribers];
 
-          foreach (var channel in snapshot)
-            channel.Writer.TryWrite(item);
-        }
-      }
-      catch (OperationCanceledException) { }
-      finally
-      {
-        lock (_lock)
-        {
-          foreach (var channel in _subscribers)
-            channel.Writer.TryComplete();
-        }
-      }
-    });
+    foreach (var channel in snapshot)
+      channel.Writer.TryWrite(item);
   }
 
-  public IDataStream<T> Subscribe(int capacity = 256)
+  public ChannelDataStream<T> Subscribe(int capacity = 256)
   {
-    var channel = Channel.CreateBounded<T>(new BoundedChannelOptions(capacity)
+    var channel = CreateChannel(capacity);
+
+    Action? onDemand = null;
+    lock (_lock)
     {
-      FullMode = BoundedChannelFullMode.DropOldest,
-      SingleReader = true,
-      SingleWriter = true
-    });
+      _subscribers.Add(channel);
+      _demandCount++;
+      if (_demandCount == 1)
+        onDemand = OnDemand;
+    }
+    onDemand?.Invoke();
+
+    return new ChannelDataStream<T>(Info, channel.Reader, () => Unsubscribe(channel, demand: true));
+  }
+
+  public ChannelDataStream<T> SubscribePassive(int capacity = 256)
+  {
+    var channel = CreateChannel(capacity);
 
     lock (_lock)
       _subscribers.Add(channel);
 
-    return new ChannelDataStream<T>(Info, channel.Reader, () =>
+    return new ChannelDataStream<T>(Info, channel.Reader, () => Unsubscribe(channel, demand: false));
+  }
+
+  private static Channel<T> CreateChannel(int capacity) =>
+    Channel.CreateBounded<T>(new BoundedChannelOptions(capacity)
     {
-      Action? onEmpty = null;
-      lock (_lock)
+      FullMode = BoundedChannelFullMode.DropOldest,
+      SingleReader = true,
+      SingleWriter = false
+    });
+
+  private void Unsubscribe(Channel<T> channel, bool demand)
+  {
+    Action? onEmpty = null;
+    lock (_lock)
+    {
+      _subscribers.Remove(channel);
+      if (demand)
       {
-        _subscribers.Remove(channel);
-        if (_subscribers.Count == 0)
+        _demandCount--;
+        if (_demandCount == 0)
           onEmpty = OnEmpty;
       }
-      onEmpty?.Invoke();
-    });
+    }
+    onEmpty?.Invoke();
   }
 
   public async IAsyncEnumerable<T> ReadAsync(
     [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
   {
-    var sub = Subscribe();
-    await foreach (var item in ((IDataStream<T>)sub).ReadAsync(ct))
+    using var sub = Subscribe();
+    await foreach (var item in sub.ReadAsync(ct))
       yield return item;
   }
 
-  public async ValueTask DisposeAsync()
+  public ValueTask DisposeAsync()
   {
-    _cts.Cancel();
-    if (_readLoop != null)
+    lock (_lock)
     {
-      try { await _readLoop; }
-      catch { /* swallow */ }
+      foreach (var channel in _subscribers)
+        channel.Writer.TryComplete();
+      _subscribers.Clear();
     }
-    _cts.Dispose();
+    return ValueTask.CompletedTask;
   }
 }
 
-internal sealed class ChannelDataStream<T> : IDataStream<T> where T : IDataUnit
+public sealed class ChannelDataStream<T> : IDataStream<T>, IDisposable where T : IDataUnit
 {
   private readonly ChannelReader<T> _reader;
-  private readonly Action _onDispose;
+  private readonly Action _onUnsubscribe;
+  private int _disposed;
 
   public StreamInfo Info { get; }
   public Type FrameType => typeof(T);
 
-  public ChannelDataStream(StreamInfo info, ChannelReader<T> reader, Action onDispose)
+  public ChannelDataStream(StreamInfo info, ChannelReader<T> reader, Action onUnsubscribe)
   {
     Info = info;
     _reader = reader;
-    _onDispose = onDispose;
+    _onUnsubscribe = onUnsubscribe;
   }
 
   public async IAsyncEnumerable<T> ReadAsync(
     [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
   {
-    try
-    {
-      await foreach (var item in _reader.ReadAllAsync(ct))
-        yield return item;
-    }
-    finally
-    {
-      _onDispose();
-    }
+    await foreach (var item in _reader.ReadAllAsync(ct))
+      yield return item;
+  }
+
+  public void Dispose()
+  {
+    if (Interlocked.Exchange(ref _disposed, 1) == 0)
+      _onUnsubscribe();
   }
 }

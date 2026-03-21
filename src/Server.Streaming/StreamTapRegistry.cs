@@ -27,4 +27,14 @@ public sealed class StreamTapRegistry : IStreamTap
 
     return await pipeline.SubscribeDataAsync(ct);
   }
+
+  public async Task<OneOf<IVideoStream, Error>> SubscribeVideoAsync(
+    Guid cameraId, string profile, CancellationToken ct)
+  {
+    if (!_pipelines.TryGetValue((cameraId, profile), out var pipeline))
+      return Error.Create(ModuleIds.Streaming, 0x0001, Result.NotFound,
+        $"No pipeline for camera {cameraId} profile '{profile}'");
+
+    return await pipeline.SubscribeVideoAsync(ct);
+  }
 }

@@ -188,3 +188,8 @@ export interface SettingField {
   required: boolean
   value?: unknown
 }
+
+export interface StreamMetadata {
+  mimeType: string
+  resolution: string
+}

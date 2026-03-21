@@ -274,9 +274,7 @@ internal sealed class TestDataStream<T> : IDataStream<T>, IDataStream where T : 
   public StreamInfo Info => new()
   {
     DataFormat = "h264",
-    FormatParameters = null,
-    Resolution = "1920x1080",
-    Fps = 30
+    FormatParameters = null
   };
 
   public Type FrameType => typeof(T);

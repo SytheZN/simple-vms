@@ -19,27 +19,27 @@ public class TimestampConverterTests
   public void FirstTimestamp_ReturnsZero()
   {
     var converter = new TimestampConverter(90000);
-    var result = converter.ToDecodeTime(1_000_000);
+    var result = converter.ToDecodeTime(90000);
 
     Assert.That(result, Is.EqualTo(0UL));
   }
 
   /// <summary>
   /// SCENARIO:
-  /// Second timestamp is 1 second after base
+  /// Second timestamp is 90000 ticks after base (1 second at 90kHz)
   ///
   /// ACTION:
-  /// Call ToDecodeTime with base + 1_000_000 microseconds
+  /// Call ToDecodeTime with base + 90000
   ///
   /// EXPECTED RESULT:
-  /// Returns 90000 (1 second at 90kHz timescale)
+  /// Returns 90000 (direct delta, timestamps are already in timescale units)
   /// </summary>
   [Test]
   public void OneSecondLater_ReturnsTimescale()
   {
     var converter = new TimestampConverter(90000);
-    converter.ToDecodeTime(1_000_000);
-    var result = converter.ToDecodeTime(2_000_000);
+    converter.ToDecodeTime(90000);
+    var result = converter.ToDecodeTime(180000);
 
     Assert.That(result, Is.EqualTo(90000UL));
   }
@@ -49,18 +49,18 @@ public class TimestampConverterTests
   /// Calculate duration between two timestamps
   ///
   /// ACTION:
-  /// DurationBetween with 33ms gap (30fps frame duration)
+  /// DurationBetween with 3000 tick gap (30fps at 90kHz = 3000 ticks per frame)
   ///
   /// EXPECTED RESULT:
-  /// Returns 2970 (33333us * 90000 / 1000000 = 2970 ticks, approximately)
+  /// Returns 3000 (direct delta)
   /// </summary>
   [Test]
   public void DurationBetween_CalculatesCorrectly()
   {
     var converter = new TimestampConverter(90000);
-    var duration = converter.DurationBetween(0, 33333);
+    var duration = converter.DurationBetween(0, 3000);
 
-    Assert.That(duration, Is.EqualTo(2999u));
+    Assert.That(duration, Is.EqualTo(3000u));
   }
 
   /// <summary>
@@ -77,9 +77,9 @@ public class TimestampConverterTests
   public void Reset_ClearsBase()
   {
     var converter = new TimestampConverter(90000);
-    converter.ToDecodeTime(5_000_000);
+    converter.ToDecodeTime(90000);
     converter.Reset();
-    var result = converter.ToDecodeTime(10_000_000);
+    var result = converter.ToDecodeTime(180000);
 
     Assert.That(result, Is.EqualTo(0UL));
   }

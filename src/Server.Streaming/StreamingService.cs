@@ -55,7 +55,16 @@ public sealed class StreamingService : IAsyncDisposable
           captureSource, _pluginHost,
           _eventBus, _logger);
 
+        pipeline.OnParameterMismatch = () => _ = RebuildPipelineAsync(camera, stream);
         _tapRegistry.RegisterPipeline(pipeline);
+
+        var constructResult = await pipeline.ConstructAsync(ct);
+        if (constructResult.IsT1)
+        {
+          _logger.LogWarning(
+            "Failed to construct pipeline for camera {CameraId} profile '{Profile}': {Message}",
+            camera.Id, stream.Profile, constructResult.AsT1.Message);
+        }
       }
     }
 
@@ -74,6 +83,45 @@ public sealed class StreamingService : IAsyncDisposable
   public async ValueTask DisposeAsync()
   {
     await StopAsync();
+  }
+
+  private async Task RebuildPipelineAsync(Camera camera, CameraStream stream)
+  {
+    _logger.LogInformation(
+      "Rebuilding pipeline for camera {CameraId} profile '{Profile}' due to parameter mismatch",
+      camera.Id, stream.Profile);
+
+    var old = _tapRegistry.GetPipeline(camera.Id, stream.Profile);
+    if (old != null)
+    {
+      _tapRegistry.UnregisterPipeline(camera.Id, stream.Profile);
+      await old.DisposeAsync();
+    }
+
+    var captureSource = FindCaptureSource(stream.Uri);
+    if (captureSource == null)
+    {
+      _logger.LogWarning("No capture source for stream URI '{Uri}' on camera {CameraId}",
+        stream.Uri, camera.Id);
+      return;
+    }
+
+    var connectionInfo = BuildConnectionInfo(camera, stream);
+    var pipeline = new CameraPipeline(
+      camera.Id, stream.Profile, connectionInfo,
+      captureSource, _pluginHost,
+      _eventBus, _logger);
+
+    pipeline.OnParameterMismatch = () => _ = RebuildPipelineAsync(camera, stream);
+    _tapRegistry.RegisterPipeline(pipeline);
+
+    var result = await pipeline.ConstructAsync(CancellationToken.None);
+    if (result.IsT1)
+    {
+      _logger.LogWarning(
+        "Failed to construct rebuilt pipeline for camera {CameraId} profile '{Profile}': {Message}",
+        camera.Id, stream.Profile, result.AsT1.Message);
+    }
   }
 
   private ICaptureSource? FindCaptureSource(string uri)

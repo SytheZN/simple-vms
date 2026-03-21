@@ -1,4 +1,3 @@
-using System.Threading.Channels;
 using Server.Streaming;
 using Shared.Models;
 using Shared.Models.Formats;
@@ -20,10 +19,10 @@ public class DataStreamFanOutTests
 
   /// <summary>
   /// SCENARIO:
-  /// A single subscriber is connected to a fan-out
+  /// A single subscriber is connected to a push-based fan-out
   ///
   /// ACTION:
-  /// Write items to the source stream
+  /// Write items to the fan-out
   ///
   /// EXPECTED RESULT:
   /// Subscriber receives all items
@@ -31,20 +30,22 @@ public class DataStreamFanOutTests
   [Test]
   public async Task SingleSubscriber_ReceivesAllItems()
   {
-    var source = new TestDataStream<H264NalUnit>(TestInfo);
-    await using var fanOut = new DataStreamFanOut<H264NalUnit>(source);
+    await using var fanOut = new DataStreamFanOut<H264NalUnit>(TestInfo);
 
-    var sub = fanOut.Subscribe();
-    fanOut.Start();
+    using var sub = fanOut.Subscribe();
 
-    source.Write(MakeUnit(1));
-    source.Write(MakeUnit(2));
-    source.Write(MakeUnit(3));
-    source.Complete();
+    fanOut.Write(MakeUnit(1));
+    fanOut.Write(MakeUnit(2));
+    fanOut.Write(MakeUnit(3));
 
     var received = new List<ulong>();
-    await foreach (var item in ((IDataStream<H264NalUnit>)sub).ReadAsync(CancellationToken.None))
-      received.Add(item.Timestamp);
+    var cts = new CancellationTokenSource(100);
+    try
+    {
+      await foreach (var item in sub.ReadAsync(cts.Token))
+        received.Add(item.Timestamp);
+    }
+    catch (OperationCanceledException) { }
 
     Assert.That(received, Is.EqualTo(new ulong[] { 1, 2, 3 }));
   }
@@ -54,7 +55,7 @@ public class DataStreamFanOutTests
   /// Two independent subscribers connected to the same fan-out
   ///
   /// ACTION:
-  /// Write items to the source
+  /// Write items to the fan-out
   ///
   /// EXPECTED RESULT:
   /// Both subscribers receive all items independently
@@ -62,24 +63,32 @@ public class DataStreamFanOutTests
   [Test]
   public async Task MultipleSubscribers_EachReceivesAllItems()
   {
-    var source = new TestDataStream<H264NalUnit>(TestInfo);
-    await using var fanOut = new DataStreamFanOut<H264NalUnit>(source);
+    await using var fanOut = new DataStreamFanOut<H264NalUnit>(TestInfo);
 
-    var sub1 = fanOut.Subscribe();
-    var sub2 = fanOut.Subscribe();
-    fanOut.Start();
+    using var sub1 = fanOut.Subscribe();
+    using var sub2 = fanOut.Subscribe();
 
-    source.Write(MakeUnit(10));
-    source.Write(MakeUnit(20));
-    source.Complete();
+    fanOut.Write(MakeUnit(10));
+    fanOut.Write(MakeUnit(20));
+
+    var cts = new CancellationTokenSource(100);
 
     var received1 = new List<ulong>();
-    await foreach (var item in ((IDataStream<H264NalUnit>)sub1).ReadAsync(CancellationToken.None))
-      received1.Add(item.Timestamp);
+    try
+    {
+      await foreach (var item in sub1.ReadAsync(cts.Token))
+        received1.Add(item.Timestamp);
+    }
+    catch (OperationCanceledException) { }
 
     var received2 = new List<ulong>();
-    await foreach (var item in ((IDataStream<H264NalUnit>)sub2).ReadAsync(CancellationToken.None))
-      received2.Add(item.Timestamp);
+    cts = new CancellationTokenSource(100);
+    try
+    {
+      await foreach (var item in sub2.ReadAsync(cts.Token))
+        received2.Add(item.Timestamp);
+    }
+    catch (OperationCanceledException) { }
 
     Assert.That(received1, Is.EqualTo(new ulong[] { 10, 20 }));
     Assert.That(received2, Is.EqualTo(new ulong[] { 10, 20 }));
@@ -87,7 +96,7 @@ public class DataStreamFanOutTests
 
   /// <summary>
   /// SCENARIO:
-  /// Fan-out has a small capacity (2) and source writes 5 items rapidly
+  /// Fan-out subscriber has a small capacity (2) and 5 items are written rapidly
   ///
   /// ACTION:
   /// Write 5 items without reading, then read
@@ -98,22 +107,21 @@ public class DataStreamFanOutTests
   [Test]
   public async Task BackpressureDropsOldest()
   {
-    var source = new TestDataStream<H264NalUnit>(TestInfo);
-    await using var fanOut = new DataStreamFanOut<H264NalUnit>(source);
+    await using var fanOut = new DataStreamFanOut<H264NalUnit>(TestInfo);
 
-    var sub = fanOut.Subscribe(capacity: 2);
-    fanOut.Start();
+    using var sub = fanOut.Subscribe(capacity: 2);
 
     for (ulong i = 1; i <= 5; i++)
-      source.Write(MakeUnit(i));
-
-    // give the fan-out loop time to distribute
-    await Task.Delay(50);
-    source.Complete();
+      fanOut.Write(MakeUnit(i));
 
     var received = new List<ulong>();
-    await foreach (var item in ((IDataStream<H264NalUnit>)sub).ReadAsync(CancellationToken.None))
-      received.Add(item.Timestamp);
+    var cts = new CancellationTokenSource(100);
+    try
+    {
+      await foreach (var item in sub.ReadAsync(cts.Token))
+        received.Add(item.Timestamp);
+    }
+    catch (OperationCanceledException) { }
 
     Assert.That(received.Count, Is.LessThanOrEqualTo(2));
     Assert.That(received[^1], Is.EqualTo(5));
@@ -121,7 +129,7 @@ public class DataStreamFanOutTests
 
   /// <summary>
   /// SCENARIO:
-  /// Two subscribers are connected, then both finish reading
+  /// Two subscribers are connected, then both are disposed
   ///
   /// ACTION:
   /// Check SubscriberCount at each stage
@@ -132,8 +140,7 @@ public class DataStreamFanOutTests
   [Test]
   public async Task SubscriberCount_TracksActiveSubscribers()
   {
-    var source = new TestDataStream<H264NalUnit>(TestInfo);
-    await using var fanOut = new DataStreamFanOut<H264NalUnit>(source);
+    await using var fanOut = new DataStreamFanOut<H264NalUnit>(TestInfo);
 
     Assert.That(fanOut.SubscriberCount, Is.EqualTo(0));
 
@@ -143,22 +150,19 @@ public class DataStreamFanOutTests
     var sub2 = fanOut.Subscribe();
     Assert.That(fanOut.SubscriberCount, Is.EqualTo(2));
 
-    fanOut.Start();
-    source.Complete();
-
-    await foreach (var _ in ((IDataStream<H264NalUnit>)sub1).ReadAsync(CancellationToken.None)) { }
+    sub1.Dispose();
     Assert.That(fanOut.SubscriberCount, Is.EqualTo(1));
 
-    await foreach (var _ in ((IDataStream<H264NalUnit>)sub2).ReadAsync(CancellationToken.None)) { }
+    sub2.Dispose();
     Assert.That(fanOut.SubscriberCount, Is.EqualTo(0));
   }
 
   /// <summary>
   /// SCENARIO:
-  /// OnEmpty callback is set on a fan-out with one subscriber
+  /// OnEmpty callback is set on a fan-out with one demand subscriber
   ///
   /// ACTION:
-  /// Subscriber finishes reading (last subscriber leaves)
+  /// Subscriber is disposed (last demand subscriber leaves)
   ///
   /// EXPECTED RESULT:
   /// OnEmpty callback is invoked
@@ -166,27 +170,23 @@ public class DataStreamFanOutTests
   [Test]
   public async Task OnEmpty_InvokedWhenLastSubscriberLeaves()
   {
-    var source = new TestDataStream<H264NalUnit>(TestInfo);
-    await using var fanOut = new DataStreamFanOut<H264NalUnit>(source);
+    await using var fanOut = new DataStreamFanOut<H264NalUnit>(TestInfo);
 
     var emptyCalled = false;
     fanOut.OnEmpty = () => emptyCalled = true;
 
     var sub = fanOut.Subscribe();
-    fanOut.Start();
-    source.Complete();
-
-    await foreach (var _ in ((IDataStream<H264NalUnit>)sub).ReadAsync(CancellationToken.None)) { }
+    sub.Dispose();
 
     Assert.That(emptyCalled, Is.True);
   }
 
   /// <summary>
   /// SCENARIO:
-  /// OnEmpty callback is set on a fan-out with two subscribers
+  /// OnEmpty callback is set on a fan-out with two demand subscribers
   ///
   /// ACTION:
-  /// First subscriber finishes reading
+  /// First subscriber is disposed
   ///
   /// EXPECTED RESULT:
   /// OnEmpty is NOT invoked (one subscriber remains)
@@ -194,44 +194,186 @@ public class DataStreamFanOutTests
   [Test]
   public async Task OnEmpty_NotInvokedWhileSubscribersRemain()
   {
-    var source = new TestDataStream<H264NalUnit>(TestInfo);
-    await using var fanOut = new DataStreamFanOut<H264NalUnit>(source);
+    await using var fanOut = new DataStreamFanOut<H264NalUnit>(TestInfo);
 
     var emptyCalled = false;
     fanOut.OnEmpty = () => emptyCalled = true;
 
     var sub1 = fanOut.Subscribe();
     var sub2 = fanOut.Subscribe();
-    fanOut.Start();
-    source.Complete();
 
-    await foreach (var _ in ((IDataStream<H264NalUnit>)sub1).ReadAsync(CancellationToken.None)) { }
-
+    sub1.Dispose();
     Assert.That(emptyCalled, Is.False);
     Assert.That(fanOut.SubscriberCount, Is.EqualTo(1));
 
-    await foreach (var _ in ((IDataStream<H264NalUnit>)sub2).ReadAsync(CancellationToken.None)) { }
-
+    sub2.Dispose();
     Assert.That(emptyCalled, Is.True);
   }
 
-  private sealed class TestDataStream<T> : IDataStream<T> where T : IDataUnit
+  /// <summary>
+  /// SCENARIO:
+  /// A passive subscriber is connected to the fan-out
+  ///
+  /// ACTION:
+  /// Write items, then dispose the passive subscriber
+  ///
+  /// EXPECTED RESULT:
+  /// Passive subscriber receives items but does not trigger OnEmpty or OnDemand
+  /// </summary>
+  [Test]
+  public async Task PassiveSubscriber_DoesNotTriggerDemand()
   {
-    private readonly Channel<T> _channel = Channel.CreateUnbounded<T>();
+    await using var fanOut = new DataStreamFanOut<H264NalUnit>(TestInfo);
 
-    public StreamInfo Info { get; }
-    public Type FrameType => typeof(T);
+    var demandCalled = false;
+    var emptyCalled = false;
+    fanOut.OnDemand = () => demandCalled = true;
+    fanOut.OnEmpty = () => emptyCalled = true;
 
-    public TestDataStream(StreamInfo info) => Info = info;
+    using var sub = fanOut.SubscribePassive();
 
-    public void Write(T item) => _channel.Writer.TryWrite(item);
-    public void Complete() => _channel.Writer.TryComplete();
+    Assert.That(demandCalled, Is.False);
 
-    public async IAsyncEnumerable<T> ReadAsync(
-      [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    fanOut.Write(MakeUnit(1));
+
+    var received = new List<ulong>();
+    var cts = new CancellationTokenSource(100);
+    try
     {
-      await foreach (var item in _channel.Reader.ReadAllAsync(ct))
-        yield return item;
+      await foreach (var item in sub.ReadAsync(cts.Token))
+        received.Add(item.Timestamp);
     }
+    catch (OperationCanceledException) { }
+
+    Assert.That(received, Is.EqualTo(new ulong[] { 1 }));
+
+    sub.Dispose();
+    Assert.That(emptyCalled, Is.False);
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// OnDemand callback is set, first demand subscriber is added
+  ///
+  /// ACTION:
+  /// Subscribe (demand)
+  ///
+  /// EXPECTED RESULT:
+  /// OnDemand fires
+  /// </summary>
+  [Test]
+  public async Task OnDemand_FiredOnFirstDemandSubscriber()
+  {
+    await using var fanOut = new DataStreamFanOut<H264NalUnit>(TestInfo);
+
+    var demandCalled = false;
+    fanOut.OnDemand = () => demandCalled = true;
+
+    fanOut.Subscribe();
+
+    Assert.That(demandCalled, Is.True);
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Two demand subscribers added
+  ///
+  /// ACTION:
+  /// Subscribe twice
+  ///
+  /// EXPECTED RESULT:
+  /// OnDemand fires only once (on first subscriber)
+  /// </summary>
+  [Test]
+  public async Task OnDemand_FiredOnlyOnce()
+  {
+    await using var fanOut = new DataStreamFanOut<H264NalUnit>(TestInfo);
+
+    var demandCount = 0;
+    fanOut.OnDemand = () => demandCount++;
+
+    fanOut.Subscribe();
+    fanOut.Subscribe();
+
+    Assert.That(demandCount, Is.EqualTo(1));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// ChannelDataStream is disposed twice
+  ///
+  /// ACTION:
+  /// Call Dispose twice
+  ///
+  /// EXPECTED RESULT:
+  /// Second dispose is a no-op, subscriber count doesn't go negative
+  /// </summary>
+  [Test]
+  public async Task ChannelDataStream_DoubleDispose_IsIdempotent()
+  {
+    await using var fanOut = new DataStreamFanOut<H264NalUnit>(TestInfo);
+
+    var sub = fanOut.Subscribe();
+    Assert.That(fanOut.SubscriberCount, Is.EqualTo(1));
+
+    sub.Dispose();
+    Assert.That(fanOut.SubscriberCount, Is.EqualTo(0));
+
+    sub.Dispose();
+    Assert.That(fanOut.SubscriberCount, Is.EqualTo(0));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// ReadAsync is called on the fan-out directly (not via subscriber)
+  ///
+  /// ACTION:
+  /// Write items, read via ReadAsync
+  ///
+  /// EXPECTED RESULT:
+  /// Creates an internal subscriber and returns items
+  /// </summary>
+  [Test]
+  public async Task ReadAsync_CreatesInternalSubscriber()
+  {
+    await using var fanOut = new DataStreamFanOut<H264NalUnit>(TestInfo);
+
+    var readTask = Task.Run(async () =>
+    {
+      var received = new List<ulong>();
+      var cts = new CancellationTokenSource(200);
+      try
+      {
+        await foreach (var item in fanOut.ReadAsync(cts.Token))
+          received.Add(item.Timestamp);
+      }
+      catch (OperationCanceledException) { }
+      return received;
+    });
+
+    await Task.Delay(50);
+    fanOut.Write(MakeUnit(1));
+    fanOut.Write(MakeUnit(2));
+
+    var received = await readTask;
+    Assert.That(received, Is.EqualTo(new ulong[] { 1, 2 }));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Fan-out Info property returns the StreamInfo passed at construction
+  ///
+  /// ACTION:
+  /// Read Info
+  ///
+  /// EXPECTED RESULT:
+  /// Returns the same StreamInfo
+  /// </summary>
+  [Test]
+  public void Info_ReturnsConstructionInfo()
+  {
+    var fanOut = new DataStreamFanOut<H264NalUnit>(TestInfo);
+
+    Assert.That(fanOut.Info.DataFormat, Is.EqualTo("h264"));
   }
 }

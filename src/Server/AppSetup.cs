@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Server.Api;
 using Server.Core;
+using Server.Logging;
 using Server.Plugins;
 using Server.Streaming;
 using Shared.Models;
@@ -13,12 +14,25 @@ namespace Server;
 public static class AppSetup
 {
   private static StreamingService? _streamingService;
+  private static HybridLoggerProvider? _loggerProvider;
+
   public static void Configure(WebApplicationBuilder builder)
   {
     var config = builder.Configuration;
     var dataPath = config["data-path"]!;
     var pluginsPath = Path.Combine(dataPath, "plugins");
     var quicPort = config.GetValue("quic-port", 443);
+
+    _loggerProvider = new HybridLoggerProvider();
+
+    using var earlyLoggerFactory = LoggerFactory.Create(b =>
+    {
+      b.AddConfiguration(config.GetSection("Logging"));
+      b.AddConsole();
+      b.AddProvider(_loggerProvider);
+    });
+
+    builder.Logging.AddProvider(_loggerProvider);
 
     var systemHealth = new SystemHealth();
     builder.Services.AddSingleton(systemHealth);
@@ -32,12 +46,6 @@ public static class AppSetup
 
     var eventBus = new EventBus();
     builder.Services.AddSingleton<IEventBus>(eventBus);
-
-    using var earlyLoggerFactory = LoggerFactory.Create(b =>
-    {
-      b.AddConfiguration(config.GetSection("Logging"));
-      b.AddConsole();
-    });
 
     var dataProviderConfig = new DataProviderConfigJsonStore(dataPath);
     builder.Services.AddSingleton(dataProviderConfig);
@@ -69,6 +77,7 @@ public static class AppSetup
 
   public static async Task InitializeAsync(WebApplication app)
   {
+    app.UseWebSockets();
     app.UseApiMiddleware();
     app.UseDefaultFiles();
     app.UseStaticFiles();
@@ -91,6 +100,8 @@ public static class AppSetup
 
       var pluginHost = app.Services.GetRequiredService<IPluginHost>();
       pluginHost.StopAsync().GetAwaiter().GetResult();
+
+      _loggerProvider?.Dispose();
     });
 
     var certManager = app.Services.GetRequiredService<CertificateManager>();
@@ -98,6 +109,7 @@ public static class AppSetup
 
     if (TryInitializeCerts(app, certManager))
     {
+      _loggerProvider?.EnableDataDir(app.Configuration["data-path"]!);
       systemHealth.TransitionToStarting();
       await CompleteStartupAsync(app);
       systemHealth.TransitionToHealthy();
@@ -155,6 +167,7 @@ public static class AppSetup
 
       if (certManager.HasCerts || certManager.TryLoadCerts())
       {
+        _loggerProvider?.EnableDataDir(app.Configuration["data-path"]!);
         systemHealth.TransitionToStarting();
         await CompleteStartupAsync(app);
         systemHealth.TransitionToHealthy();
