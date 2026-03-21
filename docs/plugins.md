@@ -120,7 +120,7 @@ public interface IDataStream<T> : IDataStream where T : IDataUnit
 
 public interface IVideoStream
 {
-    StreamInfo Info { get; }
+    VideoStreamInfo Info { get; }
     Type FrameType { get; }
 }
 
@@ -133,12 +133,21 @@ public sealed class StreamInfo
 {
     public required string DataFormat { get; init; }
     public object? FormatParameters { get; init; }
-    public string? Resolution { get; init; }
     public int? Fps { get; init; }
+}
+
+public sealed class VideoStreamInfo
+{
+    public required string DataFormat { get; init; }
+    public required string MimeType { get; init; }
+    public required string Resolution { get; init; }
+    public required int Fps { get; init; }
 }
 ```
 
 `IDataStream<T>` carries raw codec data from capture sources. `IVideoStream<T>` carries muxed container data from format plugins. The non-generic base interfaces (`IDataStream`, `IVideoStream`) allow the server core to wire the pipeline by matching `FrameType` without knowing the generic type parameter at compile time.
+
+`StreamInfo` describes the raw data stream from a capture source. `VideoStreamInfo` describes the muxed video output from a format plugin.
 
 `StreamInfo.FormatParameters` is `object?` - plugins within the same assembly cast it to the expected type (e.g. `H264Parameters`). Plugins in different assemblies that handle the same format reference the shared type from `Shared.Models/Formats/`.
 
@@ -183,7 +192,7 @@ public interface IStreamFormat
     string FileExtension { get; }
     Type InputType { get; }
     Type OutputType { get; }
-    OneOf<IVideoStream, Error> CreatePipeline(IDataStream input, StreamInfo info);
+    Task<OneOf<IVideoStream, Error>> CreatePipelineAsync(IDataStream input, StreamInfo info, CancellationToken ct);
     OneOf<ISegmentReader, Error> CreateReader(Stream input);
 }
 

@@ -487,6 +487,19 @@ Live video and playback are not REST operations - they use dedicated QUIC stream
 
 For the web UI (HTTP only), live and playback are served via:
 
+#### OPTIONS /api/v1/live/{cameraId}/{profile}
+
+Stream metadata. Returns the pipeline's `VideoStreamInfo` for the stream. The client uses this to configure MSE before connecting the WebSocket.
+
+**Response body:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `mimeType` | string | MSE-compatible MIME type (e.g. `video/mp4; codecs="avc1.640029"`) |
+| `resolution` | string | e.g. `2560x1440` |
+
+Returns `NotFound` if no pipeline exists for the camera/profile. Returns `Unavailable` if the pipeline has not initialized.
+
 #### GET /api/v1/live/{cameraId}/{profile}
 
 WebSocket upgrade. Server pushes fMP4 fragments for consumption via MSE (Media Source Extensions).
