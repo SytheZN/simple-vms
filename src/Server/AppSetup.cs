@@ -6,6 +6,7 @@ using Server.Api;
 using Server.Core;
 using Server.Logging;
 using Server.Plugins;
+using Server.Recording;
 using Server.Streaming;
 using Shared.Models;
 using Shared.Models.Events;
@@ -15,6 +16,8 @@ namespace Server;
 public static class AppSetup
 {
   private static StreamingService? _streamingService;
+  private static RecordingManager? _recordingManager;
+  private static RetentionEngine? _retentionEngine;
   private static HybridLoggerProvider? _loggerProvider;
 
   public static void Configure(WebApplicationBuilder builder)
@@ -110,6 +113,8 @@ public static class AppSetup
 
     app.Lifetime.ApplicationStopping.Register(() =>
     {
+      _retentionEngine?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+      _recordingManager?.DisposeAsync().AsTask().GetAwaiter().GetResult();
       _streamingService?.StopAsync().GetAwaiter().GetResult();
 
       var pluginHost = app.Services.GetRequiredService<IPluginHost>();
@@ -149,13 +154,26 @@ public static class AppSetup
     pluginHost.Initialize();
     await pluginHost.StartAsync(app.Lifetime.ApplicationStopping);
 
-    var cameraRegistry = new CameraRegistryImpl(pluginHost.DataProvider, statusTracker);
+    var cameraRegistry = new CameraRegistry(pluginHost.DataProvider, statusTracker);
     pluginHost.SetCameraRegistry(cameraRegistry);
 
     _streamingService = new StreamingService(
       pluginHost, tapRegistry, eventBus,
       app.Services.GetRequiredService<ILoggerFactory>().CreateLogger<StreamingService>());
     await _streamingService.StartAsync(app.Lifetime.ApplicationStopping);
+
+    var recordingAccess = new RecordingAccess(pluginHost);
+    pluginHost.SetRecordingAccess(recordingAccess);
+
+    _recordingManager = new RecordingManager(
+      pluginHost, tapRegistry, eventBus,
+      app.Services.GetRequiredService<ILoggerFactory>().CreateLogger<RecordingManager>());
+    await _recordingManager.StartAsync(app.Lifetime.ApplicationStopping);
+
+    _retentionEngine = new RetentionEngine(
+      pluginHost,
+      app.Services.GetRequiredService<ILoggerFactory>().CreateLogger<RetentionEngine>());
+    _retentionEngine.Start(app.Lifetime.ApplicationStopping);
   }
 
   private static bool TryInitializeCerts(WebApplication app, CertificateManager certManager)

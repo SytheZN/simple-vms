@@ -43,9 +43,11 @@ public sealed class PluginHost : IPluginHost
 
   private IStreamTap? _streamTap;
   private ICameraRegistry? _cameraRegistry;
+  private IRecordingAccess? _recordingAccess;
 
   public void SetStreamTap(IStreamTap streamTap) => _streamTap = streamTap;
   public void SetCameraRegistry(ICameraRegistry cameraRegistry) => _cameraRegistry = cameraRegistry;
+  public void SetRecordingAccess(IRecordingAccess recordingAccess) => _recordingAccess = recordingAccess;
 
   public IStreamFormat? FindFormat(Type inputType) =>
     _streamFormats.FirstOrDefault(f => f.InputType == inputType);
@@ -184,7 +186,8 @@ public sealed class PluginHost : IPluginHost
       EventBus = _eventBus,
       DataStore = _dataProvider?.GetDataStore(entry.Metadata.Id),
       StreamTap = _streamTap,
-      CameraRegistry = _cameraRegistry
+      CameraRegistry = _cameraRegistry,
+      RecordingAccess = _recordingAccess
     };
   }
 

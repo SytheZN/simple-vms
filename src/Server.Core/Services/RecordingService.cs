@@ -89,7 +89,7 @@ public sealed class RecordingService
     for (var i = 1; i < segments.Count; i++)
     {
       var seg = segments[i];
-      if (seg.StartTime <= end)
+      if (seg.StartTime <= end + 1)
       {
         if (seg.EndTime > end) end = seg.EndTime;
       }

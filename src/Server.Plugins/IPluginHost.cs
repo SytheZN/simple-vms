@@ -18,6 +18,7 @@ public interface IPluginHost
   IStreamFormat? FindFormat(Type inputType);
   void SetStreamTap(IStreamTap streamTap);
   void SetCameraRegistry(ICameraRegistry cameraRegistry);
+  void SetRecordingAccess(IRecordingAccess recordingAccess);
   void Discover(string pluginsPath);
   void Initialize(bool dataOnly = false);
   Task StartAsync(CancellationToken ct);
