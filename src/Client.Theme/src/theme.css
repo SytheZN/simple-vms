@@ -484,7 +484,7 @@
   background: var(--color-surface-sunken);
   border-radius: var(--radius-sm);
   position: relative;
-  overflow: hidden;
+  margin-top: var(--space-3);
 }
 
 .timeline-span {
@@ -509,6 +509,17 @@
 
 .timeline-playhead {
   background: var(--color-text);
+  overflow: visible;
+}
+.timeline-playhead::before {
+  content: '';
+  position: absolute;
+  bottom: calc(100% - 3px);
+  left: 46%;
+  transform: translateX(-50%);
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 6px solid var(--color-text);
 }
 .timeline-alert {
   background: var(--color-danger);

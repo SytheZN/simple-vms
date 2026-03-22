@@ -6,24 +6,45 @@ import type { TimelineSpan, TimelineEvent } from '@/types/api'
 const props = defineProps<{
   cameraId: string
   profile: string
+  currentTimeUs: number
 }>()
 
 const emit = defineEmits<{
   seek: [timestamp: number]
 }>()
 
+function resetWindow() {
+  skipNextStabilize = true
+  endOffset.value = defaultOffset()
+  scheduleLoad()
+}
+
+defineExpose({ resetWindow })
+
 const containerRef = ref<HTMLDivElement | null>(null)
 const barRef = ref<HTMLDivElement | null>(null)
 const spans = ref<TimelineSpan[]>([])
 const events = ref<TimelineEvent[]>([])
-const loading = ref(false)
 const dragging = ref(false)
 
-const nowUs = ref(Date.now() * 1000)
 const windowHours = ref(4)
 const endOffset = ref(defaultOffset())
-const windowEnd = computed(() => nowUs.value + endOffset.value)
+const initialAnchor = Date.now() * 1000
+let skipNextStabilize = false
+
+const anchorUs = computed(() => props.currentTimeUs || initialAnchor)
+const windowEnd = computed(() => anchorUs.value + endOffset.value)
 const windowStart = computed(() => windowEnd.value - windowHours.value * 3600 * 1_000_000)
+
+watch(anchorUs, (newVal, oldVal) => {
+  if (skipNextStabilize) {
+    skipNextStabilize = false
+    return
+  }
+  if (oldVal && Math.abs(newVal - oldVal) > 5_000_000) {
+    endOffset.value += oldVal - newVal
+  }
+})
 
 let tickTimer: ReturnType<typeof setInterval> | null = null
 
@@ -40,7 +61,6 @@ function markInteraction() {
 
 function startTicking() {
   tickTimer = setInterval(() => {
-    nowUs.value = Date.now() * 1000
     const now = Date.now()
     if (now - lastInteraction > 5000 && now - lastAutoLoad >= 60000) {
       lastAutoLoad = now
@@ -50,12 +70,12 @@ function startTicking() {
 }
 
 async function loadTimeline() {
-  loading.value = true
   try {
+    const range = windowEnd.value - windowStart.value
     const result = await api.recordings.timeline(
       props.cameraId,
-      windowStart.value,
-      windowEnd.value,
+      Math.floor(windowStart.value - range),
+      Math.floor(windowEnd.value + range),
       props.profile
     )
     spans.value = result.spans
@@ -64,7 +84,6 @@ async function loadTimeline() {
     spans.value = []
     events.value = []
   } finally {
-    loading.value = false
   }
 }
 
@@ -109,7 +128,7 @@ function ceilToLocalInterval(tsUs: number, intervalMinutes: number): Date {
 }
 
 function todayMidnight(): Date {
-  const d = new Date(nowUs.value / 1000)
+  const d = new Date(anchorUs.value / 1000)
   return new Date(d.getFullYear(), d.getMonth(), d.getDate())
 }
 
@@ -181,12 +200,14 @@ const timeLabels = computed(() => {
   return generateDayTicks(start, end, range)
 })
 
-const playheadPct = computed(() =>
-  Math.max(0, Math.min(100, timestampToPercent(nowUs.value)))
-)
+const playheadPct = computed(() => {
+  if (!props.currentTimeUs) return -1
+  return Math.max(0, Math.min(100, timestampToPercent(props.currentTimeUs)))
+})
 
 let dragStartX = 0
 let dragStartOffset = 0
+let dragMoved = false
 
 function onPointerDown(e: PointerEvent) {
   markInteraction()
@@ -199,6 +220,7 @@ function onPointerDown(e: PointerEvent) {
   if (!containerRef.value) return
   e.preventDefault()
   dragging.value = true
+  dragMoved = false
   dragStartX = e.clientX
   dragStartOffset = endOffset.value
   ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
@@ -206,17 +228,28 @@ function onPointerDown(e: PointerEvent) {
 
 function onPointerMove(e: PointerEvent) {
   if (!dragging.value || !barRef.value) return
+  const dx = Math.abs(e.clientX - dragStartX)
+  if (dx > 3) dragMoved = true
   const rect = barRef.value.getBoundingClientRect()
   const deltaPct = (e.clientX - dragStartX) / rect.width
   const range = windowHours.value * 3600 * 1_000_000
   endOffset.value = dragStartOffset - deltaPct * range
 }
 
-function onPointerUp() {
+function onPointerUp(e: PointerEvent) {
   if (!dragging.value) return
   markInteraction()
   dragging.value = false
-  scheduleLoad()
+
+  if (!dragMoved && barRef.value) {
+    const rect = barRef.value.getBoundingClientRect()
+    const pct = (e.clientX - rect.left) / rect.width
+    const range = windowEnd.value - windowStart.value
+    const ts = Math.floor(windowStart.value + pct * range)
+    emit('seek', ts)
+  } else {
+    scheduleLoad()
+  }
 }
 
 function onWheel(e: WheelEvent) {
@@ -235,13 +268,13 @@ function onWheel(e: WheelEvent) {
   const oldRange = oldHours * 3600 * 1_000_000
   const newRange = newHours * 3600 * 1_000_000
 
-  const oldStart = nowUs.value + endOffset.value - oldRange
+  const oldStart = anchorUs.value + endOffset.value - oldRange
   const tsAtCursor = oldStart + cursorPct * oldRange
   const newStart = tsAtCursor - cursorPct * newRange
   const newEnd = newStart + newRange
 
   windowHours.value = newHours
-  endOffset.value = newEnd - nowUs.value
+  endOffset.value = newEnd - anchorUs.value
 }
 
 function onMiddleClick(e: MouseEvent) {
@@ -288,7 +321,8 @@ onUnmounted(() => {
           class="timeline-span timeline-span-recording"
           :style="{
             left: timestampToPercent(span.startTime) + '%',
-            width: Math.max(0.5, timestampToPercent(span.endTime) - timestampToPercent(span.startTime)) + '%'
+            width: (timestampToPercent(span.endTime) - timestampToPercent(span.startTime)) + '%',
+            minWidth: '1px'
           }"
         ></div>
 
@@ -305,9 +339,6 @@ onUnmounted(() => {
           :style="{ left: playheadPct + '%' }"
         ></div>
 
-        <div v-if="loading" class="absolute inset-0 flex items-center justify-center">
-          <div class="spinner spinner-sm"></div>
-        </div>
       </div>
 
       <div class="relative h-4">

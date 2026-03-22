@@ -19,22 +19,17 @@ onMounted(async () => {
     return
   }
 
-  const minDelay = new Promise(resolve => setTimeout(resolve, 500))
-  let target: string | null = null
-
-  try {
-    const health = await api.system.health()
-    if (health.status === 'missing-certs') {
-      target = '/setup'
+  while (true) {
+    try {
+      const health = await api.system.health()
+      if (health.status === 'missing-certs') {
+        await router.replace('/setup')
+        break
+      }
+      if (health.status !== 'starting') break
+    } catch {
     }
-  } catch {
-    target = '/setup'
-  }
-
-  await minDelay
-
-  if (target) {
-    await router.replace(target)
+    await new Promise(resolve => setTimeout(resolve, 1000))
   }
   ready.value = true
 })

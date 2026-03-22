@@ -504,13 +504,32 @@ Returns `NotFound` if no pipeline exists for the camera/profile. Returns `Unavai
 
 WebSocket upgrade. Server pushes fMP4 fragments for consumption via MSE (Media Source Extensions).
 
-#### GET /api/v1/playback/{cameraId}/{profile}
+#### OPTIONS /api/v1/playback/{cameraId}/{profile}
 
-WebSocket upgrade. Client sends seek commands, server pushes fMP4 fragments.
+Playback metadata. Resolves a timestamp to the nearest playback point.
 
 **Query parameters:**
 
 | Param | Type | Description |
 |-------|------|-------------|
-| `from` | ulong | Unix microseconds start time |
-| `to` | ulong? | Unix microseconds end time |
+| `from` | ulong | Unix microseconds target time |
+
+**Response body:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `from` | ulong | Resolved keyframe timestamp (0 if no recording found) |
+| `segmentId` | Guid | Segment containing the keyframe |
+| `mimeType` | string | MSE-compatible MIME type |
+| `resolution` | string | e.g. `2560x1440` |
+
+#### GET /api/v1/playback/{cameraId}/{profile}
+
+WebSocket upgrade. Server sends fMP4 fragments from the specified segment and keyframe, continuing through subsequent segments. Client controls pacing by sending 2-byte big-endian box count requests.
+
+**Query parameters:**
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `from` | ulong | Keyframe timestamp (from OPTIONS response) |
+| `segmentId` | Guid | Segment ID (from OPTIONS response) |

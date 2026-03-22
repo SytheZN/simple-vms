@@ -193,3 +193,10 @@ export interface StreamMetadata {
   mimeType: string
   resolution: string
 }
+
+export interface PlaybackMetadata {
+  from: number
+  segmentId: string
+  mimeType: string
+  resolution: string
+}
