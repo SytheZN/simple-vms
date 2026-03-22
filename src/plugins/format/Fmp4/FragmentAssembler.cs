@@ -1,3 +1,4 @@
+using Shared.Models;
 using Shared.Models.Formats;
 
 namespace Format.Fmp4;
@@ -10,16 +11,11 @@ public record KeyframeOffset
 
 public sealed class FragmentAssembler
 {
-  private readonly TimestampConverter _timestamps;
   private uint _sequenceNumber;
   private long _bytesWritten;
 
-  public FragmentAssembler(TimestampConverter timestamps)
-  {
-    _timestamps = timestamps;
-  }
-
   public long BytesWritten => _bytesWritten;
+  public uint Timescale { get; init; } = 90000;
 
   public (Fmp4Fragment fragment, KeyframeOffset? keyframeOffset) Assemble(
     IReadOnlyList<ReadOnlyMemory<byte>> annexBNals,
@@ -29,38 +25,31 @@ public sealed class FragmentAssembler
   {
     _sequenceNumber++;
 
-    var baseDecodeTime = _timestamps.ToDecodeTime(firstTimestamp);
-    var moofBytes = MoofBuilder.Build(_sequenceNumber, baseDecodeTime, samples);
+    var wallClockUs = DateTimeOffset.UtcNow.ToUnixMicroseconds();
+    var moofBytes = MoofBuilder.Build(
+      _sequenceNumber, firstTimestamp, samples,
+      wallClockUs: isKeyframe ? wallClockUs : 0);
     var mdatBytes = MdatBuilder.Build(annexBNals);
 
-    byte[]? emsgBytes = null;
-    if (isKeyframe)
-    {
-      var wallClockUs = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000;
-      emsgBytes = EmsgBuilder.Build(wallClockUs, baseDecodeTime, _timestamps.Timescale);
-    }
+    var moofOffset = _bytesWritten;
 
-    var emsgLen = emsgBytes?.Length ?? 0;
-    var moofOffset = _bytesWritten + emsgLen;
-
-    var fragmentData = new byte[emsgLen + moofBytes.Length + mdatBytes.Length];
-    if (emsgBytes != null)
-      emsgBytes.CopyTo(fragmentData, 0);
-    moofBytes.CopyTo(fragmentData, emsgLen);
-    mdatBytes.CopyTo(fragmentData, emsgLen + moofBytes.Length);
+    var fragmentData = new byte[moofBytes.Length + mdatBytes.Length];
+    moofBytes.CopyTo(fragmentData, 0);
+    mdatBytes.CopyTo(fragmentData, moofBytes.Length);
 
     _bytesWritten += fragmentData.Length;
 
     var fragment = new Fmp4Fragment
     {
       Data = fragmentData,
-      Timestamp = firstTimestamp,
+      Timestamp = wallClockUs,
+      MediaTimestamp = firstTimestamp,
       IsSyncPoint = isKeyframe,
       IsHeader = false
     };
 
     KeyframeOffset? keyframe = isKeyframe
-      ? new KeyframeOffset { Timestamp = firstTimestamp, ByteOffset = moofOffset }
+      ? new KeyframeOffset { Timestamp = wallClockUs, ByteOffset = moofOffset }
       : null;
 
     return (fragment, keyframe);

@@ -37,8 +37,7 @@ public class MuxerRoundTripTests
     var nals = CreateH264NalSequence(2);
     var input = new TestDataStream<H264NalUnit>(nals);
 
-    var timestamps = new TimestampConverter(90000);
-    var muxer = new Fmp4Muxer(MuxerCodec.H264, input, timestamps);
+    var muxer = new Fmp4Muxer(MuxerCodec.H264, input);
 
     var fragments = new List<Fmp4Fragment>();
     await foreach (var fragment in muxer.MuxAsync(CancellationToken.None))
@@ -66,8 +65,7 @@ public class MuxerRoundTripTests
     var nals = CreateH264NalSequence(1);
     var input = new TestDataStream<H264NalUnit>(nals);
 
-    var timestamps = new TimestampConverter(90000);
-    var muxer = new Fmp4Muxer(MuxerCodec.H264, input, timestamps);
+    var muxer = new Fmp4Muxer(MuxerCodec.H264, input);
 
     var fragments = new List<Fmp4Fragment>();
     await foreach (var fragment in muxer.MuxAsync(CancellationToken.None))
@@ -99,8 +97,7 @@ public class MuxerRoundTripTests
     var input = new TestDataStream<H264NalUnit>(nals);
 
     var keyframes = new List<KeyframeOffset>();
-    var timestamps = new TimestampConverter(90000);
-    var muxer = new Fmp4Muxer(MuxerCodec.H264, input, timestamps, kf => keyframes.Add(kf));
+    var muxer = new Fmp4Muxer(MuxerCodec.H264, input, onKeyframe: kf => keyframes.Add(kf));
 
     var allData = new MemoryStream();
     await foreach (var fragment in muxer.MuxAsync(CancellationToken.None))
@@ -133,8 +130,7 @@ public class MuxerRoundTripTests
     var input = new TestDataStream<H264NalUnit>(nals);
 
     var keyframes = new List<KeyframeOffset>();
-    var timestamps = new TimestampConverter(90000);
-    var muxer = new Fmp4Muxer(MuxerCodec.H264, input, timestamps, kf => keyframes.Add(kf));
+    var muxer = new Fmp4Muxer(MuxerCodec.H264, input, onKeyframe: kf => keyframes.Add(kf));
 
     var allData = new MemoryStream();
     await foreach (var fragment in muxer.MuxAsync(CancellationToken.None))
@@ -170,8 +166,7 @@ public class MuxerRoundTripTests
     var nals = CreateH264NalSequence(2);
     var input = new TestDataStream<H264NalUnit>(nals);
 
-    var timestamps = new TimestampConverter(90000);
-    var muxer = new Fmp4Muxer(MuxerCodec.H264, input, timestamps);
+    var muxer = new Fmp4Muxer(MuxerCodec.H264, input);
 
     var allData = new MemoryStream();
     await foreach (var fragment in muxer.MuxAsync(CancellationToken.None))

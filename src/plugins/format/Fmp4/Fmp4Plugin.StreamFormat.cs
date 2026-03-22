@@ -13,8 +13,7 @@ public sealed partial class Fmp4H264Plugin : IStreamFormat
   public async Task<OneOf<IVideoStream, Error>> CreatePipelineAsync(
     IDataStream input, StreamInfo info, CancellationToken ct)
   {
-    var timestamps = new TimestampConverter();
-    var muxer = new Fmp4Muxer(MuxerCodec.H264, input, timestamps);
+    var muxer = new Fmp4Muxer(MuxerCodec.H264, input);
     var outputInfo = await muxer.InitAsync(info.Fps ?? 0, ct);
     return new Fmp4VideoStream(muxer, outputInfo);
   }
@@ -33,8 +32,7 @@ public sealed partial class Fmp4H265Plugin : IStreamFormat
   public async Task<OneOf<IVideoStream, Error>> CreatePipelineAsync(
     IDataStream input, StreamInfo info, CancellationToken ct)
   {
-    var timestamps = new TimestampConverter();
-    var muxer = new Fmp4Muxer(MuxerCodec.H265, input, timestamps);
+    var muxer = new Fmp4Muxer(MuxerCodec.H265, input);
     var outputInfo = await muxer.InitAsync(info.Fps ?? 0, ct);
     return new Fmp4VideoStream(muxer, outputInfo);
   }

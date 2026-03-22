@@ -45,7 +45,8 @@ public sealed class Fmp4SegmentReader : ISegmentReader
     var moofStart = moofHeader.DataOffset - moofHeader.HeaderSize;
     var moofEnd = moofStart + moofHeader.Size;
 
-    ulong timestamp = 0;
+    ulong mediaTimestamp = 0;
+    ulong wallTimestamp = 0;
     var isKeyframe = false;
 
     _reader.Position = moofHeader.DataOffset;
@@ -68,9 +69,9 @@ public sealed class Fmp4SegmentReader : ISegmentReader
           {
             var fields = _reader.ReadFullBoxFields();
             if (fields is { version: 1 })
-              timestamp = _reader.ReadUInt64() ?? 0;
+              mediaTimestamp = _reader.ReadUInt64() ?? 0;
             else if (fields != null)
-              timestamp = _reader.ReadUInt32() ?? 0;
+              mediaTimestamp = _reader.ReadUInt32() ?? 0;
           }
           else if (trafChild.Type == "trun")
           {
@@ -105,6 +106,15 @@ public sealed class Fmp4SegmentReader : ISegmentReader
           _reader.Position = trafChild.DataOffset - trafChild.HeaderSize + trafChild.Size;
         }
       }
+      else if (childHeader.Type == "prft")
+      {
+        var fields = _reader.ReadFullBoxFields();
+        if (fields is { version: 1 })
+        {
+          _reader.ReadUInt32();
+          wallTimestamp = _reader.ReadUInt64() ?? 0;
+        }
+      }
 
       _reader.Position = childHeader.DataOffset - childHeader.HeaderSize + childHeader.Size;
     }
@@ -125,7 +135,8 @@ public sealed class Fmp4SegmentReader : ISegmentReader
     return new Fmp4Fragment
     {
       Data = data,
-      Timestamp = timestamp,
+      Timestamp = wallTimestamp,
+      MediaTimestamp = mediaTimestamp,
       IsSyncPoint = isKeyframe,
       IsHeader = false
     };

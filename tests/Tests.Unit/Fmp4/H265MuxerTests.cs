@@ -40,8 +40,7 @@ public class H265MuxerTests
     var nals = CreateH265NalSequence(2);
     var input = new TestDataStream<H265NalUnit>(nals);
 
-    var timestamps = new TimestampConverter(90000);
-    var muxer = new Fmp4Muxer(MuxerCodec.H265, input, timestamps);
+    var muxer = new Fmp4Muxer(MuxerCodec.H265, input);
 
     var fragments = new List<Fmp4Fragment>();
     await foreach (var fragment in muxer.MuxAsync(CancellationToken.None))
@@ -69,8 +68,7 @@ public class H265MuxerTests
     var nals = CreateH265NalSequence(1);
     var input = new TestDataStream<H265NalUnit>(nals);
 
-    var timestamps = new TimestampConverter(90000);
-    var muxer = new Fmp4Muxer(MuxerCodec.H265, input, timestamps);
+    var muxer = new Fmp4Muxer(MuxerCodec.H265, input);
 
     var fragments = new List<Fmp4Fragment>();
     await foreach (var fragment in muxer.MuxAsync(CancellationToken.None))
@@ -97,8 +95,7 @@ public class H265MuxerTests
     var nals = CreateH265NalSequence(2);
     var input = new TestDataStream<H265NalUnit>(nals);
 
-    var timestamps = new TimestampConverter(90000);
-    var muxer = new Fmp4Muxer(MuxerCodec.H265, input, timestamps);
+    var muxer = new Fmp4Muxer(MuxerCodec.H265, input);
 
     var allData = new MemoryStream();
     await foreach (var fragment in muxer.MuxAsync(CancellationToken.None))

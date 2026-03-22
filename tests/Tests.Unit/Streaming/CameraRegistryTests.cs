@@ -5,7 +5,7 @@ using Shared.Models;
 namespace Tests.Unit.Streaming;
 
 [TestFixture]
-public class CameraRegistryImplTests
+public class CameraRegistryTests
 {
   /// <summary>
   /// SCENARIO:
@@ -34,7 +34,7 @@ public class CameraRegistryImplTests
     };
 
     var dp = new FakeDataProvider([camera], [stream]);
-    var registry = new CameraRegistryImpl(dp, new CameraStatusTracker());
+    var registry = new CameraRegistry(dp, new CameraStatusTracker());
 
     var result = await registry.GetCamerasAsync(CancellationToken.None);
 
@@ -58,7 +58,7 @@ public class CameraRegistryImplTests
   public async Task GetCameras_OnError_ReturnsEmpty()
   {
     var dp = new FakeDataProvider(error: true);
-    var registry = new CameraRegistryImpl(dp, new CameraStatusTracker());
+    var registry = new CameraRegistry(dp, new CameraStatusTracker());
 
     var result = await registry.GetCamerasAsync(CancellationToken.None);
 
@@ -86,7 +86,7 @@ public class CameraRegistryImplTests
     };
 
     var dp = new FakeDataProvider([camera], []);
-    var registry = new CameraRegistryImpl(dp, new CameraStatusTracker());
+    var registry = new CameraRegistry(dp, new CameraStatusTracker());
 
     var result = await registry.GetCameraAsync(cameraId, CancellationToken.None);
 
@@ -108,7 +108,7 @@ public class CameraRegistryImplTests
   public async Task GetCamera_NotFound_ReturnsNull()
   {
     var dp = new FakeDataProvider([], []);
-    var registry = new CameraRegistryImpl(dp, new CameraStatusTracker());
+    var registry = new CameraRegistry(dp, new CameraStatusTracker());
 
     var result = await registry.GetCameraAsync(Guid.NewGuid(), CancellationToken.None);
 

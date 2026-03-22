@@ -118,6 +118,7 @@ public class ReconnectionTests
     public IStreamFormat? FindFormat(Type inputType) => null;
     public void SetStreamTap(IStreamTap streamTap) { }
     public void SetCameraRegistry(ICameraRegistry cameraRegistry) { }
+    public void SetRecordingAccess(IRecordingAccess recordingAccess) { }
     public void Discover(string pluginsPath) { }
     public void Initialize(bool dataOnly = false) { }
     public Task StartAsync(CancellationToken ct) => Task.CompletedTask;

@@ -3,12 +3,12 @@ using Shared.Models;
 
 namespace Server.Streaming;
 
-public sealed class CameraRegistryImpl : ICameraRegistry
+public sealed class CameraRegistry : ICameraRegistry
 {
   private readonly IDataProvider _dataProvider;
   private readonly CameraStatusTracker _statusTracker;
 
-  public CameraRegistryImpl(IDataProvider dataProvider, CameraStatusTracker statusTracker)
+  public CameraRegistry(IDataProvider dataProvider, CameraStatusTracker statusTracker)
   {
     _dataProvider = dataProvider;
     _statusTracker = statusTracker;

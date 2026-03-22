@@ -172,9 +172,7 @@ public class FragmentTests
   [Test]
   public void FragmentAssembler_TracksKeyframeOffsets()
   {
-    var timestamps = new TimestampConverter(90000);
-    timestamps.ToDecodeTime(0);
-    var assembler = new FragmentAssembler(timestamps);
+    var assembler = new FragmentAssembler();
 
     var nals = new List<ReadOnlyMemory<byte>>
     {

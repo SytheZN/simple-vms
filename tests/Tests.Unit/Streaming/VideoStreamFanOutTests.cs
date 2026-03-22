@@ -20,6 +20,7 @@ public class VideoStreamFanOutTests
   {
     Data = new byte[] { 0x00, 0x00, 0x00, 0x08, 0x6d, 0x6f, 0x6f, 0x66 },
     Timestamp = ts,
+    MediaTimestamp = 0,
     IsSyncPoint = sync,
     IsHeader = header
   };

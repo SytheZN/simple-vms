@@ -244,7 +244,7 @@ public sealed class CameraPipeline : IAsyncDisposable
     {
       CameraId = _cameraId,
       Status = "online",
-      Timestamp = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000
+      Timestamp = DateTimeOffset.UtcNow.ToUnixMicroseconds()
     }, ct);
 
     await _eventBus.PublishAsync(new StreamStarted
@@ -252,7 +252,7 @@ public sealed class CameraPipeline : IAsyncDisposable
       CameraId = _cameraId,
       Profile = _profile,
       DataFormat = connection.Info.DataFormat,
-      Timestamp = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000
+      Timestamp = DateTimeOffset.UtcNow.ToUnixMicroseconds()
     }, ct);
 
     _logger.LogInformation("Source connected for camera {CameraId} profile '{Profile}'",
@@ -279,7 +279,7 @@ public sealed class CameraPipeline : IAsyncDisposable
         CameraId = _cameraId,
         Status = "offline",
         Reason = "no demand",
-        Timestamp = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000
+        Timestamp = DateTimeOffset.UtcNow.ToUnixMicroseconds()
       }, CancellationToken.None);
 
       _logger.LogInformation("Source disconnected for camera {CameraId} profile '{Profile}'",
@@ -367,7 +367,7 @@ public sealed class CameraPipeline : IAsyncDisposable
         CameraId = _cameraId,
         Profile = _profile,
         Reason = "disconnected",
-        Timestamp = (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000
+        Timestamp = DateTimeOffset.UtcNow.ToUnixMicroseconds()
       }, CancellationToken.None);
 
       await ReconnectAsync();

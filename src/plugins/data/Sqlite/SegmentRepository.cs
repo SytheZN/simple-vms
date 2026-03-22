@@ -12,6 +12,27 @@ internal sealed class SegmentRepository : ISegmentRepository
     _queue = queue;
   }
 
+  public Task<OneOf<Segment, Error>> GetByIdAsync(Guid id, CancellationToken ct)
+  {
+    return _queue.ExecuteAsync<OneOf<Segment, Error>>(conn =>
+    {
+      try
+      {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT * FROM segments WHERE id = @id";
+        cmd.Parameters.AddWithValue("@id", id.ToString());
+        using var reader = cmd.ExecuteReader();
+        if (reader.Read())
+          return ReadSegment(reader);
+        return Error.Create(ModuleId, 0x000B, Result.NotFound, $"Segment {id} not found");
+      }
+      catch (Exception ex)
+      {
+        return Error.Create(ModuleId, 0x000C, Result.InternalError, $"Failed to get segment: {ex.Message}");
+      }
+    }, ct);
+  }
+
   public Task<OneOf<IReadOnlyList<Segment>, Error>> GetByTimeRangeAsync(
     Guid streamId, ulong from, ulong to, CancellationToken ct)
   {
@@ -39,6 +60,65 @@ internal sealed class SegmentRepository : ISegmentRepository
         return Error.Create(ModuleId, 0x0001, Result.InternalError, $"Failed to query segments by time range: {ex.Message}");
       }
     }, ct);
+  }
+
+  public Task<OneOf<PlaybackPoint, Error>> FindPlaybackPointAsync(Guid streamId, ulong timestamp, CancellationToken ct)
+  {
+    return _queue.ExecuteAsync<OneOf<PlaybackPoint, Error>>(conn =>
+    {
+      try
+      {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+          SELECT s.id, s.segment_ref, k.timestamp, k.byte_offset
+          FROM segments s
+          JOIN keyframes k ON k.segment_id = s.id
+          WHERE s.stream_id = @streamId
+            AND @ts BETWEEN s.start_time AND s.end_time
+            AND k.timestamp <= @ts
+          ORDER BY k.timestamp DESC
+          LIMIT 1
+          """;
+        cmd.Parameters.AddWithValue("@streamId", streamId.ToString());
+        cmd.Parameters.AddWithValue("@ts", (long)timestamp);
+        using var reader = cmd.ExecuteReader();
+        if (reader.Read())
+          return ReadPlaybackPoint(reader);
+
+        using var cmd2 = conn.CreateCommand();
+        cmd2.CommandText = """
+          SELECT s.id, s.segment_ref, k.timestamp, k.byte_offset
+          FROM segments s
+          JOIN keyframes k ON k.segment_id = s.id
+          WHERE s.stream_id = @streamId
+            AND s.start_time > @ts
+          ORDER BY s.start_time, k.timestamp
+          LIMIT 1
+          """;
+        cmd2.Parameters.AddWithValue("@streamId", streamId.ToString());
+        cmd2.Parameters.AddWithValue("@ts", (long)timestamp);
+        using var reader2 = cmd2.ExecuteReader();
+        if (reader2.Read())
+          return ReadPlaybackPoint(reader2);
+
+        return Error.Create(ModuleId, 0x0009, Result.NotFound, "No recording found at timestamp");
+      }
+      catch (Exception ex)
+      {
+        return Error.Create(ModuleId, 0x000A, Result.InternalError, $"Failed to find playback point: {ex.Message}");
+      }
+    }, ct);
+  }
+
+  private static PlaybackPoint ReadPlaybackPoint(SqliteDataReader reader)
+  {
+    return new PlaybackPoint
+    {
+      SegmentId = Guid.Parse(reader.GetString(0)),
+      SegmentRef = reader.GetString(1),
+      KeyframeTimestamp = (ulong)reader.GetInt64(2),
+      ByteOffset = reader.GetInt64(3)
+    };
   }
 
   public Task<OneOf<IReadOnlyList<Segment>, Error>> GetOldestAsync(Guid streamId, int limit, CancellationToken ct)
@@ -115,6 +195,34 @@ internal sealed class SegmentRepository : ISegmentRepository
       catch (Exception ex)
       {
         return Error.Create(ModuleId, 0x0005, Result.InternalError, $"Failed to create segment: {ex.Message}");
+      }
+    }, ct);
+  }
+
+  public Task<OneOf<Success, Error>> UpdateAsync(Segment segment, CancellationToken ct)
+  {
+    return _queue.ExecuteAsync<OneOf<Success, Error>>(conn =>
+    {
+      try
+      {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+          UPDATE segments
+          SET end_time = @endTime, size_bytes = @sizeBytes, keyframe_count = @keyframeCount
+          WHERE id = @id
+          """;
+        cmd.Parameters.AddWithValue("@id", segment.Id.ToString());
+        cmd.Parameters.AddWithValue("@endTime", (long)segment.EndTime);
+        cmd.Parameters.AddWithValue("@sizeBytes", segment.SizeBytes);
+        cmd.Parameters.AddWithValue("@keyframeCount", segment.KeyframeCount);
+        var rows = cmd.ExecuteNonQuery();
+        if (rows == 0)
+          return Error.Create(ModuleId, 0x0007, Result.NotFound, $"Segment {segment.Id} not found");
+        return new Success();
+      }
+      catch (Exception ex)
+      {
+        return Error.Create(ModuleId, 0x0008, Result.InternalError, $"Failed to update segment: {ex.Message}");
       }
     }, ct);
   }

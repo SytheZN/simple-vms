@@ -17,6 +17,7 @@ public static class MoofBuilder
     uint sequenceNumber,
     ulong baseDecodeTime,
     IReadOnlyList<SampleEntry> samples,
+    ulong wallClockUs = 0,
     int mdatHeaderSize = 8)
   {
     var w = new BoxWriter();
@@ -52,6 +53,16 @@ public static class MoofBuilder
 
     w.EndBox();
     w.EndBox();
+
+    if (wallClockUs > 0)
+    {
+      w.StartFullBox("prft", 1, 0);
+      w.WriteUInt32(1);
+      w.WriteUInt64(wallClockUs);
+      w.WriteUInt64(baseDecodeTime);
+      w.EndBox();
+    }
+
     w.EndBox();
 
     var moofBytes = w.ToArray();

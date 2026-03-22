@@ -153,10 +153,13 @@ Providers may return additional codes where appropriate, but the above are the b
 
 | Operation | Returns | Description |
 |-----------|---------|-------------|
+| `GetById(id)` | `OneOf<Segment, Error>` | Get a single segment. `NotFound` if absent. |
 | `GetByTimeRange(streamId, from, to)` | `OneOf<IReadOnlyList<Segment>, Error>` | List segments overlapping a time range, ordered by start time |
+| `FindPlaybackPoint(streamId, timestamp)` | `OneOf<PlaybackPoint, Error>` | Segment and nearest keyframe at or before timestamp, or first keyframe of next segment. `NotFound` if none. |
 | `GetOldest(streamId, limit)` | `OneOf<IReadOnlyList<Segment>, Error>` | Get the oldest N segments (for retention) |
 | `GetTotalSize(streamId)` | `OneOf<long, Error>` | Sum of `SizeBytes` for all segments of a stream |
 | `Create(segment)` | `OneOf<Success, Error>` | Insert a new segment |
+| `Update(segment)` | `OneOf<Success, Error>` | Update a segment's `EndTime`, `SizeBytes`, and `KeyframeCount` (incremental flush during recording). `NotFound` if absent. |
 | `DeleteBatch(ids)` | `OneOf<Success, Error>` | Remove segments by ID (batch, for retention) |
 
 ### IKeyframeRepository

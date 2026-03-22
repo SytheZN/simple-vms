@@ -14,9 +14,9 @@ public sealed class Fmp4Muxer
 {
   private readonly MuxerCodec _codec;
   private readonly IDataStream _input;
-  private readonly TimestampConverter _timestamps;
   private readonly FragmentAssembler _assembler;
   private readonly Action<KeyframeOffset>? _onKeyframe;
+  private readonly uint _timescale;
 
   private byte[]? _initSegment;
   private byte[]? _currentSps;
@@ -27,13 +27,13 @@ public sealed class Fmp4Muxer
   public Fmp4Muxer(
     MuxerCodec codec,
     IDataStream input,
-    TimestampConverter timestamps,
+    uint timescale = 90000,
     Action<KeyframeOffset>? onKeyframe = null)
   {
     _codec = codec;
     _input = input;
-    _timestamps = timestamps;
-    _assembler = new FragmentAssembler(timestamps);
+    _timescale = timescale;
+    _assembler = new FragmentAssembler { Timescale = timescale };
     _onKeyframe = onKeyframe;
   }
 
@@ -89,7 +89,7 @@ public sealed class Fmp4Muxer
     {
       var spsInfo = H264SpsParser.Parse(sps);
       var avcC = AvcCBuilder.Build(sps, pps, spsInfo);
-      moov = MoovBuilder.BuildH264(spsInfo.Width, spsInfo.Height, _timestamps.Timescale, avcC);
+      moov = MoovBuilder.BuildH264(spsInfo.Width, spsInfo.Height, _timescale, avcC);
       mimeType = $"video/mp4; codecs=\"avc1.{spsInfo.ProfileIdc:X2}{spsInfo.ProfileCompatibility:X2}{spsInfo.LevelIdc:X2}\"";
       width = spsInfo.Width;
       height = spsInfo.Height;
@@ -99,7 +99,7 @@ public sealed class Fmp4Muxer
       var vpsInfo = H265SpsParser.ParseVps(vps);
       var spsInfo = H265SpsParser.ParseSps(sps);
       var hvcC = HvcCBuilder.Build(vps, sps, pps, vpsInfo, spsInfo);
-      moov = MoovBuilder.BuildH265(spsInfo.Width, spsInfo.Height, _timestamps.Timescale, hvcC);
+      moov = MoovBuilder.BuildH265(spsInfo.Width, spsInfo.Height, _timescale, hvcC);
       var ptl = spsInfo.Ptl;
       var tier = ptl.GeneralTierFlag ? 'H' : 'L';
       mimeType = $"video/mp4; codecs=\"hev1.{ptl.GeneralProfileIdc}.{ptl.GeneralProfileCompatibilityFlags:X}.{tier}{ptl.GeneralLevelIdc}\"";
@@ -195,7 +195,8 @@ public sealed class Fmp4Muxer
           yield return new Fmp4Fragment
           {
             Data = init,
-            Timestamp = nal.Timestamp,
+            Timestamp = DateTimeOffset.UtcNow.ToUnixMicroseconds(),
+            MediaTimestamp = nal.Timestamp,
             IsSyncPoint = false,
             IsHeader = true
           };
@@ -262,7 +263,8 @@ public sealed class Fmp4Muxer
           yield return new Fmp4Fragment
           {
             Data = init,
-            Timestamp = nal.Timestamp,
+            Timestamp = DateTimeOffset.UtcNow.ToUnixMicroseconds(),
+            MediaTimestamp = nal.Timestamp,
             IsSyncPoint = false,
             IsHeader = true
           };
@@ -305,8 +307,8 @@ public sealed class Fmp4Muxer
     }
 
     var duration = nextTimestamp != null
-      ? _timestamps.DurationBetween(timestamp, nextTimestamp.Value)
-      : _lastDuration > 0 ? _lastDuration : _timestamps.Timescale / 30;
+      ? (uint)(nextTimestamp.Value - timestamp)
+      : _lastDuration > 0 ? _lastDuration : _timescale / 30;
     _lastDuration = duration;
 
     var samples = new List<SampleEntry>
