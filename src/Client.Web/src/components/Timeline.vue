@@ -11,6 +11,9 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   seek: [timestamp: number]
+  scrubStart: []
+  scrubMove: [timestamp: number]
+  scrubEnd: [timestamp: number]
 }>()
 
 function resetWindow() {
@@ -32,7 +35,8 @@ const endOffset = ref(defaultOffset())
 const initialAnchor = Date.now() * 1000
 let skipNextStabilize = false
 
-const anchorUs = computed(() => props.currentTimeUs || initialAnchor)
+let frozenAnchor = 0
+const anchorUs = computed(() => frozenAnchor || props.currentTimeUs || initialAnchor)
 const windowEnd = computed(() => anchorUs.value + endOffset.value)
 const windowStart = computed(() => windowEnd.value - windowHours.value * 3600 * 1_000_000)
 
@@ -41,6 +45,7 @@ watch(anchorUs, (newVal, oldVal) => {
     skipNextStabilize = false
     return
   }
+  if (scrubActive.value) return
   if (oldVal && Math.abs(newVal - oldVal) > 5_000_000) {
     endOffset.value += oldVal - newVal
   }
@@ -200,14 +205,54 @@ const timeLabels = computed(() => {
   return generateDayTicks(start, end, range)
 })
 
+const scrubTimestamp = ref(0)
+
 const playheadPct = computed(() => {
-  if (!props.currentTimeUs) return -1
-  return Math.max(0, Math.min(100, timestampToPercent(props.currentTimeUs)))
+  const ts = scrubActive.value ? scrubTimestamp.value : props.currentTimeUs
+  if (!ts) return -999
+  return timestampToPercent(ts)
 })
 
 let dragStartX = 0
 let dragStartOffset = 0
 let dragMoved = false
+const scrubActive = ref(false)
+
+function pctToTimestamp(clientX: number): number {
+  if (!barRef.value) return 0
+  const rect = barRef.value.getBoundingClientRect()
+  const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+  const range = windowEnd.value - windowStart.value
+  return Math.floor(windowStart.value + pct * range)
+}
+
+function onPlayheadDown(e: PointerEvent) {
+  e.stopPropagation()
+  e.preventDefault()
+  markInteraction()
+  scrubTimestamp.value = props.currentTimeUs
+  frozenAnchor = anchorUs.value
+  scrubActive.value = true
+  ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+  emit('scrubStart')
+}
+
+function onPlayheadMove(e: PointerEvent) {
+  if (!scrubActive.value) return
+  const ts = pctToTimestamp(e.clientX)
+  scrubTimestamp.value = ts
+  emit('scrubMove', ts)
+}
+
+function onPlayheadUp(e: PointerEvent) {
+  if (!scrubActive.value) return
+  markInteraction()
+  const ts = pctToTimestamp(e.clientX)
+  scrubActive.value = false
+  scrubTimestamp.value = 0
+  frozenAnchor = 0
+  emit('scrubEnd', ts)
+}
 
 function onPointerDown(e: PointerEvent) {
   markInteraction()
@@ -242,11 +287,7 @@ function onPointerUp(e: PointerEvent) {
   dragging.value = false
 
   if (!dragMoved && barRef.value) {
-    const rect = barRef.value.getBoundingClientRect()
-    const pct = (e.clientX - rect.left) / rect.width
-    const range = windowEnd.value - windowStart.value
-    const ts = Math.floor(windowStart.value + pct * range)
-    emit('seek', ts)
+    emit('seek', pctToTimestamp(e.clientX))
   } else {
     scheduleLoad()
   }
@@ -320,9 +361,8 @@ onUnmounted(() => {
           :key="'s' + i"
           class="timeline-span timeline-span-recording"
           :style="{
-            left: timestampToPercent(span.startTime) + '%',
-            width: (timestampToPercent(span.endTime) - timestampToPercent(span.startTime)) + '%',
-            minWidth: '1px'
+            left: Math.max(0, timestampToPercent(span.startTime)) + '%',
+            width: Math.max(0, Math.min(100, timestampToPercent(span.endTime)) - Math.max(0, timestampToPercent(span.startTime))) + '%',
           }"
         ></div>
 
@@ -337,6 +377,9 @@ onUnmounted(() => {
         <div
           class="timeline-marker timeline-playhead"
           :style="{ left: playheadPct + '%' }"
+          @pointerdown="onPlayheadDown"
+          @pointermove="onPlayheadMove"
+          @pointerup="onPlayheadUp"
         ></div>
 
       </div>

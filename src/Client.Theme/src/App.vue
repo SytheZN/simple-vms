@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 
 const darkMode = ref(false)
 const sampleModalOpen = ref(false)
@@ -8,6 +8,36 @@ const sampleCheckbox = ref(true)
 const sampleSelect = ref('option-1')
 const sampleInput = ref('Sample text')
 const sampleTextarea = ref('Longer form content goes here.')
+
+function buildRateSteps(min: number, max: number): number[] {
+  const all: number[] = []
+  for (let v = -5; v <= -3; v++) all.push(v)
+  for (let i = -8; i <= -1; i++) all.push(i * 0.25)
+  for (let i = 1; i <= 8; i++) all.push(i * 0.25)
+  for (let v = 3; v <= 5; v++) all.push(v)
+  return all.filter(v => v >= min && v <= max)
+}
+
+const rateMin = ref(-5)
+const rateMax = ref(5)
+const rateSteps = computed(() => buildRateSteps(rateMin.value, rateMax.value))
+const rateDisabled = computed(() => rateMin.value === 1 && rateMax.value === 1)
+const rateIndex = ref(0)
+const playbackRate = computed(() => rateSteps.value[rateIndex.value] ?? 1)
+
+const rateTicks = computed(() => rateSteps.value
+  .map((v, i) => ({ value: v, pct: (i / Math.max(1, rateSteps.value.length - 1)) * 100 }))
+  .filter(t => Number.isInteger(t.value)))
+
+function setRateRange(min: number, max: number) {
+  rateMin.value = min
+  rateMax.value = max
+  const steps = buildRateSteps(min, max)
+  const oneIdx = steps.indexOf(1)
+  rateIndex.value = oneIdx >= 0 ? oneIdx : 0
+}
+
+setRateRange(-5, 5)
 const settingsExpanded = ref(true)
 const motionCanvas = ref<HTMLCanvasElement | null>(null)
 
@@ -683,76 +713,87 @@ function toggleDark() {
       <section class="space-y-6">
         <h2 class="section-heading">Player / Live View</h2>
         <p class="text-sm text-text-muted">Camera detail page with live player, controls, and timeline.</p>
-        <div class="card overflow-hidden">
-          <!-- Player area -->
-          <div class="bg-surface-sunken aspect-video relative flex items-center justify-center">
-            <i class="ph ph-video-camera icon-xl text-text-muted"></i>
-            <!-- Motion overlay -->
-            <canvas
-              ref="motionCanvas"
-              class="absolute inset-0 w-full h-full pointer-events-none"
-              style="image-rendering: pixelated;"
-            ></canvas>
-            <!-- Overlay: camera name + status -->
-            <div class="absolute top-3 left-3 flex items-center gap-2">
+        <div class="space-y-4">
+          <div class="flex items-center gap-3">
+            <button class="btn btn-ghost btn-sm"><i class="ph ph-arrow-left icon-sm"></i></button>
+            <h3 class="text-xl font-semibold text-text">Front Door</h3>
+          </div>
+          <div class="card overflow-hidden">
+            <!-- Player area -->
+            <div class="bg-surface-sunken aspect-video relative flex items-center justify-center">
+              <i class="ph ph-video-camera icon-xl text-text-muted"></i>
+              <!-- Motion overlay -->
+              <canvas
+                ref="motionCanvas"
+                class="absolute inset-0 w-full h-full pointer-events-none"
+                style="image-rendering: pixelated;"
+              ></canvas>
+              <div class="absolute bottom-3 right-3 flex gap-2">
+                <button class="btn btn-ghost btn-sm video-overlay-text"><i class="ph ph-corners-out icon-sm"></i></button>
+              </div>
+            </div>
+            <!-- Controls bar -->
+            <div class="flex items-center gap-3 px-4 py-3 border-t border-border">
+              <button class="btn btn-ghost btn-sm"><i class="ph ph-pause icon-sm"></i></button>
+              <button class="btn btn-ghost btn-sm" title="Jump to live"><i class="ph ph-skip-forward icon-sm"></i></button>
+              <div class="flex items-center gap-3" :class="{ 'opacity-40': rateDisabled }">
+                <div class="rate-slider-wrap">
+                  <input type="range" :min="0" :max="Math.max(0, rateSteps.length - 1)" step="1" v-model.number="rateIndex" class="rate-slider" :disabled="rateDisabled" @dblclick="rateIndex = rateSteps.indexOf(1)" />
+                  <div class="rate-slider-ticks">
+                    <span
+                      v-for="t in rateTicks"
+                      :key="t.value"
+                      class="rate-slider-tick"
+                      :class="{ 'rate-slider-tick-accent': t.value === 1 }"
+                      :style="{ left: t.pct + '%' }"
+                    ></span>
+                  </div>
+                </div>
+                <span class="text-xs text-text-muted w-8">{{ playbackRate }}x</span>
+              </div>
+              <div class="flex-1 text-center">
+                <span class="text-xs font-mono text-text-muted">2026-03-17 14:23:01</span>
+              </div>
               <span class="badge badge-success"><i class="ph-fill ph-circle icon-sm"></i> Live</span>
-              <span class="text-sm font-medium video-overlay-text">Front Door</span>
+              <span class="text-xs text-text-muted">1920x1080</span>
+              <button class="btn btn-ghost btn-sm">main (1920x1080 h264)</button>
+              <button class="btn btn-ghost btn-sm"><i class="ph ph-person-arms-spread icon-sm"></i></button>
             </div>
-            <!-- Overlay: stream quality -->
-            <div class="absolute top-3 right-3">
-              <span class="badge badge-neutral">Main 1080p</span>
-            </div>
-            <!-- Overlay: controls -->
-            <div class="absolute bottom-3 right-3 flex gap-2">
-              <button class="btn btn-ghost btn-sm video-overlay-text"><i class="ph ph-corners-out icon-sm"></i></button>
-              <button class="btn btn-ghost btn-sm video-overlay-text"><i class="ph ph-picture-in-picture icon-sm"></i></button>
+            <!-- Timeline -->
+            <div class="px-4 pt-2 pb-3 border-t border-border space-y-1">
+              <div class="relative">
+                <div class="timeline-bar">
+                  <div class="timeline-span timeline-span-recording" style="left: 0%; width: 35%;"></div>
+                  <div class="timeline-span timeline-span-recording" style="left: 40%; width: 25%;"></div>
+                  <div class="timeline-span timeline-span-recording" style="left: 70%; width: 30%;"></div>
+                  <div class="timeline-span timeline-span-motion" style="left: 12%; width: 8%;"></div>
+                  <div class="timeline-span timeline-span-motion" style="left: 45%; width: 12%;"></div>
+                  <div class="timeline-marker timeline-alert" style="left: 67%;"></div>
+                  <div class="timeline-marker timeline-playhead" style="left: 85%;"></div>
+                </div>
+                <div class="relative h-4">
+                  <div class="timeline-tick" style="left: 12.5%;">13:00</div>
+                  <div class="timeline-tick" style="left: 25%;">14:00</div>
+                  <div class="timeline-tick" style="left: 37.5%;">15:00</div>
+                  <div class="timeline-tick" style="left: 50%;">16:00</div>
+                  <div class="timeline-tick" style="left: 62.5%;">17:00</div>
+                  <div class="timeline-tick" style="left: 75%;">18:00</div>
+                  <div class="timeline-tick" style="left: 87.5%;">19:00</div>
+                </div>
+              </div>
+              <div class="flex items-center gap-4 text-xs text-text-muted">
+                <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 timeline-span-recording rounded-sm"></span> Recording</span>
+                <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 timeline-span-motion rounded-sm"></span> Motion</span>
+                <span class="flex items-center gap-1"><span class="inline-block w-3 h-0.5 timeline-alert"></span> Alert</span>
+              </div>
             </div>
           </div>
-          <!-- Controls bar -->
           <div class="flex items-center gap-3 px-4 py-3 border-t border-border">
-            <button class="btn btn-ghost btn-sm"><i class="ph ph-pause icon-sm"></i></button>
-            <button class="btn btn-ghost btn-sm"><i class="ph ph-skip-back icon-sm"></i></button>
-            <button class="btn btn-ghost btn-sm"><i class="ph ph-skip-forward icon-sm"></i></button>
-            <div class="flex-1 text-center">
-              <span class="text-xs font-mono text-text-muted">2026-03-17 14:23:01</span>
-            </div>
-            <div class="flex items-center gap-2">
-              <span class="section-subheading">Profile</span>
-              <select class="input" style="width: auto; padding: 4px 8px; font-size: 12px;">
-                <option>Main (1080p)</option>
-                <option>Sub (360p)</option>
-              </select>
-            </div>
-            <button class="btn btn-ghost btn-sm"><i class="ph ph-record icon-sm text-danger"></i></button>
-            <button class="btn btn-ghost btn-sm"><i class="ph ph-person-arms-spread icon-sm"></i></button>
-          </div>
-          <!-- Timeline -->
-          <div class="px-4 pt-2 pb-3 border-t border-border space-y-1">
-            <div class="relative">
-              <div class="timeline-bar">
-                <div class="timeline-span timeline-span-recording" style="left: 0%; width: 35%;"></div>
-                <div class="timeline-span timeline-span-recording" style="left: 40%; width: 25%;"></div>
-                <div class="timeline-span timeline-span-recording" style="left: 70%; width: 30%;"></div>
-                <div class="timeline-span timeline-span-motion" style="left: 12%; width: 8%;"></div>
-                <div class="timeline-span timeline-span-motion" style="left: 45%; width: 12%;"></div>
-                <div class="timeline-marker timeline-alert" style="left: 67%;"></div>
-                <div class="timeline-marker timeline-playhead" style="left: 85%;"></div>
-              </div>
-              <div class="relative h-4">
-                <div class="timeline-tick" style="left: 0%;">12:00</div>
-                <div class="timeline-tick" style="left: 16.6%;">13:00</div>
-                <div class="timeline-tick" style="left: 33.3%;">14:00</div>
-                <div class="timeline-tick" style="left: 50%;">15:00</div>
-                <div class="timeline-tick" style="left: 66.6%;">16:00</div>
-                <div class="timeline-tick" style="left: 83.3%;">17:00</div>
-                <div class="timeline-tick" style="left: 100%;">18:00</div>
-              </div>
-            </div>
-            <div class="flex items-center gap-4 text-xs text-text-muted">
-              <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 timeline-span-recording rounded-sm"></span> Recording</span>
-              <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 timeline-span-motion rounded-sm"></span> Motion</span>
-              <span class="flex items-center gap-1"><span class="inline-block w-3 h-0.5 timeline-alert"></span> Alert</span>
-            </div>
+            <span class="section-subheading">Rate range</span>
+            <button class="btn btn-sm" :class="rateMin === -5 && rateMax === 5 ? 'btn-primary' : 'btn-secondary'" @click="setRateRange(-5, 5)">-5x to 5x</button>
+            <button class="btn btn-sm" :class="rateMin === 0 && rateMax === 5 ? 'btn-primary' : 'btn-secondary'" @click="setRateRange(0, 5)">0x to 5x</button>
+            <button class="btn btn-sm" :class="rateMin === 1 && rateMax === 5 ? 'btn-primary' : 'btn-secondary'" @click="setRateRange(1, 5)">1x to 5x</button>
+            <button class="btn btn-sm" :class="rateMin === 1 && rateMax === 1 ? 'btn-primary' : 'btn-secondary'" @click="setRateRange(1, 1)">1x (live)</button>
           </div>
         </div>
       </section>

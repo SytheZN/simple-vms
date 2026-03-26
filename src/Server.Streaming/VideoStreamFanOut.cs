@@ -12,6 +12,7 @@ public sealed class VideoStreamFanOut<T> : IVideoStream<T>, IAsyncDisposable whe
   private CancellationTokenSource? _loopCts;
   private Task? _readLoop;
   private bool _disposed;
+  private List<T> _currentGop = [];
 
   public VideoStreamInfo Info => _source.Info;
   public ReadOnlyMemory<byte> Header => _source.Header;
@@ -40,6 +41,12 @@ public sealed class VideoStreamFanOut<T> : IVideoStream<T>, IAsyncDisposable whe
     Action? onDemand = null;
     lock (_lock)
     {
+      if (_currentGop.Count > 0)
+      {
+        foreach (var frame in _currentGop)
+          channel.Writer.TryWrite(frame);
+        sub.WaitingForKeyframe = false;
+      }
       _subscribers.Add(sub);
       if (_subscribers.Count == 1)
         onDemand = OnDemand;
@@ -97,7 +104,14 @@ public sealed class VideoStreamFanOut<T> : IVideoStream<T>, IAsyncDisposable whe
 
           Subscriber[] snapshot;
           lock (_lock)
+          {
+            if (item.IsSyncPoint)
+              _currentGop = [item];
+            else
+              _currentGop.Add(item);
+
             snapshot = [.. _subscribers];
+          }
 
           foreach (var sub in snapshot)
           {
@@ -137,6 +151,8 @@ public sealed class VideoStreamFanOut<T> : IVideoStream<T>, IAsyncDisposable whe
     }
     cts?.Cancel();
     cts?.Dispose();
+    lock (_lock)
+      _currentGop = [];
   }
 
   public async IAsyncEnumerable<T> ReadAsync(

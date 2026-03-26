@@ -1,10 +1,35 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, shallowRef, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { api, ApiError } from '@/api/client'
-import { useStream } from '@/composables/useStream'
+import { usePlayer, type Player } from '@/composables/usePlayer'
+import { usePlayerFallback } from '@/composables/usePlayerFallback'
+import { useStreamer } from '@/composables/useStreamer'
 import Timeline from '@/components/Timeline.vue'
 import type { CameraListItem } from '@/types/api'
+
+async function supportsWebCodecsHevc(): Promise<boolean> {
+  if (typeof VideoDecoder === 'undefined') return false
+  try {
+    const result = await VideoDecoder.isConfigSupported({
+      codec: 'hev1.1.6.L93.B0',
+      codedWidth: 1920,
+      codedHeight: 1080,
+    })
+    return !!result.supported
+  } catch {
+    return false
+  }
+}
+
+function buildRateSteps(min: number, max: number): number[] {
+  const all: number[] = []
+  for (let v = -5; v <= -3; v++) all.push(v)
+  for (let i = -8; i <= -1; i++) all.push(i * 0.25)
+  for (let i = 1; i <= 8; i++) all.push(i * 0.25)
+  for (let v = 3; v <= 5; v++) all.push(v)
+  return all.filter(v => v >= min && v <= max)
+}
 
 const route = useRoute()
 const cameraId = computed(() => route.params.id as string)
@@ -12,32 +37,61 @@ const camera = ref<CameraListItem | null>(null)
 const error = ref('')
 const loading = ref(true)
 const selectedProfile = ref('main')
+const motionOverlay = ref(false)
 
-const videoRef = ref<HTMLVideoElement | null>(null)
+const playerContainerRef = ref<HTMLDivElement | null>(null)
 const playerRef = ref<HTMLDivElement | null>(null)
 const timelineRef = ref<InstanceType<typeof Timeline> | null>(null)
 const isFullscreen = ref(false)
-const paused = ref(false)
-const playbackRate = ref(1)
 
-function rateToSlider(rate: number): number {
-  if (rate <= 1) return ((rate - 0.25) / 0.75) * 50
-  return 50 + ((rate - 1) / 4) * 50
+const player = shallowRef<Player | null>(null)
+const streamer = useStreamer()
+
+const playerState = ref({
+  timestampUs: 0,
+  rate: 1,
+  direction: 1 as 1 | -1,
+  paused: false,
+  buffering: false,
+  blocked: false,
+  mode: 'live' as 'live' | 'playback',
+  minRate: 1,
+  maxRate: 1,
+})
+
+function syncState() {
+  if (!player.value) return
+  playerState.value = {
+    timestampUs: player.value.timestampUs.value,
+    rate: player.value.rate.value,
+    direction: player.value.direction.value,
+    paused: player.value.paused.value,
+    buffering: player.value.buffering.value,
+    blocked: player.value.blocked.value,
+    mode: player.value.mode.value,
+    minRate: player.value.minRate.value,
+    maxRate: player.value.maxRate.value,
+  }
 }
 
-function sliderToRate(val: number): number {
-  if (val <= 50) return 0.25 + (val / 50) * 0.75
-  return 1 + ((val - 50) / 50) * 4
-}
+const rateSteps = computed(() => buildRateSteps(playerState.value.minRate, playerState.value.maxRate))
+const rateDisabled = computed(() => playerState.value.minRate === playerState.value.maxRate)
+const rateIndex = ref(0)
+const playbackRate = computed(() => rateSteps.value[rateIndex.value] ?? 1)
+const rateTicks = computed(() => rateSteps.value
+  .map((v, i) => ({ value: v, pct: (i / Math.max(1, rateSteps.value.length - 1)) * 100 }))
+  .filter(t => Number.isInteger(t.value)))
 
-function onRateChange(e: Event) {
-  const val = parseFloat((e.target as HTMLInputElement).value)
-  const rate = Math.round(sliderToRate(val) * 4) / 4
-  playbackRate.value = rate
-  if (videoRef.value) videoRef.value.playbackRate = rate
-}
+watch(rateIndex, (idx) => {
+  const rate = rateSteps.value[idx] ?? 1
+  player.value?.setRate(rate)
+})
 
-const stream = useStream(cameraId, selectedProfile)
+watch([() => playerState.value.minRate, () => playerState.value.maxRate], () => {
+  const steps = rateSteps.value
+  const oneIdx = steps.indexOf(1)
+  rateIndex.value = oneIdx >= 0 ? oneIdx : 0
+})
 
 function toggleFullscreen() {
   if (!playerRef.value) return
@@ -56,49 +110,9 @@ const selectedStream = computed(() =>
   camera.value?.streams.find(s => s.profile === selectedProfile.value)
 )
 
-const sortedProfiles = computed(() => {
-  if (!camera.value) return []
-  return [...camera.value.streams].sort((a, b) => {
-    const resA = parseInt(a.resolution) || 0
-    const resB = parseInt(b.resolution) || 0
-    return resB - resA
-  })
-})
-
-let lagOverCount = 0
-const lagThresholdMs = 3000
-const lagCheckCount = 3
-
-watch(() => stream.lagMs.value, (lag) => {
-  if (stream.mode.value !== 'live') return
-  if (lag > lagThresholdMs) {
-    lagOverCount++
-    if (lagOverCount >= lagCheckCount) {
-      lagOverCount = 0
-      const profiles = sortedProfiles.value
-      const currentIdx = profiles.findIndex(s => s.profile === selectedProfile.value)
-      if (currentIdx >= 0 && currentIdx < profiles.length - 1) {
-        selectedProfile.value = profiles[currentIdx + 1].profile
-      }
-    }
-  } else {
-    lagOverCount = 0
-  }
-})
-
-const videoTimeUs = ref(0)
-let clockTimer: ReturnType<typeof setInterval> | null = null
-
-function updateVideoTime() {
-  if (!videoRef.value || !stream.wallClockSync.value) return
-  const sync = stream.wallClockSync.value
-  const elapsed = videoRef.value.currentTime - sync.bufferedEndAtSync
-  videoTimeUs.value = sync.wallClockUs + elapsed * 1_000_000
-}
-
 const currentTimeDisplay = computed(() => {
-  if (videoTimeUs.value <= 0) return '--'
-  return new Date(videoTimeUs.value / 1000).toLocaleString([], {
+  if (playerState.value.timestampUs <= 0) return '--'
+  return new Date(playerState.value.timestampUs / 1000).toLocaleString([], {
     year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', second: '2-digit'
   })
@@ -119,68 +133,32 @@ async function loadCamera() {
   }
 }
 
-async function startLive() {
-  if (!videoRef.value) return
-  await stream.connect(videoRef.value)
-  paused.value = false
+async function startStream() {
+  if (!playerContainerRef.value) return
+
+  const webcodecs = await supportsWebCodecsHevc()
+  player.value = webcodecs ? usePlayer() : usePlayerFallback()
+
+  player.value.attach(playerContainerRef.value, streamer, cameraId.value, selectedProfile.value)
+
+  watch([player.value.timestampUs, player.value.rate, player.value.direction, player.value.paused,
+    player.value.buffering, player.value.blocked, player.value.mode, player.value.minRate, player.value.maxRate], syncState)
+  syncState()
 }
 
 function cycleProfile() {
-  if (!camera.value) return
+  if (!camera.value || !player.value) return
   const profiles = camera.value.streams
   const idx = profiles.findIndex(s => s.profile === selectedProfile.value)
-  selectedProfile.value = profiles[(idx + 1) % profiles.length].profile
-}
-
-function togglePause() {
-  if (!videoRef.value) return
-  if (videoRef.value.paused) {
-    videoRef.value.play()
-    paused.value = false
-  } else {
-    videoRef.value.pause()
-    paused.value = true
-  }
-}
-
-function goLive() {
-  playbackRate.value = 1
-  if (videoRef.value) videoRef.value.playbackRate = 1
-  if (stream.mode.value === 'playback') {
-    startLive()
-    return
-  }
-  if (!videoRef.value) return
-  if (videoRef.value.buffered.length > 0) {
-    videoRef.value.currentTime = videoRef.value.buffered.end(videoRef.value.buffered.length - 1)
-  }
-  if (videoRef.value.paused) {
-    videoRef.value.play()
-    paused.value = false
-  }
-}
-
-async function onTimelineSeek(ts: number) {
-  if (!videoRef.value) return
-
-  try {
-    const meta = await api.playback.metadata(cameraId.value, selectedProfile.value, ts)
-    if (meta.from === 0) {
-      goLive()
-      return
-    }
-
-    await stream.connect(videoRef.value, meta.from, meta.segmentId)
-    paused.value = false
-  } catch {
-    goLive()
-  }
+  const next = profiles[(idx + 1) % profiles.length].profile
+  selectedProfile.value = next
+  player.value.setProfile(next)
 }
 
 let resetOnNextTimeUpdate = false
 
-watch(videoTimeUs, () => {
-  if (resetOnNextTimeUpdate && stream.mode.value === 'live' && videoTimeUs.value > 0) {
+watch(() => playerState.value.timestampUs, () => {
+  if (resetOnNextTimeUpdate && playerState.value.mode === 'live' && playerState.value.timestampUs > 0) {
     resetOnNextTimeUpdate = false
     timelineRef.value?.resetWindow()
   }
@@ -188,24 +166,19 @@ watch(videoTimeUs, () => {
 
 function goLiveWithReset() {
   resetOnNextTimeUpdate = true
-  goLive()
+  player.value?.goLive()
 }
-
-watch(selectedProfile, () => {
-  startLive()
-})
 
 onMounted(async () => {
   document.addEventListener('fullscreenchange', onFullscreenChange)
-  clockTimer = setInterval(updateVideoTime, 250)
   await loadCamera()
-  startLive()
+  startStream()
 })
 
 onUnmounted(() => {
   document.removeEventListener('fullscreenchange', onFullscreenChange)
-  if (clockTimer) clearInterval(clockTimer)
-  stream.stop()
+  streamer.disconnect()
+  player.value?.stop()
 })
 </script>
 
@@ -218,11 +191,11 @@ onUnmounted(() => {
       <h1 v-if="camera" class="section-heading mb-0">{{ camera.name }}</h1>
     </div>
 
-    <div v-if="error" class="toast toast-danger">
+    <div v-if="error || streamer.error.value" class="toast toast-danger">
       <i class="ph ph-x-circle icon-xl"></i>
       <div>
         <span class="font-medium">Error</span>
-        <p>{{ error }}</p>
+        <p>{{ error || streamer.error.value }}</p>
       </div>
     </div>
 
@@ -233,34 +206,40 @@ onUnmounted(() => {
     <template v-else-if="camera">
       <div class="card overflow-hidden">
         <div ref="playerRef" class="bg-surface-sunken aspect-video relative flex items-center justify-center">
-          <video
-            ref="videoRef"
-            class="w-full h-full object-contain"
-            autoplay
-            muted
-            playsinline
-          ></video>
+          <div ref="playerContainerRef" class="w-full h-full"></div>
+          <!-- Motion overlay -->
+          <canvas
+            v-if="motionOverlay"
+            class="absolute inset-0 w-full h-full pointer-events-none"
+            style="image-rendering: pixelated;"
+          ></canvas>
           <div
-            v-if="stream.status.value === 'blocked'"
+            v-if="playerState.blocked"
             class="absolute inset-0 flex items-center justify-center bg-black/50 cursor-pointer"
-            @click="startLive"
+            @click="player?.togglePause()"
           >
             <i class="ph-fill ph-play-circle icon-xl text-primary"></i>
           </div>
           <div
-            v-else-if="stream.status.value !== 'streaming' && stream.status.value !== 'ended'"
+            v-else-if="playerState.buffering"
+            class="absolute inset-0 flex items-center justify-center bg-black/30"
+          >
+            <div class="spinner spinner-lg"></div>
+          </div>
+          <div
+            v-else-if="streamer.status.value !== 'connected'"
             class="absolute inset-0 flex items-center justify-center"
           >
-            <div v-if="stream.status.value === 'connecting'" class="spinner spinner-lg"></div>
-            <div v-else-if="stream.status.value === 'error'" class="text-center space-y-2">
+            <div v-if="streamer.status.value === 'connecting'" class="spinner spinner-lg"></div>
+            <div v-else-if="streamer.status.value === 'error'" class="text-center space-y-2">
               <i class="ph ph-warning icon-xl text-danger"></i>
-              <p class="text-sm text-text-muted">{{ stream.error.value }}</p>
-              <button class="btn btn-sm btn-primary" @click="startLive">Retry</button>
+              <p class="text-sm text-text-muted">{{ streamer.error.value }}</p>
+              <button class="btn btn-sm btn-primary" @click="startStream">Retry</button>
             </div>
             <div v-else class="text-center space-y-2">
               <i class="ph ph-video-camera icon-xl text-text-muted"></i>
               <p class="text-sm text-text-muted">Stream not active</p>
-              <button class="btn btn-sm btn-primary" @click="startLive">Connect</button>
+              <button class="btn btn-sm btn-primary" @click="startStream">Connect</button>
             </div>
           </div>
 
@@ -270,22 +249,34 @@ onUnmounted(() => {
         </div>
 
         <div class="flex items-center gap-3 px-4 py-3 border-t border-border">
-          <button class="btn btn-ghost btn-sm" @click="togglePause">
-            <i class="ph icon-sm" :class="paused ? 'ph-play' : 'ph-pause'"></i>
+          <button class="btn btn-ghost btn-sm" @click="player?.togglePause()">
+            <i class="ph icon-sm" :class="playerState.paused ? 'ph-play' : 'ph-pause'"></i>
           </button>
           <button class="btn btn-ghost btn-sm" @click="goLiveWithReset" title="Jump to live">
             <i class="ph ph-skip-forward icon-sm"></i>
           </button>
-          <div class="flex items-center gap-1" :class="{ 'opacity-40': stream.mode.value === 'live' }">
-            <input
-              type="range"
-              min="0" max="100" :value="rateToSlider(playbackRate)"
-              class="w-32 h-1 accent-primary"
-              :disabled="stream.mode.value === 'live'"
-              @input="onRateChange"
-              @dblclick="playbackRate = 1; if (videoRef) videoRef.playbackRate = 1"
-              title="Playback speed"
-            />
+          <div class="flex items-center gap-3" :class="{ 'opacity-40': rateDisabled }">
+            <div class="rate-slider-wrap">
+              <input
+                type="range"
+                :min="0"
+                :max="Math.max(0, rateSteps.length - 1)"
+                step="1"
+                v-model.number="rateIndex"
+                class="rate-slider"
+                :disabled="rateDisabled"
+                @dblclick="rateIndex = rateSteps.indexOf(1)"
+              />
+              <div class="rate-slider-ticks">
+                <span
+                  v-for="t in rateTicks"
+                  :key="t.value"
+                  class="rate-slider-tick"
+                  :class="{ 'rate-slider-tick-accent': t.value === 1 }"
+                  :style="{ left: t.pct + '%' }"
+                ></span>
+              </div>
+            </div>
             <span class="text-xs text-text-muted w-8">{{ playbackRate }}x</span>
           </div>
           <div class="flex-1 text-center">
@@ -293,18 +284,20 @@ onUnmounted(() => {
           </div>
           <span
             class="badge"
-            :class="stream.status.value === 'streaming' || stream.status.value === 'ended'
-              ? stream.mode.value === 'playback' ? 'badge-warning' : 'badge-success'
+            :class="streamer.status.value === 'connected'
+              ? playerState.mode === 'playback' ? 'badge-warning' : 'badge-success'
               : camera.status === 'error' ? 'badge-danger'
               : 'badge-neutral'"
           >
             <i class="ph-fill ph-circle icon-sm"></i>
-            {{ stream.mode.value === 'playback' ? 'Playback' : stream.status.value === 'streaming' ? 'Live' : camera.status }}
+            {{ playerState.mode === 'playback' ? 'Playback' : streamer.status.value === 'connected' ? 'Live' : camera.status }}
           </span>
-          <span v-if="selectedStream" class="text-xs text-text-muted">{{ selectedStream.resolution }}</span>
           <span v-if="selectedStream" class="text-xs text-text-muted">{{ selectedStream.resolution }}</span>
           <button class="btn btn-ghost btn-sm" @click="cycleProfile">
             {{ selectedProfile }} ({{ selectedStream?.resolution }} {{ selectedStream?.codec }})
+          </button>
+          <button class="btn btn-ghost btn-sm" @click="motionOverlay = !motionOverlay" :title="motionOverlay ? 'Hide motion overlay' : 'Show motion overlay'">
+            <i class="ph ph-person-arms-spread icon-sm"></i>
           </button>
         </div>
 
@@ -312,8 +305,11 @@ onUnmounted(() => {
           ref="timelineRef"
           :camera-id="cameraId"
           :profile="selectedProfile"
-          :current-time-us="videoTimeUs"
-          @seek="onTimelineSeek"
+          :current-time-us="playerState.timestampUs"
+          @seek="(ts: number) => player?.seek(ts)"
+          @scrub-start="player?.scrubStart()"
+          @scrub-move="(ts: number) => player?.scrubMove(ts)"
+          @scrub-end="(ts: number) => player?.scrubEnd(ts)"
         />
       </div>
     </template>

@@ -11,7 +11,7 @@ public sealed partial class FilesystemPlugin : IStorageProvider
     var relativePath = BuildRelativePath(metadata);
     var fullPath = Path.Combine(_rootPath, relativePath);
     Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
-    var stream = new FileStream(fullPath, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+    var stream = new FileStream(fullPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read,
       bufferSize: 65536, FileOptions.SequentialScan);
     ISegmentHandle handle = new FilesystemSegmentHandle(relativePath, stream, fullPath);
     return Task.FromResult(handle);
@@ -20,7 +20,7 @@ public sealed partial class FilesystemPlugin : IStorageProvider
   public Task<Stream> OpenReadAsync(string segmentRef, CancellationToken ct)
   {
     var fullPath = Path.Combine(_rootPath, segmentRef);
-    Stream stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read,
+    Stream stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite,
       bufferSize: 65536, FileOptions.SequentialScan);
     return Task.FromResult(stream);
   }

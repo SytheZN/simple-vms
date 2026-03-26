@@ -17,8 +17,6 @@ import type {
   ServerSettings,
   PluginListItem,
   SettingGroup,
-  StreamMetadata,
-  PlaybackMetadata,
 } from '@/types/api'
 
 class ApiError extends Error {
@@ -140,15 +138,6 @@ export const api = {
     stop: (id: string) => post<void>(`/api/v1/plugins/${id}/stop`),
   },
 
-  live: {
-    metadata: (cameraId: string, profile: string) =>
-      request<StreamMetadata>('OPTIONS', `/api/v1/live/${cameraId}/${profile}`),
-  },
-
-  playback: {
-    metadata: (cameraId: string, profile: string, from: number) =>
-      request<PlaybackMetadata>('OPTIONS', `/api/v1/playback/${cameraId}/${profile}?from=${from}`),
-  },
 }
 
 export { ApiError }
