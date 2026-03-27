@@ -119,11 +119,15 @@ List all cameras.
 |-------|------|-------------|
 | `id` | Guid | Camera identifier |
 | `name` | string | Display name |
-| `address` | string | Camera IP/hostname |
+| `address` | string | Camera address (normalized ONVIF URL) |
 | `status` | string | `online`, `offline`, `error` (runtime state, not persisted - derived from active connections) |
 | `providerId` | string | Camera provider plugin (e.g. `onvif`, `rtsp`) |
 | `streams` | object[] | Available stream profiles (see below) |
-| `capabilities` | string[] | Camera capabilities (e.g. `ptz`, `audio`, `events`) |
+| `capabilities` | string[] | Camera capabilities (e.g. `ptz`, `audio`, `events`, `analytics`) |
+| `config` | object? | Provider-specific configuration (device URIs, serial number, etc.) |
+| `segmentDuration` | int? | Camera-specific segment duration override (null = server default) |
+| `retentionMode` | string? | Camera-specific retention mode (null = default/inherit) |
+| `retentionValue` | long? | Camera-specific retention value (null = default/inherit) |
 
 Stream profile object:
 
@@ -137,22 +141,44 @@ Stream profile object:
 
 #### POST /api/v1/cameras
 
-Add a camera manually.
+Add a camera.
 
 **Request body:**
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `address` | string | Camera IP/hostname |
+| `address` | string | Camera address. Accepts shorthand: `192.168.1.100`, `192.168.1.100:8080`, or full URL. The server normalizes to a complete ONVIF URL (prepends `http://`, appends `/onvif/device_service` if no path given). |
 | `providerId` | string? | Provider to use (default: auto-detect) |
 | `credentials` | object? | `{ "username": "...", "password": "..." }` |
 | `name` | string? | Display name (default: pulled from device) |
+| `rtspPortOverride` | int? | Override the RTSP port in stream URIs (for port-forwarded setups) |
 
-The server connects to the camera, pulls its configuration (profiles, capabilities), and begins streaming if successful.
+The server connects to the camera, pulls its configuration (profiles, capabilities), and begins streaming if successful. Service URIs returned by the camera (media, events, RTSP streams) are rewritten to use the host and port from the provided address, so port-forwarded cameras work correctly.
+
+#### POST /api/v1/cameras/probe
+
+Probe a camera without persisting. Returns the camera's configuration (streams, capabilities, device info) for preview before adding.
+
+**Request body:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `address` | string | Camera address (same normalization as POST /cameras) |
+| `providerId` | string? | Provider to use |
+| `credentials` | object? | `{ "username": "...", "password": "..." }` |
+
+**Response body:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Device name |
+| `streams` | object[] | Discovered stream profiles |
+| `capabilities` | string[] | Detected capabilities |
+| `config` | object | Device info (serialNumber, firmwareVersion, service URIs) |
 
 #### GET /api/v1/cameras/{id}
 
-Get full camera details including configuration.
+Get full camera details including configuration. Same shape as the list item.
 
 #### PUT /api/v1/cameras/{id}
 
@@ -167,6 +193,7 @@ Update camera configuration.
 | `streams` | object[]? | Per-stream config (recording enabled/disabled) |
 | `segmentDuration` | int? | Target segment duration in seconds (null = use global default, actual duration rounds to the nearest sync point boundary) |
 | `retention` | object? | Retention policy override for this camera (see retention endpoint for shape) |
+| `rtspPortOverride` | int? | Override RTSP port in stream URIs |
 
 Retention override object:
 
@@ -177,9 +204,15 @@ Retention override object:
 
 Omitting `retention` leaves the current policy unchanged. Setting it overrides the global default. To revert to the global default, delete the camera's retention override via a PUT with `retention` set to `null`.
 
+When credentials or stream configuration changes, a `CameraConfigChanged` event is published. The streaming and recording pipelines reconcile dynamically without requiring a server restart.
+
 #### DELETE /api/v1/cameras/{id}
 
-Remove a camera. Stops streaming and recording. Recordings are retained according to retention policy (not deleted immediately).
+Remove a camera. Stops streaming and recording. Recordings are retained according to retention policy (not deleted immediately). Publishes a `CameraRemoved` event.
+
+#### POST /api/v1/cameras/{id}/refresh
+
+Re-probe the camera and update its configuration. Reconnects to the camera using stored credentials, refreshes capabilities, and merges stream profiles. Existing streams are updated in place (preserving recording toggles and retention settings). New streams (e.g. analytics metadata) are added. Publishes a `CameraConfigChanged` event.
 
 #### POST /api/v1/cameras/{id}/restart
 
@@ -204,7 +237,8 @@ Trigger camera discovery.
 | Field | Type | Description |
 |-------|------|-------------|
 | `subnets` | string[]? | CIDR ranges to scan (e.g. `["192.168.1.0/24"]`). Omit for local subnet WS-Discovery only. |
-| `credentials` | object? | Default credentials to try during discovery |
+| `ports` | int[]? | Additional ONVIF ports to scan (default: 80, 8080, 8899). Not persisted. |
+| `credentials` | object? | Credentials to try during discovery for device identification. Per-camera credentials are entered when adding. |
 
 **Response body:** Array of discovered cameras:
 
@@ -416,6 +450,7 @@ List discovered plugins, optionally filtered by extension point type (e.g. `data
 | `status` | string | `discovered`, `running`, `stopped`, `error` |
 | `extensionPoints` | string[] | Which interfaces the plugin implements |
 | `userStartable` | bool | Whether the plugin supports user-initiated start/stop |
+| `hasSettings` | bool | Whether the plugin implements `IPluginSettings` (config schema available) |
 
 #### GET /api/v1/plugins/{id}
 
@@ -481,55 +516,27 @@ Stop a running plugin. Only available for plugins that implement `IUserStartable
 
 ---
 
-## Live Streams and Playback
+## Streaming
 
-Live video and playback are not REST operations - they use dedicated QUIC stream types (`0x0300` for live, `0x0301` for playback). See [protocol.md](protocol.md) for details.
+Live video and recording playback use a unified WebSocket endpoint with a binary protocol. The client sends commands (go-live, fetch) and the server pushes fMP4 data. See [protocol.md](protocol.md) for the QUIC equivalent.
 
-For the web UI (HTTP only), live and playback are served via:
+#### GET /api/v1/stream/{cameraId}
 
-#### OPTIONS /api/v1/live/{cameraId}/{profile}
+WebSocket upgrade. Opens a bidirectional streaming session for the specified camera. The session supports both live and playback through a command-based protocol:
 
-Stream metadata. Returns the pipeline's `VideoStreamInfo` for the stream. The client uses this to configure MSE before connecting the WebSocket.
+**Client messages** (binary):
 
-**Response body:**
+| Type byte | Name | Fields |
+|-----------|------|--------|
+| `0x01` | Live | profile (length-prefixed UTF-8) |
+| `0x02` | Fetch | profile (length-prefixed UTF-8), from (uint64 BE), to (uint64 BE) |
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `mimeType` | string | MSE-compatible MIME type (e.g. `video/mp4; codecs="avc1.640029"`) |
-| `resolution` | string | e.g. `2560x1440` |
+**Server messages** (binary):
 
-Returns `NotFound` if no pipeline exists for the camera/profile. Returns `Unavailable` if the pipeline has not initialized.
+| Type byte | Name | Fields |
+|-----------|------|--------|
+| `0x01` | Init | profile (length-prefixed UTF-8), data (fMP4 init segment) |
+| `0x02` | Gop | flags (byte), profile (length-prefixed UTF-8), timestamp (uint64 BE), data (fMP4 fragment) |
+| `0x03` | Status | status byte: Ack (0x00), FetchComplete (0x01), Gap (0x02 + from/to uint64 BE), Error (0x04), Live (0x05), Recording (0x06) |
 
-#### GET /api/v1/live/{cameraId}/{profile}
-
-WebSocket upgrade. Server pushes fMP4 fragments for consumption via MSE (Media Source Extensions).
-
-#### OPTIONS /api/v1/playback/{cameraId}/{profile}
-
-Playback metadata. Resolves a timestamp to the nearest playback point.
-
-**Query parameters:**
-
-| Param | Type | Description |
-|-------|------|-------------|
-| `from` | ulong | Unix microseconds target time |
-
-**Response body:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `from` | ulong | Resolved keyframe timestamp (0 if no recording found) |
-| `segmentId` | Guid | Segment containing the keyframe |
-| `mimeType` | string | MSE-compatible MIME type |
-| `resolution` | string | e.g. `2560x1440` |
-
-#### GET /api/v1/playback/{cameraId}/{profile}
-
-WebSocket upgrade. Server sends fMP4 fragments from the specified segment and keyframe, continuing through subsequent segments. Client controls pacing by sending 2-byte big-endian box count requests.
-
-**Query parameters:**
-
-| Param | Type | Description |
-|-------|------|-------------|
-| `from` | ulong | Keyframe timestamp (from OPTIONS response) |
-| `segmentId` | Guid | Segment ID (from OPTIONS response) |
+The client sends a `Live` command to start receiving live fMP4 fragments, or a `Fetch` command to request recorded data for a time range. The server responds with `Init` (codec initialization), followed by `Gop` messages (fMP4 fragments), and `Status` messages to signal mode, gaps, and fetch completion. The client can switch between live and playback at any time by sending a new command.

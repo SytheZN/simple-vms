@@ -38,13 +38,16 @@ public record PluginMetadata
 public sealed class PluginContext
 {
     public required IConfig Config { get; init; }
-    public required IEventBus EventBus { get; init; }
-    public required IDataStore DataStore { get; init; }
-    public required ICameraRegistry CameraRegistry { get; init; }
-    public required IStreamTap StreamTap { get; init; }
-    public required IRecordingAccess RecordingAccess { get; init; }
+    public required IServerEnvironment Environment { get; init; }
+    public IEventBus? EventBus { get; init; }
+    public IDataStore? DataStore { get; init; }
+    public ICameraRegistry? CameraRegistry { get; init; }
+    public IStreamTap? StreamTap { get; init; }
+    public IRecordingAccess? RecordingAccess { get; init; }
 }
 ```
+
+`Config` and `Environment` are always provided. The remaining services are null during early initialization (e.g. the data provider plugin initializes before the event bus or camera registry exist) and populated once available.
 
 ## Lifecycle
 

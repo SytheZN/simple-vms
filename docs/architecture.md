@@ -120,11 +120,16 @@ sequenceDiagram
 The server uses `System.Threading.Channels` for internal pub/sub:
 
 - `CameraStatusChanged` - camera online/offline/error
+- `CameraAdded` - new camera registered
+- `CameraRemoved` - camera deleted
+- `CameraConfigChanged` - camera configuration updated (credentials, streams, RTSP port)
 - `StreamStarted` / `StreamStopped`
 - `RecordingSegmentCompleted` - new segment written
 - `MotionDetected` / `MotionEnded`
 - `OnvifEvent` - raw ONVIF events (tamper, analytics, I/O)
 - `ClientConnected` / `ClientDisconnected`
+
+The streaming and recording subsystems subscribe to camera lifecycle events for dynamic reconfiguration. When a camera is added, removed, or its configuration changes, pipelines and recording writers are reconciled without requiring a server restart.
 
 Plugins subscribe to these channels to react to system events. The event bus is in-process only (not distributed - single node design).
 
@@ -207,7 +212,7 @@ See [plugins.md](plugins.md) for full specification.
 | `INotificationSink` | Deliver notifications | Client push (QUIC) |
 | `IVideoAnalyzer` | Analyze video frames (requires decode) | None (future) |
 | `IStorageProvider` | Read/write recordings | NFS/local filesystem |
-| `IDataProvider` | Metadata storage (cameras, segments, events, config, etc.) | TBD |
+| `IDataProvider` | Metadata storage (cameras, segments, events, config, etc.) | SQLite |
 | `IAuthProvider` | Authenticate HTTP/web UI requests | None (unauthenticated by default) |
 | `IAuthzProvider` | Authorize operations and filter results by identity | Client-type RBAC (no provider = unrestricted access) |
 
