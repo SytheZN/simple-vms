@@ -19,6 +19,15 @@ public sealed class EventService(SoapClient soap)
     var reference = result
       ?.Element(XmlHelpers.NsEvent + "SubscriptionReference")
       ?.Element(XmlHelpers.NsWsa + "Address")?.Value
+      ?? result
+        ?.Element(XmlHelpers.NsEvent + "SubscriptionReference")
+        ?.Element(XmlHelpers.NsWsa5 + "Address")?.Value
+      ?? result
+        ?.Element(XmlHelpers.NsWsnt + "SubscriptionReference")
+        ?.Element(XmlHelpers.NsWsa + "Address")?.Value
+      ?? result
+        ?.Element(XmlHelpers.NsWsnt + "SubscriptionReference")
+        ?.Element(XmlHelpers.NsWsa5 + "Address")?.Value
       ?? throw new SoapFaultException("No subscription reference in response");
 
     return new PullPointInfo
@@ -35,7 +44,7 @@ public sealed class EventService(SoapClient soap)
     var body = new XElement(XmlHelpers.NsEvent + "PullMessages",
       new XElement(XmlHelpers.NsEvent + "Timeout", $"PT{(int)DefaultTimeout.TotalSeconds}S"),
       new XElement(XmlHelpers.NsEvent + "MessageLimit", 100));
-    var response = await soap.SendAsync(pullPointUri, body, credentials, ct);
+    var response = await soap.SendUnpacedAsync(pullPointUri, body, credentials, ct);
 
     var result = response.Element(XmlHelpers.NsEvent + "PullMessagesResponse");
     if (result == null) return [];
@@ -141,8 +150,13 @@ public sealed class EventService(SoapClient soap)
     return "generic";
   }
 
-  private static DateTimeOffset? ParseUtcTime(string? value) =>
-    DateTimeOffset.TryParse(value, out var dt) ? dt : null;
+  private static DateTimeOffset? ParseUtcTime(string? value)
+  {
+    if (value == null) return null;
+    if (DateTimeOffset.TryParse(value, null, System.Globalization.DateTimeStyles.AssumeUniversal, out var dt))
+      return dt;
+    return null;
+  }
 
   private static DateTimeOffset ParseTerminationTime(string? value) =>
     DateTimeOffset.TryParse(value, out var dt) ? dt : DateTimeOffset.UtcNow.AddMinutes(10);

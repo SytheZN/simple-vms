@@ -42,9 +42,12 @@ public sealed class DeviceService(SoapClient soap)
         ?.Element(XmlHelpers.NsSchema + "XAddr")?.Value,
       PtzUri = caps?.Element(XmlHelpers.NsSchema + "PTZ")
         ?.Element(XmlHelpers.NsSchema + "XAddr")?.Value,
+      AnalyticsUri = caps?.Element(XmlHelpers.NsSchema + "Analytics")
+        ?.Element(XmlHelpers.NsSchema + "XAddr")?.Value,
       HasPtz = caps?.Element(XmlHelpers.NsSchema + "PTZ") != null,
       HasEvents = caps?.Element(XmlHelpers.NsSchema + "Events") != null,
-      HasAudio = HasAudioSupport(caps)
+      HasAudio = HasAudioSupport(caps),
+      HasAnalytics = caps?.Element(XmlHelpers.NsSchema + "Analytics") != null
     };
   }
 
@@ -72,7 +75,9 @@ public sealed class DeviceCapabilities
   public string? MediaUri { get; init; }
   public string? EventsUri { get; init; }
   public string? PtzUri { get; init; }
+  public string? AnalyticsUri { get; init; }
   public bool HasPtz { get; init; }
   public bool HasEvents { get; init; }
   public bool HasAudio { get; init; }
+  public bool HasAnalytics { get; init; }
 }

@@ -21,7 +21,8 @@ public sealed partial class OnvifProvider : ICameraProvider
 
     if (options.Subnets is { Length: > 0 })
     {
-      var scannedAddresses = await WsDiscovery.ScanSubnetsAsync(_http, options.Subnets, ct);
+      var scannedAddresses = await WsDiscovery.ScanSubnetsAsync(
+        _http, options.Subnets, options.Ports, ct);
       foreach (var addr in scannedAddresses)
         allAddresses.Add(addr);
     }
@@ -30,28 +31,28 @@ public sealed partial class OnvifProvider : ICameraProvider
     foreach (var address in allAddresses)
     {
       var hostname = ReverseLookup(address);
+      string? name = null, manufacturer = null, model = null;
+
       try
       {
         var info = await _device.GetDeviceInformationAsync(address, credentials, ct);
-        cameras.Add(new DiscoveredCamera
-        {
-          Address = address,
-          Hostname = hostname,
-          Name = info.Model != null ? $"{info.Manufacturer} {info.Model}" : info.Manufacturer,
-          Manufacturer = info.Manufacturer,
-          Model = info.Model,
-          ProviderId = ProviderId
-        });
+        manufacturer = info.Manufacturer;
+        model = info.Model;
+        name = model != null ? $"{manufacturer} {model}" : manufacturer;
       }
       catch
       {
-        cameras.Add(new DiscoveredCamera
-        {
-          Address = address,
-          Hostname = hostname,
-          ProviderId = ProviderId
-        });
       }
+
+      cameras.Add(new DiscoveredCamera
+      {
+        Address = address,
+        Hostname = hostname,
+        Name = name,
+        Manufacturer = manufacturer,
+        Model = model,
+        ProviderId = ProviderId
+      });
     }
 
     return cameras;
@@ -63,7 +64,8 @@ public sealed partial class OnvifProvider : ICameraProvider
     var info = await _device.GetDeviceInformationAsync(address, credentials, ct);
     var caps = await _device.GetCapabilitiesAsync(address, credentials, ct);
 
-    var mediaUri = caps.MediaUri ?? address.Replace("/device_service", "/media_service");
+    var mediaUri = RewriteServiceUri(
+      caps.MediaUri ?? address.Replace("/device_service", "/media_service"), address);
 
     var profiles = await _media.GetProfilesAsync(mediaUri, credentials, ct);
     var streams = new List<StreamProfile>();
@@ -72,13 +74,14 @@ public sealed partial class OnvifProvider : ICameraProvider
     {
       var uri = await _media.GetStreamUriAsync(mediaUri, credentials, profiles[i].Token, ct);
       if (uri == null) continue;
-      streams.Add(MediaService.ToStreamProfile(profiles[i], uri, i));
+      streams.Add(MediaService.ToStreamProfile(profiles[i], RewriteHostOnly(uri, address), i));
     }
 
     var capabilities = new List<string>();
     if (caps.HasPtz) capabilities.Add("ptz");
     if (caps.HasAudio) capabilities.Add("audio");
     if (caps.HasEvents) capabilities.Add("events");
+    if (caps.HasAnalytics) capabilities.Add("analytics");
 
     var config = new Dictionary<string, string>
     {
@@ -86,9 +89,10 @@ public sealed partial class OnvifProvider : ICameraProvider
       ["serialNumber"] = info.SerialNumber ?? "",
       ["firmwareVersion"] = info.FirmwareVersion ?? ""
     };
-    if (caps.MediaUri != null) config["mediaUri"] = caps.MediaUri;
-    if (caps.EventsUri != null) config["eventsUri"] = caps.EventsUri;
-    if (caps.PtzUri != null) config["ptzUri"] = caps.PtzUri;
+    if (caps.MediaUri != null) config["mediaUri"] = RewriteServiceUri(caps.MediaUri, address);
+    if (caps.EventsUri != null) config["eventsUri"] = RewriteServiceUri(caps.EventsUri, address);
+    if (caps.PtzUri != null) config["ptzUri"] = RewriteServiceUri(caps.PtzUri, address);
+    if (caps.AnalyticsUri != null) config["analyticsUri"] = RewriteServiceUri(caps.AnalyticsUri, address);
 
     return new CameraConfiguration
     {
@@ -109,9 +113,10 @@ public sealed partial class OnvifProvider : ICameraProvider
     var eventsUri = config.Config.GetValueOrDefault("eventsUri");
     if (eventsUri == null) return null;
 
-    var credentials = Credentials.FromUserPass(
-      _config.Get("username", "admin"),
-      _config.Get("password", ""));
+    var credentials = config.Credentials
+      ?? Credentials.FromUserPass(
+        _config.Get("username", "admin"),
+        _config.Get("password", ""));
 
     var pullPoint = await _events.CreatePullPointAsync(eventsUri, credentials, ct);
 
@@ -138,6 +143,30 @@ public sealed partial class OnvifProvider : ICameraProvider
     {
     }
     return null;
+  }
+
+  private static string RewriteServiceUri(string serviceUri, string deviceAddress)
+  {
+    if (!Uri.TryCreate(deviceAddress, UriKind.Absolute, out var device))
+      return serviceUri;
+    if (!Uri.TryCreate(serviceUri, UriKind.Absolute, out var service))
+      return serviceUri;
+    var builder = new UriBuilder(service)
+    {
+      Host = device.Host,
+      Port = device.Port
+    };
+    return builder.Uri.AbsoluteUri;
+  }
+
+  private static string RewriteHostOnly(string serviceUri, string deviceAddress)
+  {
+    if (!Uri.TryCreate(deviceAddress, UriKind.Absolute, out var device))
+      return serviceUri;
+    if (!Uri.TryCreate(serviceUri, UriKind.Absolute, out var service))
+      return serviceUri;
+    var builder = new UriBuilder(service) { Host = device.Host };
+    return builder.Uri.AbsoluteUri;
   }
 
   private Credentials ResolveCredentials(DiscoveryOptions options) =>

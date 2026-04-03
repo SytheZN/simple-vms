@@ -75,6 +75,62 @@ public sealed class MediaService(SoapClient soap)
       Uri = streamUri
     };
 
+  public async Task<bool> HasVideoAnalyticsConfigurationAsync(
+    string mediaUri, Credentials credentials, CancellationToken ct)
+  {
+    var body = new XElement(XmlHelpers.NsMedia + "GetVideoAnalyticsConfigurations");
+    var response = await soap.SendAsync(mediaUri, body, credentials, ct);
+
+    var result = response.Element(
+      XmlHelpers.NsMedia + "GetVideoAnalyticsConfigurationsResponse");
+    return result?.HasElements == true;
+  }
+
+  public async Task<bool> EnableAnalyticsOnMetadataAsync(
+    string mediaUri, Credentials credentials, CancellationToken ct)
+  {
+    var listBody = new XElement(XmlHelpers.NsMedia + "GetMetadataConfigurations");
+    XElement response;
+    try
+    {
+      response = await soap.SendAsync(mediaUri, listBody, credentials, ct);
+    }
+    catch
+    {
+      return false;
+    }
+
+    var configs = response.Element(XmlHelpers.NsMedia + "GetMetadataConfigurationsResponse");
+    if (configs == null) return false;
+
+    foreach (var config in configs.Elements(XmlHelpers.NsMedia + "Configurations"))
+    {
+      var analyticsEl = config.Element(XmlHelpers.NsSchema + "Analytics");
+      if (analyticsEl != null && string.Equals(analyticsEl.Value, "true", StringComparison.OrdinalIgnoreCase))
+        continue;
+
+      if (analyticsEl != null)
+        analyticsEl.Value = "true";
+      else
+        config.Add(new XElement(XmlHelpers.NsSchema + "Analytics", "true"));
+
+      var setBody = new XElement(XmlHelpers.NsMedia + "SetMetadataConfiguration",
+        config,
+        new XElement(XmlHelpers.NsMedia + "ForcePersistence", "true"));
+
+      try
+      {
+        await soap.SendAsync(mediaUri, setBody, credentials, ct);
+      }
+      catch
+      {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   private static string? ParseCodec(string? encoding) => encoding?.ToUpperInvariant() switch
   {
     "H264" => "h264",

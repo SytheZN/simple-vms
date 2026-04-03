@@ -124,7 +124,8 @@ public class OnvifPluginTests
     plugin.Initialize(new PluginContext
     {
       Config = config,
-      Environment = new FakeEnvironment()
+      Environment = new FakeEnvironment(),
+      LoggerFactory = NullPluginLoggerFactory.Instance
     });
     return plugin;
   }

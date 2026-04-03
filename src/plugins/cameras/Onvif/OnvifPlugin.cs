@@ -7,11 +7,13 @@ namespace Cameras.Onvif;
 public sealed partial class OnvifProvider : IPlugin
 {
   private IConfig _config = null!;
+  private IEventBus? _eventBus;
   private HttpClient _http = null!;
   private SoapClient _soap = null!;
   private DeviceService _device = null!;
   private MediaService _media = null!;
   private EventService _events = null!;
+  private AnalyticsService _analytics = null!;
 
   public PluginMetadata Metadata { get; } = new()
   {
@@ -24,11 +26,13 @@ public sealed partial class OnvifProvider : IPlugin
   public OneOf<Success, Error> Initialize(PluginContext context)
   {
     _config = context.Config;
-    _http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-    _soap = new SoapClient(_http);
+    _eventBus = context.EventBus;
+    _http = new HttpClient { Timeout = TimeSpan.FromSeconds(75) };
+    _soap = new SoapClient(_http, context.LoggerFactory.CreateLogger("Soap"));
     _device = new DeviceService(_soap);
     _media = new MediaService(_soap);
     _events = new EventService(_soap);
+    _analytics = new AnalyticsService(_soap);
     return new Success();
   }
 

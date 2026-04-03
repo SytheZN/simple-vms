@@ -50,8 +50,9 @@ public static class WsDiscovery
   }
 
   public static async Task<IReadOnlyList<string>> ScanSubnetsAsync(
-    HttpClient http, string[] subnets, CancellationToken ct)
+    HttpClient http, string[] subnets, int[]? ports, CancellationToken ct)
   {
+    var scanPorts = ports is { Length: > 0 } ? ports : CommonOnvifPorts;
     var addresses = new List<string>();
     using var semaphore = new SemaphoreSlim(MaxParallelScans);
 
@@ -60,7 +61,7 @@ public static class WsDiscovery
     {
       foreach (var ip in EnumerateSubnet(subnet))
       {
-        foreach (var port in CommonOnvifPorts)
+        foreach (var port in scanPorts)
         {
           tasks.Add(ProbeHostAsync(http, semaphore, ip, port, ct));
         }

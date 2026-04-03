@@ -103,6 +103,62 @@ public class DeviceServiceTests
     Assert.That(caps.HasEvents, Is.False);
   }
 
+  /// <summary>
+  /// SCENARIO:
+  /// Camera returns capabilities with an Analytics section
+  ///
+  /// ACTION:
+  /// Call GetCapabilitiesAsync
+  ///
+  /// EXPECTED RESULT:
+  /// HasAnalytics is true and AnalyticsUri is populated
+  /// </summary>
+  [Test]
+  public async Task GetCapabilities_WithAnalytics_FlagTrueAndUriSet()
+  {
+    var responseXml = BuildSoapResponse(new XElement(XmlHelpers.NsDevice + "GetCapabilitiesResponse",
+      new XElement(XmlHelpers.NsDevice + "Capabilities",
+        new XElement(XmlHelpers.NsSchema + "Media",
+          new XElement(XmlHelpers.NsSchema + "XAddr", "http://cam/media")),
+        new XElement(XmlHelpers.NsSchema + "Analytics",
+          new XElement(XmlHelpers.NsSchema + "XAddr", "http://cam/analytics")))));
+
+    var service = CreateService(responseXml);
+    var caps = await service.GetCapabilitiesAsync(
+      "http://cam/device_service", Credentials.FromUserPass("admin", ""),
+      CancellationToken.None);
+
+    Assert.That(caps.HasAnalytics, Is.True);
+    Assert.That(caps.AnalyticsUri, Is.EqualTo("http://cam/analytics"));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Camera returns capabilities without Analytics section
+  ///
+  /// ACTION:
+  /// Call GetCapabilitiesAsync
+  ///
+  /// EXPECTED RESULT:
+  /// HasAnalytics is false and AnalyticsUri is null
+  /// </summary>
+  [Test]
+  public async Task GetCapabilities_NoAnalytics_FlagFalseAndUriNull()
+  {
+    var responseXml = BuildSoapResponse(new XElement(XmlHelpers.NsDevice + "GetCapabilitiesResponse",
+      new XElement(XmlHelpers.NsDevice + "Capabilities",
+        new XElement(XmlHelpers.NsSchema + "Media",
+          new XElement(XmlHelpers.NsSchema + "XAddr", "http://cam/media")))));
+
+    var service = CreateService(responseXml);
+    var caps = await service.GetCapabilitiesAsync(
+      "http://cam/device_service", Credentials.FromUserPass("admin", ""),
+      CancellationToken.None);
+
+    Assert.That(caps.HasAnalytics, Is.False);
+    Assert.That(caps.AnalyticsUri, Is.Null);
+  }
+
   private static DeviceService CreateService(string responseXml)
   {
     var handler = new FakeHttpHandler(responseXml);
