@@ -7,6 +7,7 @@ public sealed class CameraConfiguration
   public required IReadOnlyList<StreamProfile> Streams { get; init; }
   public required string[] Capabilities { get; init; }
   public Dictionary<string, string> Config { get; init; } = [];
+  public Credentials? Credentials { get; init; }
 }
 
 public sealed class StreamProfile

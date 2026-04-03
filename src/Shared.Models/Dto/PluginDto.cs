@@ -9,6 +9,7 @@ public sealed class PluginListItem
   public required string Status { get; init; }
   public required string[] ExtensionPoints { get; init; }
   public required bool UserStartable { get; init; }
+  public required bool HasSettings { get; init; }
 }
 
 public sealed class ValidateFieldRequest

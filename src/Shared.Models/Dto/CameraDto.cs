@@ -9,6 +9,10 @@ public sealed class CameraListItem
   public required string ProviderId { get; init; }
   public required IReadOnlyList<StreamProfileDto> Streams { get; init; }
   public required string[] Capabilities { get; init; }
+  public Dictionary<string, string>? Config { get; init; }
+  public int? SegmentDuration { get; init; }
+  public string? RetentionMode { get; init; }
+  public long? RetentionValue { get; init; }
 }
 
 public sealed class StreamProfileDto
@@ -26,6 +30,22 @@ public sealed class CreateCameraRequest
   public string? ProviderId { get; init; }
   public CredentialsDto? Credentials { get; init; }
   public string? Name { get; init; }
+  public int? RtspPortOverride { get; init; }
+}
+
+public sealed class ProbeRequest
+{
+  public required string Address { get; init; }
+  public string? ProviderId { get; init; }
+  public CredentialsDto? Credentials { get; init; }
+}
+
+public sealed class ProbeResponse
+{
+  public required string Name { get; init; }
+  public required IReadOnlyList<StreamProfileDto> Streams { get; init; }
+  public required string[] Capabilities { get; init; }
+  public required Dictionary<string, string> Config { get; init; }
 }
 
 public sealed class UpdateCameraRequest
@@ -35,6 +55,7 @@ public sealed class UpdateCameraRequest
   public IReadOnlyList<UpdateStreamConfig>? Streams { get; init; }
   public int? SegmentDuration { get; init; }
   public RetentionOverride? Retention { get; init; }
+  public int? RtspPortOverride { get; init; }
 }
 
 public sealed class UpdateStreamConfig
