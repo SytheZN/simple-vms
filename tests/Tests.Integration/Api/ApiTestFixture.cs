@@ -106,7 +106,7 @@ public sealed class ApiTestFixture
   {
     var debugPluginsDir = Path.GetFullPath(
       Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..",
-        "out", "debug-data", "plugins"));
+        "debug", "test", "plugins"));
 
     if (!Directory.Exists(debugPluginsDir))
       return;

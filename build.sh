@@ -15,9 +15,15 @@ test() {
 publish() {
   rm -rf "$OUT_DIR"
   dotnet publish "$SOLUTION_DIR/src/Server/Server.csproj" -c Release -o "$OUT_DIR/server"
+
+  for proj in "$SOLUTION_DIR"/src/plugins/*/*/*.csproj; do
+    local name
+    name="$(basename "$(dirname "$proj")")"
+    dotnet publish "$proj" -c Release -o "$OUT_DIR/server/plugins/$name"
+  done
 }
 
-case "${1:-build}" in
+case "${1:-help}" in
   build)   build ;;
   test)    test ;;
   publish) publish ;;

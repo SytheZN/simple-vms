@@ -25,7 +25,6 @@ public static class AppSetup
   {
     var config = builder.Configuration;
     var dataPath = config["data-path"]!;
-    var pluginsPath = Path.Combine(dataPath, "plugins");
     var quicPort = config.GetValue("quic-port", 443);
 
     _loggerProvider = new HybridLoggerProvider();
@@ -60,7 +59,10 @@ public static class AppSetup
     var pluginHost = new PluginHost(
       loggerFactory.CreateLogger<PluginHost>(), loggerFactory,
       dataProviderConfig, eventBus, environment);
-    pluginHost.Discover(pluginsPath);
+    var bundledPluginsPath = Path.Combine(AppContext.BaseDirectory, "plugins");
+    var userPluginsPath = Path.Combine(dataPath, "plugins");
+    pluginHost.Discover(bundledPluginsPath);
+    pluginHost.Discover(userPluginsPath);
     builder.Services.AddSingleton(pluginHost);
     builder.Services.AddSingleton<IPluginHost>(pluginHost);
 

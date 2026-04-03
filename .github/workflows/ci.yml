@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: dnf install -y dotnet-sdk-10.0 nodejs
+
+      - name: Build
+        run: ./build.sh build
+
+      - name: Test
+        run: ./build.sh test

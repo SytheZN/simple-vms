@@ -25,7 +25,7 @@ if (errors.Count > 0)
   Console.Error.WriteLine("Usage: server --data-path <path> [options]");
   Console.Error.WriteLine();
   Console.Error.WriteLine("Options:");
-  Console.Error.WriteLine("  --data-path <path>   Root path for persistent data (certs, plugins)");
+  Console.Error.WriteLine("  --data-path <path>   Root path for persistent data (certs, user plugins)");
   Console.Error.WriteLine("  --http-port <port>   TCP port for HTTP web UI and enrollment (default: 8080)");
   Console.Error.WriteLine("  --quic-port <port>   UDP port for QUIC client connections (default: 443)");
   Console.Error.WriteLine("  --bind <address>     Bind address (default: 0.0.0.0)");
