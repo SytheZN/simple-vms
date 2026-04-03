@@ -1,6 +1,7 @@
 using Server.Plugins;
 using Shared.Models;
 using Shared.Models.Dto;
+using Shared.Models.Events;
 
 namespace Server.Core.Services;
 
@@ -8,11 +9,13 @@ public sealed class CameraService
 {
   private readonly IPluginHost _plugins;
   private readonly CameraStatusTracker _status;
+  private readonly IEventBus _eventBus;
 
-  public CameraService(IPluginHost plugins, CameraStatusTracker status)
+  public CameraService(IPluginHost plugins, CameraStatusTracker status, IEventBus eventBus)
   {
     _plugins = plugins;
     _status = status;
+    _eventBus = eventBus;
   }
 
   public async Task<OneOf<IReadOnlyList<CameraListItem>, Error>> GetAllAsync(
@@ -57,9 +60,10 @@ public sealed class CameraService
       error => Task.FromResult<OneOf<CameraListItem, Error>>(error));
   }
 
-  public async Task<OneOf<CameraListItem, Error>> CreateAsync(
-    CreateCameraRequest request, CancellationToken ct)
+  public async Task<OneOf<ProbeResponse, Error>> ProbeAsync(
+    ProbeRequest request, CancellationToken ct)
   {
+    var address = NormalizeOnvifAddress(request.Address);
     var provider = request.ProviderId != null
       ? _plugins.CameraProviders.FirstOrDefault(p => p.ProviderId == request.ProviderId)
       : _plugins.CameraProviders.FirstOrDefault();
@@ -70,13 +74,6 @@ public sealed class CameraService
         new DebugTag(ModuleIds.CameraManagement, 0x0001),
         "No camera provider available");
 
-    var existingResult = await _plugins.DataProvider.Cameras.GetByAddressAsync(request.Address, ct);
-    if (existingResult.IsT0)
-      return new Error(
-        Result.Conflict,
-        new DebugTag(ModuleIds.CameraManagement, 0x0002),
-        $"Camera at address {request.Address} already exists");
-
     var creds = request.Credentials != null
       ? Credentials.FromUserPass(request.Credentials.Username, request.Credentials.Password)
       : Credentials.FromUserPass("", "");
@@ -84,7 +81,7 @@ public sealed class CameraService
     CameraConfiguration config;
     try
     {
-      config = await provider.ConfigureAsync(request.Address, creds, ct);
+      config = await provider.ConfigureAsync(address, creds, ct);
     }
     catch (Exception ex)
     {
@@ -94,49 +91,70 @@ public sealed class CameraService
         $"Failed to configure camera: {ex.Message}");
     }
 
+    return new ProbeResponse
+    {
+      Name = config.Name,
+      Streams = config.Streams.Select(s => new StreamProfileDto
+      {
+        Profile = s.Profile,
+        Codec = s.Codec ?? "",
+        Resolution = s.Resolution ?? "",
+        Fps = s.Fps ?? 0,
+        RecordingEnabled = true
+      }).ToList(),
+      Capabilities = config.Capabilities,
+      Config = config.Config
+    };
+  }
+
+  public async Task<OneOf<CameraListItem, Error>> CreateAsync(
+    CreateCameraRequest request, CancellationToken ct)
+  {
+    var address = NormalizeOnvifAddress(request.Address);
+
+    var existingResult = await _plugins.DataProvider.Cameras.GetByAddressAsync(address, ct);
+    if (existingResult.IsT0)
+      return new Error(
+        Result.Conflict,
+        new DebugTag(ModuleIds.CameraManagement, 0x0002),
+        $"Camera at address {address} already exists");
+
+    var creds = request.Credentials != null
+      ? Credentials.FromUserPass(request.Credentials.Username, request.Credentials.Password)
+      : Credentials.FromUserPass("", "");
+
     var now = DateTimeOffset.UtcNow.ToUnixMicroseconds();
     var camera = new Camera
     {
       Id = Guid.NewGuid(),
-      Name = request.Name ?? config.Name,
-      Address = request.Address,
-      ProviderId = provider.ProviderId,
+      Name = request.Name ?? address,
+      Address = address,
+      ProviderId = request.ProviderId
+        ?? _plugins.CameraProviders.FirstOrDefault()?.ProviderId
+        ?? "onvif",
       Credentials = System.Text.Encoding.UTF8.GetBytes(
         System.Text.Json.JsonSerializer.Serialize(creds.Values, CredentialsJsonContext.Default.IReadOnlyDictionaryStringString)),
-      Capabilities = config.Capabilities,
-      Config = config.Config,
       CreatedAt = now,
       UpdatedAt = now
     };
+
+    if (request.RtspPortOverride is > 0)
+      camera.Config["rtspPortOverride"] = request.RtspPortOverride.Value.ToString();
 
     var createResult = await _plugins.DataProvider.Cameras.CreateAsync(camera, ct);
     if (createResult.IsT1)
       return createResult.AsT1;
 
-    var streamDtos = new List<StreamProfileDto>();
-    foreach (var s in config.Streams)
-      {
-        var stream = new CameraStream
-        {
-          Id = Guid.NewGuid(),
-          CameraId = camera.Id,
-          Profile = s.Profile,
-          FormatId = s.FormatId,
-          Codec = s.Codec,
-          Resolution = s.Resolution,
-          Fps = s.Fps,
-          Bitrate = s.Bitrate,
-          Uri = s.Uri,
-          RecordingEnabled = true
-        };
-        await _plugins.DataProvider.Streams.UpsertAsync(stream, ct);
-        streamDtos.Add(ToStreamDto(stream));
-      }
+    await _eventBus.PublishAsync(new CameraAdded
+    {
+      CameraId = camera.Id,
+      Timestamp = now
+    }, ct);
 
-    return ToCameraListItem(camera, "offline", streamDtos);
+    return await RefreshAsync(camera.Id, ct);
   }
 
-  public async Task<OneOf<Success, Error>> UpdateAsync(
+  public async Task<OneOf<CameraListItem, Error>> UpdateAsync(
     Guid id, UpdateCameraRequest request, CancellationToken ct)
   {
     var result = await _plugins.DataProvider.Cameras.GetByIdAsync(id, ct);
@@ -150,6 +168,19 @@ public sealed class CameraService
     {
       camera.RetentionMode = Enum.Parse<RetentionMode>(request.Retention.Mode, ignoreCase: true);
       camera.RetentionValue = request.Retention.Value;
+    }
+    if (request.Credentials != null)
+    {
+      var creds = Credentials.FromUserPass(request.Credentials.Username, request.Credentials.Password);
+      camera.Credentials = System.Text.Encoding.UTF8.GetBytes(
+        System.Text.Json.JsonSerializer.Serialize(creds.Values, CredentialsJsonContext.Default.IReadOnlyDictionaryStringString));
+    }
+    if (request.RtspPortOverride.HasValue)
+    {
+      if (request.RtspPortOverride.Value > 0)
+        camera.Config["rtspPortOverride"] = request.RtspPortOverride.Value.ToString();
+      else
+        camera.Config.Remove("rtspPortOverride");
     }
     camera.UpdatedAt = DateTimeOffset.UtcNow.ToUnixMicroseconds();
 
@@ -173,13 +204,144 @@ public sealed class CameraService
       }
     }
 
-    return new Success();
+    var needsRefresh = request.Credentials != null || request.RtspPortOverride.HasValue;
+    if (needsRefresh)
+      return await RefreshAsync(id, ct);
+
+    return await GetByIdAsync(id, ct);
+  }
+
+  public async Task<OneOf<CameraListItem, Error>> RefreshAsync(Guid id, CancellationToken ct)
+  {
+    var result = await _plugins.DataProvider.Cameras.GetByIdAsync(id, ct);
+    if (result.IsT1) return result.AsT1;
+
+    var camera = result.AsT0;
+    var provider = _plugins.CameraProviders.FirstOrDefault(p => p.ProviderId == camera.ProviderId)
+      ?? _plugins.CameraProviders.FirstOrDefault();
+    if (provider == null)
+      return new Error(Result.BadRequest, new DebugTag(ModuleIds.CameraManagement, 0x0001),
+        "No camera provider available");
+
+    Credentials creds;
+    if (camera.Credentials is { Length: > 0 })
+    {
+      var dict = System.Text.Json.JsonSerializer.Deserialize(
+        camera.Credentials, CredentialsJsonContext.Default.IReadOnlyDictionaryStringString)
+        as IReadOnlyDictionary<string, string>;
+      creds = dict != null
+        ? Credentials.FromUserPass(
+            dict.TryGetValue("username", out var u) ? u : "",
+            dict.TryGetValue("password", out var p) ? p : "")
+        : Credentials.FromUserPass("", "");
+    }
+    else
+    {
+      creds = Credentials.FromUserPass("", "");
+    }
+
+    CameraConfiguration config;
+    try
+    {
+      config = await provider.ConfigureAsync(camera.Address, creds, ct);
+    }
+    catch (Exception ex)
+    {
+      return new Error(Result.InternalError, new DebugTag(ModuleIds.CameraManagement, 0x0003),
+        $"Failed to configure camera: {ex.Message}");
+    }
+
+    camera.Capabilities = config.Capabilities;
+    var existingOverride = camera.Config.GetValueOrDefault("rtspPortOverride");
+    camera.Config = new Dictionary<string, string>(config.Config);
+    if (existingOverride != null)
+      camera.Config["rtspPortOverride"] = existingOverride;
+    camera.UpdatedAt = DateTimeOffset.UtcNow.ToUnixMicroseconds();
+    await _plugins.DataProvider.Cameras.UpdateAsync(camera, ct);
+
+    var existingStreamsResult = await _plugins.DataProvider.Streams.GetByCameraIdAsync(id, ct);
+    var existingProfiles = existingStreamsResult.IsT0
+      ? existingStreamsResult.AsT0.ToDictionary(s => s.Profile)
+      : new Dictionary<string, CameraStream>();
+
+    var rtspPortOverride = camera.Config.TryGetValue("rtspPortOverride", out var portStr)
+      && int.TryParse(portStr, out var port) ? (int?)port : null;
+
+    var streamDtos = new List<StreamProfileDto>();
+    var streamsChanged = false;
+    foreach (var s in config.Streams)
+    {
+      if (existingProfiles.TryGetValue(s.Profile, out var existing))
+      {
+        existing.Codec = s.Codec;
+        existing.Resolution = s.Resolution;
+        existing.Fps = s.Fps;
+        existing.Bitrate = s.Bitrate;
+        var uri = rtspPortOverride.HasValue ? RewriteRtspPort(s.Uri, rtspPortOverride.Value) : s.Uri;
+        if (existing.Uri != uri)
+          streamsChanged = true;
+        existing.Uri = uri;
+        await _plugins.DataProvider.Streams.UpsertAsync(existing, ct);
+        streamDtos.Add(ToStreamDto(existing));
+      }
+      else
+      {
+        streamsChanged = true;
+        var uri = rtspPortOverride.HasValue ? RewriteRtspPort(s.Uri, rtspPortOverride.Value) : s.Uri;
+        var stream = new CameraStream
+        {
+          Id = Guid.NewGuid(),
+          CameraId = id,
+          Profile = s.Profile,
+          Kind = s.Kind,
+          FormatId = s.FormatId,
+          Codec = s.Codec,
+          Resolution = s.Resolution,
+          Fps = s.Fps,
+          Bitrate = s.Bitrate,
+          Uri = uri,
+          RecordingEnabled = true
+        };
+        await _plugins.DataProvider.Streams.UpsertAsync(stream, ct);
+        streamDtos.Add(ToStreamDto(stream));
+      }
+    }
+
+    var newProfiles = config.Streams.Select(s => s.Profile).ToHashSet();
+    foreach (var (profile, existing) in existingProfiles)
+    {
+      if (!newProfiles.Contains(profile))
+      {
+        streamsChanged = true;
+        await _plugins.DataProvider.Streams.DeleteAsync(existing.Id, ct);
+      }
+    }
+
+    if (streamsChanged)
+    {
+      await _eventBus.PublishAsync(new CameraConfigChanged
+      {
+        CameraId = id,
+        Timestamp = camera.UpdatedAt
+      }, ct);
+    }
+
+    return ToCameraListItem(camera, _status.GetStatus(id), streamDtos);
   }
 
   public async Task<OneOf<Success, Error>> DeleteAsync(Guid id, CancellationToken ct)
   {
+    var result = await _plugins.DataProvider.Cameras.DeleteAsync(id, ct);
+    if (result.IsT1) return result;
+
     _status.Remove(id);
-    return await _plugins.DataProvider.Cameras.DeleteAsync(id, ct);
+    await _eventBus.PublishAsync(new CameraRemoved
+    {
+      CameraId = id,
+      Timestamp = DateTimeOffset.UtcNow.ToUnixMicroseconds()
+    }, CancellationToken.None);
+
+    return result;
   }
 
   public Task<OneOf<Success, Error>> RestartAsync(Guid id, CancellationToken ct)
@@ -208,7 +370,13 @@ public sealed class CameraService
       Status = status,
       ProviderId = cam.ProviderId,
       Streams = streams,
-      Capabilities = cam.Capabilities
+      Capabilities = cam.Capabilities,
+      Config = cam.Config,
+      SegmentDuration = cam.SegmentDuration,
+      RetentionMode = cam.RetentionMode == Shared.Models.RetentionMode.Default
+        ? null : cam.RetentionMode.ToString().ToLowerInvariant(),
+      RetentionValue = cam.RetentionMode == Shared.Models.RetentionMode.Default
+        ? null : cam.RetentionValue
     };
 
   private static StreamProfileDto ToStreamDto(CameraStream s) =>
@@ -220,4 +388,32 @@ public sealed class CameraService
       Fps = s.Fps ?? 0,
       RecordingEnabled = s.RecordingEnabled
     };
+
+  internal static string NormalizeOnvifAddress(string address)
+  {
+    var trimmed = address.Trim();
+
+    var withoutScheme = trimmed;
+    if (trimmed.Contains("://"))
+      withoutScheme = trimmed[(trimmed.IndexOf("://") + 3)..];
+    else
+      trimmed = "http://" + trimmed;
+
+    if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
+      return trimmed;
+
+    var hasPath = withoutScheme.Contains('/');
+    if (!hasPath)
+      return new UriBuilder(uri) { Path = "/onvif/device_service" }.Uri.AbsoluteUri;
+
+    return uri.AbsoluteUri;
+  }
+
+  internal static string RewriteRtspPort(string uri, int port)
+  {
+    if (!Uri.TryCreate(uri, UriKind.Absolute, out var parsed))
+      return uri;
+    var builder = new UriBuilder(parsed) { Port = port };
+    return builder.Uri.ToString();
+  }
 }

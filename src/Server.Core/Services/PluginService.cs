@@ -149,6 +149,7 @@ public sealed class PluginService
       Version = entry.Metadata.Version,
       Status = entry.State.ToString().ToLowerInvariant(),
       ExtensionPoints = entry.ExtensionPoints,
-      UserStartable = entry.Plugin is IUserStartable
+      UserStartable = entry.Plugin is IUserStartable,
+      HasSettings = entry.Plugin is IPluginSettings
     };
 }

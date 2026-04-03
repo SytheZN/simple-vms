@@ -16,9 +16,14 @@ public sealed class DiscoveryService
   public async Task<OneOf<IReadOnlyList<DiscoveredCameraDto>, Error>> DiscoverAsync(
     DiscoveryRequest request, CancellationToken ct)
   {
+    var ports = request.Ports?
+      .Where(p => p is >= 1 and <= 65535)
+      .ToArray();
+
     var options = new DiscoveryOptions
     {
       Subnets = request.Subnets,
+      Ports = ports is { Length: > 0 } ? ports : null,
       Username = request.Credentials?.Username,
       Password = request.Credentials?.Password
     };

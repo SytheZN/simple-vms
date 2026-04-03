@@ -11,9 +11,11 @@ public static class CameraEndpoints
     var group = app.MapGroup("/api/v1/cameras");
     group.MapGet("/", GetAll);
     group.MapPost("/", Create);
+    group.MapPost("/probe", Probe);
     group.MapGet("/{id:guid}", GetById);
     group.MapPut("/{id:guid}", Update);
     group.MapDelete("/{id:guid}", Delete);
+    group.MapPost("/{id:guid}/refresh", Refresh);
     group.MapPost("/{id:guid}/restart", Restart);
     group.MapGet("/{id:guid}/snapshot", GetSnapshot);
   }
@@ -34,6 +36,15 @@ public static class CameraEndpoints
   {
     var result = await cameras.CreateAsync(request, ct);
     return ApiResponse.Created(result, new DebugTag(ModuleIds.CameraManagement, 0x0011));
+  }
+
+  private static async Task<IResult> Probe(
+    ProbeRequest request,
+    CameraService cameras,
+    CancellationToken ct)
+  {
+    var result = await cameras.ProbeAsync(request, ct);
+    return ApiResponse.Ok(result, new DebugTag(ModuleIds.CameraManagement, 0x0016));
   }
 
   private static async Task<IResult> GetById(
@@ -62,6 +73,15 @@ public static class CameraEndpoints
   {
     var result = await cameras.DeleteAsync(id, ct);
     return ApiResponse.Ok(result, new DebugTag(ModuleIds.CameraManagement, 0x0014));
+  }
+
+  private static async Task<IResult> Refresh(
+    Guid id,
+    CameraService cameras,
+    CancellationToken ct)
+  {
+    var result = await cameras.RefreshAsync(id, ct);
+    return ApiResponse.Ok(result, new DebugTag(ModuleIds.CameraManagement, 0x0017));
   }
 
   private static async Task<IResult> Restart(
