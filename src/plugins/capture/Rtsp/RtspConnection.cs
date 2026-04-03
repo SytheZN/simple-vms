@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Shared.Models;
 using Shared.Models.Formats;
 
@@ -8,6 +10,7 @@ public sealed class RtspConnection : IStreamConnection
   private readonly RtspClient _client;
   private readonly IRtpDepacketizer _depacketizer;
   private readonly IDataStream _dataStream;
+  private readonly ILogger _logger;
   private readonly CancellationTokenSource _cts = new();
   private Task? _readLoop;
 
@@ -16,27 +19,32 @@ public sealed class RtspConnection : IStreamConnection
   public Task Completed => _readLoop ?? Task.CompletedTask;
 
   private RtspConnection(
-    RtspClient client, IRtpDepacketizer depacketizer, IDataStream dataStream, StreamInfo info)
+    RtspClient client, IRtpDepacketizer depacketizer, IDataStream dataStream,
+    StreamInfo info, ILogger logger)
   {
     _client = client;
     _depacketizer = depacketizer;
     _dataStream = dataStream;
     Info = info;
+    _logger = logger;
   }
 
   public static async Task<RtspConnection> CreateAsync(
-    string uri, IReadOnlyDictionary<string, string>? credentials, CancellationToken ct)
+    string uri, IReadOnlyDictionary<string, string>? credentials,
+    string mediaType = "video", ILogger? logger = null, CancellationToken ct = default)
   {
+    var log = logger ?? NullLogger.Instance;
     var client = new RtspClient();
     var username = credentials?.GetValueOrDefault("username");
     var password = credentials?.GetValueOrDefault("password");
     var sdpText = await client.ConnectAndDescribeAsync(uri, username, password, ct);
+    log.LogTrace("SDP for {Uri}:\n{Sdp}", uri, sdpText);
     var mediaDescriptions = SdpParser.Parse(sdpText);
 
-    if (mediaDescriptions.Count == 0)
-      throw new InvalidOperationException("No video track found in SDP");
-
-    var media = mediaDescriptions[0];
+    var media = mediaDescriptions.FirstOrDefault(m => m.MediaType == mediaType)
+      ?? throw new InvalidOperationException($"No {mediaType} track found in SDP");
+    log.LogDebug("Selected {MediaType} track: codec={Codec} control={Control}",
+      mediaType, media.Codec, media.ControlUri);
     await client.SetupAsync(media.ControlUri, ct);
     await client.PlayAsync(ct);
 
@@ -44,7 +52,9 @@ public sealed class RtspConnection : IStreamConnection
     IDataStream dataStream;
     StreamInfo info;
 
-    if (media.Codec == "H264")
+    var codecUpper = media.Codec.ToUpperInvariant();
+
+    if (codecUpper == "H264")
     {
       depacketizer = new RtpH264Depacketizer();
       var parameters = BuildH264Parameters(media);
@@ -56,11 +66,11 @@ public sealed class RtspConnection : IStreamConnection
       var stream = new DataStream<H264NalUnit>(info);
       dataStream = stream;
 
-      var connection = new RtspConnection(client, depacketizer, dataStream, info);
+      var connection = new RtspConnection(client, depacketizer, dataStream, info, log);
       connection.StartReadLoop(stream);
       return connection;
     }
-    else if (media.Codec == "H265")
+    else if (codecUpper == "H265")
     {
       depacketizer = new RtpH265Depacketizer();
       var parameters = BuildH265Parameters(media);
@@ -72,7 +82,7 @@ public sealed class RtspConnection : IStreamConnection
       var stream = new DataStream<H265NalUnit>(info);
       dataStream = stream;
 
-      var connection = new RtspConnection(client, depacketizer, dataStream, info);
+      var connection = new RtspConnection(client, depacketizer, dataStream, info, log);
       connection.StartReadLoop(stream);
       return connection;
     }
@@ -146,7 +156,7 @@ public sealed class RtspConnection : IStreamConnection
     });
   }
 
-  private static ReadOnlyMemory<byte> ExtractRtpPayload(ReadOnlyMemory<byte> rtpPacket)
+  internal static ReadOnlyMemory<byte> ExtractRtpPayload(ReadOnlyMemory<byte> rtpPacket)
   {
     var span = rtpPacket.Span;
     if (span.Length < 12)
@@ -165,7 +175,7 @@ public sealed class RtspConnection : IStreamConnection
     return offset < rtpPacket.Length ? rtpPacket[offset..] : ReadOnlyMemory<byte>.Empty;
   }
 
-  private static ulong ExtractRtpTimestamp(ReadOnlyMemory<byte> rtpPacket)
+  internal static ulong ExtractRtpTimestamp(ReadOnlyMemory<byte> rtpPacket)
   {
     var span = rtpPacket.Span;
     if (span.Length < 8)
@@ -175,7 +185,7 @@ public sealed class RtspConnection : IStreamConnection
            ((ulong)span[6] << 8) | span[7];
   }
 
-  private static H264Parameters? BuildH264Parameters(SdpMediaDescription media)
+  internal static H264Parameters? BuildH264Parameters(SdpMediaDescription media)
   {
     if (!media.FormatParameters.TryGetValue("sprop-parameter-sets", out var spropSets))
       return null;
@@ -191,7 +201,7 @@ public sealed class RtspConnection : IStreamConnection
     };
   }
 
-  private static H265Parameters? BuildH265Parameters(SdpMediaDescription media)
+  internal static H265Parameters? BuildH265Parameters(SdpMediaDescription media)
   {
     var hasVps = media.FormatParameters.TryGetValue("sprop-vps", out var vpsB64);
     var hasSps = media.FormatParameters.TryGetValue("sprop-sps", out var spsB64);

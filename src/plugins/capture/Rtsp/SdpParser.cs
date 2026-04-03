@@ -2,6 +2,7 @@ namespace Capture.Rtsp;
 
 public sealed class SdpMediaDescription
 {
+  public required string MediaType { get; init; }
   public required string Codec { get; init; }
   public required int ClockRate { get; init; }
   public required string ControlUri { get; init; }
@@ -26,8 +27,8 @@ public static class SdpParser
 
       if (line.StartsWith("m="))
       {
-        if (currentMedia == "video" && codec != null && controlUri != null)
-          results.Add(Build(codec, clockRate, controlUri, fmtpParams));
+        if (currentMedia != null && codec != null && controlUri != null)
+          results.Add(Build(currentMedia, codec, clockRate, controlUri, fmtpParams));
 
         currentMedia = null;
         codec = null;
@@ -37,14 +38,14 @@ public static class SdpParser
         fmtpParams = [];
 
         var parts = line[2..].Split(' ');
-        if (parts.Length >= 4 && parts[0] == "video")
+        if (parts.Length >= 4 && (parts[0] == "video" || parts[0] == "application"))
         {
-          currentMedia = "video";
+          currentMedia = parts[0];
           if (int.TryParse(parts[3], out var pt))
             payloadType = pt;
         }
       }
-      else if (currentMedia == "video")
+      else if (currentMedia != null)
       {
         if (line.StartsWith("a=rtpmap:") && payloadType >= 0)
         {
@@ -78,17 +79,19 @@ public static class SdpParser
       }
     }
 
-    if (currentMedia == "video" && codec != null && controlUri != null)
-      results.Add(Build(codec, clockRate, controlUri, fmtpParams));
+    if (currentMedia != null && codec != null && controlUri != null)
+      results.Add(Build(currentMedia, codec, clockRate, controlUri, fmtpParams));
 
     return results;
   }
 
   private static SdpMediaDescription Build(
-    string codec, int clockRate, string controlUri, Dictionary<string, string> fmtpParams)
+    string mediaType, string codec, int clockRate, string controlUri,
+    Dictionary<string, string> fmtpParams)
   {
     return new SdpMediaDescription
     {
+      MediaType = mediaType,
       Codec = codec,
       ClockRate = clockRate,
       ControlUri = controlUri,

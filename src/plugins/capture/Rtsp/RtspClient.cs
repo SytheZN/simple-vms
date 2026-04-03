@@ -56,17 +56,25 @@ public sealed class RtspClient : IAsyncDisposable
       throw new InvalidOperationException($"DESCRIBE failed with status {response.StatusCode}");
 
     State = RtspState.Described;
+    LastSdp = response.Body;
     return response.Body;
   }
 
-  public async Task SetupAsync(string controlUri, CancellationToken ct)
+  public string? LastSdp { get; private set; }
+
+  public Task SetupAsync(string controlUri, CancellationToken ct) =>
+    SetupAsync(controlUri, 0, ct);
+
+  public async Task<int> SetupAsync(string controlUri, int interleavedBase, CancellationToken ct)
   {
     var absoluteControl = ResolveControlUri(controlUri);
-    var transport = "Transport: RTP/AVP/TCP;unicast;interleaved=0-1";
+    var transport = $"Transport: RTP/AVP/TCP;unicast;interleaved={interleavedBase}-{interleavedBase + 1}";
     var response = await SendRequestAsync("SETUP", absoluteControl, transport, ct);
 
     if (response.StatusCode != 200)
       throw new InvalidOperationException($"SETUP failed with status {response.StatusCode}");
+
+    var actualChannel = interleavedBase;
 
     foreach (var header in response.Headers)
     {
@@ -86,9 +94,25 @@ public sealed class RtspClient : IAsyncDisposable
             _sessionTimeout = timeout;
         }
       }
+      else if (header.StartsWith("Transport:", StringComparison.OrdinalIgnoreCase))
+      {
+        var transportValue = header["Transport:".Length..].Trim();
+        var interleavedIdx = transportValue.IndexOf("interleaved=", StringComparison.OrdinalIgnoreCase);
+        if (interleavedIdx >= 0)
+        {
+          var channelStr = transportValue[(interleavedIdx + 12)..];
+          var dashIdx = channelStr.IndexOf('-');
+          var endIdx = channelStr.IndexOfAny([';', ' ', ',']);
+          if (endIdx > 0) channelStr = channelStr[..endIdx];
+          if (dashIdx > 0) channelStr = channelStr[..dashIdx];
+          if (int.TryParse(channelStr, out var ch))
+            actualChannel = ch;
+        }
+      }
     }
 
     State = RtspState.Setup;
+    return actualChannel;
   }
 
   public async Task PlayAsync(CancellationToken ct)

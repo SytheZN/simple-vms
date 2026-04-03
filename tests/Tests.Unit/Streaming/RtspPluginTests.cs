@@ -44,7 +44,8 @@ public class RtspPluginTests
     var initResult = plugin.Initialize(new PluginContext
     {
       Config = new FakeConfig(),
-      Environment = new FakeEnvironment()
+      Environment = new FakeEnvironment(),
+      LoggerFactory = NullPluginLoggerFactory.Instance
     });
     Assert.That(initResult.IsT0, Is.True);
 
