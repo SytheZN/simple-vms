@@ -1,6 +1,7 @@
 using Server.Api.Endpoints;
 using Server.Api.Middleware;
 using Server.Core;
+using Server.Core.Routing;
 using Server.Core.Services;
 
 namespace Server.Api;
@@ -20,6 +21,11 @@ public static class ApiExtensions
     services.AddSingleton<RetentionService>();
     services.AddSingleton<SystemService>();
     services.AddSingleton<PluginService>();
+
+    var dispatcher = new ApiDispatcher();
+    ApiRoutes.Register(dispatcher);
+    services.AddSingleton(dispatcher);
+
     return services;
   }
 
@@ -33,16 +39,9 @@ public static class ApiExtensions
 
   public static WebApplication MapApiEndpoints(this WebApplication app)
   {
-    EnrollmentEndpoints.Map(app);
-    CameraEndpoints.Map(app);
-    ClientEndpoints.Map(app);
-    DiscoveryEndpoints.Map(app);
-    RecordingEndpoints.Map(app);
-    EventEndpoints.Map(app);
-    RetentionEndpoints.Map(app);
-    SystemEndpoints.Map(app);
-    PluginEndpoints.Map(app);
+    SnapshotEndpoint.Map(app);
     StreamEndpoints.Map(app);
+    DispatchEndpoint.Map(app);
     return app;
   }
 }

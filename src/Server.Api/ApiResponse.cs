@@ -16,47 +16,16 @@ public static class ApiResponse
     }
   };
 
-  public static IResult Ok<T>(OneOf<T, Error> result, DebugTag successTag) =>
-    result.Match(
-      value => ToJsonResult(new ResponseEnvelope
+  public static IResult Err(Error error) =>
+    Results.Json(
+      new ResponseEnvelope
       {
-        Result = Result.Success,
-        DebugTag = successTag,
-        Body = value
-      }),
-      ToErrorResult);
-
-  public static IResult Ok(OneOf<Success, Error> result, DebugTag successTag) =>
-    result.Match(
-      _ => ToJsonResult(new ResponseEnvelope
-      {
-        Result = Result.Success,
-        DebugTag = successTag
-      }),
-      ToErrorResult);
-
-  public static IResult Created<T>(OneOf<T, Error> result, DebugTag successTag) =>
-    result.Match(
-      value => ToJsonResult(new ResponseEnvelope
-      {
-        Result = Result.Created,
-        DebugTag = successTag,
-        Body = value
-      }),
-      ToErrorResult);
-
-  public static IResult Err(Error error) => ToErrorResult(error);
-
-  private static IResult ToErrorResult(Error error) =>
-    ToJsonResult(new ResponseEnvelope
-    {
-      Result = error.Result,
-      DebugTag = error.Tag,
-      Message = error.Message
-    });
-
-  private static IResult ToJsonResult(ResponseEnvelope envelope) =>
-    Results.Json(envelope, SerializerOptions, statusCode: envelope.Result.ToHttpStatusCode());
+        Result = error.Result,
+        DebugTag = error.Tag,
+        Message = error.Message
+      },
+      SerializerOptions,
+      statusCode: error.Result.ToHttpStatusCode());
 
   private sealed class DebugTagJsonConverter : JsonConverter<DebugTag>
   {
