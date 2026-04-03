@@ -32,6 +32,10 @@ export interface CameraListItem {
   providerId: string
   streams: StreamProfile[]
   capabilities: string[]
+  config?: Record<string, string>
+  segmentDuration?: number
+  retentionMode?: string
+  retentionValue?: number
 }
 
 export interface CreateCameraRequest {
@@ -39,6 +43,20 @@ export interface CreateCameraRequest {
   providerId?: string
   credentials?: Credentials
   name?: string
+  rtspPortOverride?: number
+}
+
+export interface ProbeRequest {
+  address: string
+  providerId?: string
+  credentials?: Credentials
+}
+
+export interface ProbeResponse {
+  name: string
+  streams: StreamProfile[]
+  capabilities: string[]
+  config: Record<string, string>
 }
 
 export interface UpdateCameraRequest {
@@ -47,6 +65,7 @@ export interface UpdateCameraRequest {
   streams?: UpdateStreamConfig[]
   segmentDuration?: number
   retention?: RetentionOverride | null
+  rtspPortOverride?: number
 }
 
 export interface UpdateStreamConfig {
@@ -83,6 +102,7 @@ export interface StartEnrollmentResponse {
 
 export interface DiscoveryRequest {
   subnets?: string[]
+  ports?: number[]
   credentials?: Credentials
 }
 
@@ -168,6 +188,7 @@ export interface PluginListItem {
   status: string
   extensionPoints: string[]
   userStartable: boolean
+  hasSettings: boolean
 }
 
 export interface SettingGroup {

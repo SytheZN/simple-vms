@@ -64,7 +64,7 @@ onMounted(async () => {
         <router-link to="/settings/general" class="nav-child" active-class="nav-child-active">
           <i class="ph ph-faders icon-sm"></i> General
         </router-link>
-        <router-link to="/settings/cameras" class="nav-child" active-class="nav-child-active">
+        <router-link to="/settings/cameras" class="nav-child" :class="{ 'nav-child-active': route.path.startsWith('/settings/cameras') }">
           <i class="ph ph-video-camera icon-sm"></i> Cameras
         </router-link>
         <router-link to="/settings/storage" class="nav-child" active-class="nav-child-active">
@@ -73,7 +73,7 @@ onMounted(async () => {
         <router-link to="/settings/retention" class="nav-child" active-class="nav-child-active">
           <i class="ph ph-clock-countdown icon-sm"></i> Retention
         </router-link>
-        <router-link to="/settings/plugins" class="nav-child" active-class="nav-child-active">
+        <router-link to="/settings/plugins" class="nav-child" :class="{ 'nav-child-active': route.path.startsWith('/settings/plugins') }">
           <i class="ph ph-puzzle-piece icon-sm"></i> Plugins
         </router-link>
       </div>

@@ -93,6 +93,15 @@ watch([() => playerState.value.minRate, () => playerState.value.maxRate], () => 
   rateIndex.value = oneIdx >= 0 ? oneIdx : 0
 })
 
+function onRateWheel(e: WheelEvent) {
+  if (rateDisabled.value) return
+  const max = rateSteps.value.length - 1
+  if (e.deltaY < 0)
+    rateIndex.value = Math.min(rateIndex.value + 1, max)
+  else
+    rateIndex.value = Math.max(rateIndex.value - 1, 0)
+}
+
 function toggleFullscreen() {
   if (!playerRef.value) return
   if (document.fullscreenElement) {
@@ -256,7 +265,7 @@ onUnmounted(() => {
             <i class="ph ph-skip-forward icon-sm"></i>
           </button>
           <div class="flex items-center gap-3" :class="{ 'opacity-40': rateDisabled }">
-            <div class="rate-slider-wrap">
+            <div class="rate-slider-wrap" @wheel.prevent="onRateWheel" @mousedown.middle.prevent="rateIndex = rateSteps.indexOf(1)">
               <input
                 type="range"
                 :min="0"

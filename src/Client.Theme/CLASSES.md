@@ -137,6 +137,8 @@ Use `toast` base + variant.
 | `section-heading` | Page/section title with bottom border |
 | `section-subheading` | Uppercase label for subsections or stat cards |
 
+**`section-heading` must be a standalone block element** - never place it inside a flex row or alongside other elements. It has a full-width bottom border that breaks when constrained. If you need a back button or action alongside, place it on a separate line above or below.
+
 ## Modal
 
 | Class | Usage |

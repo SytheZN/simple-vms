@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { api, ApiError } from '@/api/client'
 import type { PluginListItem } from '@/types/api'
+
+const router = useRouter()
 
 const error = ref('')
 const plugins = ref<PluginListItem[]>([])
@@ -76,7 +79,15 @@ onMounted(load)
               <span class="badge" :class="statusBadge(plugin.status)">{{ plugin.status }}</span>
             </td>
             <td class="text-text-muted text-xs">{{ plugin.extensionPoints.join(', ') }}</td>
-            <td class="text-right">
+            <td class="text-right space-x-1">
+              <button
+                v-if="plugin.hasSettings"
+                class="btn btn-ghost btn-sm"
+                @click="router.push(`/settings/plugins/${plugin.id}`)"
+                title="Settings"
+              >
+                <i class="ph ph-gear icon-sm"></i>
+              </button>
               <template v-if="plugin.userStartable">
                 <button
                   v-if="plugin.status === 'running'"
