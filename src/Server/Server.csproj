@@ -14,11 +14,11 @@
     <ProjectReference Include="../Server.Plugins/Server.Plugins.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="../plugins/capture/Rtsp/Rtsp.csproj" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="../plugins/format/Fmp4/Fmp4.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../plugins/cameras/Onvif/Onvif.csproj" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="../plugins/storage/Filesystem/Filesystem.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../plugins/capture/Rtsp/Rtsp.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../plugins/data/Sqlite/Sqlite.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../plugins/format/Fmp4/Fmp4.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../plugins/storage/Filesystem/Filesystem.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
   <Target Name="BuildWebUI" BeforeTargets="Build;Publish" Condition="Exists('../Client.Web/package.json')">
     <Exec Command="npm ci --prefix ../Client.Web" />

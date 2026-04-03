@@ -18,6 +18,7 @@ public static class AppSetup
   private static StreamingService? _streamingService;
   private static RecordingManager? _recordingManager;
   private static RetentionEngine? _retentionEngine;
+  private static EventManager? _eventManager;
   private static HybridLoggerProvider? _loggerProvider;
 
   public static void Configure(WebApplicationBuilder builder)
@@ -29,14 +30,14 @@ public static class AppSetup
 
     _loggerProvider = new HybridLoggerProvider();
 
-    using var earlyLoggerFactory = LoggerFactory.Create(b =>
+    var loggerFactory = LoggerFactory.Create(b =>
     {
       b.AddConfiguration(config.GetSection("Logging"));
       b.AddConsole();
       b.AddProvider(_loggerProvider);
     });
 
-    builder.Logging.AddProvider(_loggerProvider);
+    builder.Services.AddSingleton<ILoggerFactory>(loggerFactory);
 
     var systemHealth = new SystemHealth();
     builder.Services.AddSingleton(systemHealth);
@@ -57,7 +58,8 @@ public static class AppSetup
     var environment = new ServerEnvironment(dataPath);
 
     var pluginHost = new PluginHost(
-      earlyLoggerFactory.CreateLogger<PluginHost>(), dataProviderConfig, eventBus, environment);
+      loggerFactory.CreateLogger<PluginHost>(), loggerFactory,
+      dataProviderConfig, eventBus, environment);
     pluginHost.Discover(pluginsPath);
     builder.Services.AddSingleton(pluginHost);
     builder.Services.AddSingleton<IPluginHost>(pluginHost);
@@ -113,6 +115,7 @@ public static class AppSetup
 
     app.Lifetime.ApplicationStopping.Register(() =>
     {
+      _eventManager?.DisposeAsync().AsTask().GetAwaiter().GetResult();
       _retentionEngine?.DisposeAsync().AsTask().GetAwaiter().GetResult();
       _recordingManager?.DisposeAsync().AsTask().GetAwaiter().GetResult();
       _streamingService?.StopAsync().GetAwaiter().GetResult();
@@ -174,6 +177,11 @@ public static class AppSetup
       pluginHost,
       app.Services.GetRequiredService<ILoggerFactory>().CreateLogger<RetentionEngine>());
     _retentionEngine.Start(app.Lifetime.ApplicationStopping);
+
+    _eventManager = new EventManager(
+      pluginHost, eventBus,
+      app.Services.GetRequiredService<ILoggerFactory>().CreateLogger<EventManager>());
+    await _eventManager.StartAsync(app.Lifetime.ApplicationStopping);
   }
 
   private static bool TryInitializeCerts(WebApplication app, CertificateManager certManager)
@@ -195,7 +203,7 @@ public static class AppSetup
     _ = Task.Run(async () =>
     {
       await foreach (var evt in eventBus.SubscribeAsync<CameraStatusChanged>(ct))
-        statusTracker.SetStatus(evt.CameraId, evt.Status);
+        statusTracker.SetStatus(evt.CameraId, evt.Profile, evt.Status);
     }, ct);
   }
 

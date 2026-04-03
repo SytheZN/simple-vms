@@ -109,63 +109,7 @@ public sealed class RetentionEngine : IAsyncDisposable
       }
     }
 
-    foreach (var camera in camerasResult.AsT0)
-    {
-      var streamsResult = await data.Streams.GetByCameraIdAsync(camera.Id, ct);
-      if (streamsResult.IsT1)
-        continue;
-
-      var streams = streamsResult.AsT0;
-      var qualityStreams = streams.Where(s => s.Kind == StreamKind.Quality).ToList();
-      var metadataStreams = streams.Where(s => s.Kind == StreamKind.Metadata).ToList();
-
-      if (qualityStreams.Count == 0 || metadataStreams.Count == 0)
-        continue;
-
-      foreach (var metaStream in metadataStreams)
-        await PurgeOrphanedMetadataAsync(data, storage, metaStream.Id, qualityStreams, ct);
-    }
-
     _logger.LogDebug("Retention evaluation complete");
-  }
-
-  private async Task PurgeOrphanedMetadataAsync(
-    IDataProvider data, IStorageProvider storage, Guid metadataStreamId,
-    List<CameraStream> qualityStreams, CancellationToken ct)
-  {
-    var metaSegmentsResult = await data.Segments.GetByTimeRangeAsync(
-      metadataStreamId, 0, ulong.MaxValue, ct);
-    if (metaSegmentsResult.IsT1)
-      return;
-
-    var toPurge = new List<Segment>();
-
-    foreach (var metaSeg in metaSegmentsResult.AsT0)
-    {
-      var hasOverlap = false;
-
-      foreach (var qualityStream in qualityStreams)
-      {
-        var overlapResult = await data.Segments.GetByTimeRangeAsync(
-          qualityStream.Id, metaSeg.StartTime, metaSeg.EndTime, ct);
-        if (overlapResult.IsT0 && overlapResult.AsT0.Count > 0)
-        {
-          hasOverlap = true;
-          break;
-        }
-      }
-
-      if (!hasOverlap)
-        toPurge.Add(metaSeg);
-    }
-
-    if (toPurge.Count > 0)
-    {
-      await PurgeSegmentsAsync(data, storage, toPurge, ct);
-      _logger.LogInformation(
-        "Purged {Count} orphaned metadata segments for stream {StreamId}",
-        toPurge.Count, metadataStreamId);
-    }
   }
 
   internal static (RetentionMode Mode, long Value) ResolvePolicy(

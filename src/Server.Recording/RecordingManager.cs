@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Server.Plugins;
 using Server.Streaming;
@@ -14,11 +15,13 @@ public sealed class RecordingManager : IAsyncDisposable
   private readonly StreamTapRegistry _tapRegistry;
   private readonly IEventBus _eventBus;
   private readonly ILogger _logger;
-  private readonly Dictionary<(Guid CameraId, string Profile), (SegmentWriter Writer, CancellationTokenSource Cts)> _writers = [];
+  private readonly ConcurrentDictionary<(Guid CameraId, string Profile), (SegmentWriter Writer, CancellationTokenSource Cts)> _writers = new();
   private CancellationTokenSource? _eventCts;
+  private IStorageProvider? _defaultStorage;
   private bool _disposed;
 
   public ByteRateTracker ByteRateTracker { get; } = new();
+  internal int WriterCount => _writers.Count;
 
   public RecordingManager(
     IPluginHost plugins,
@@ -50,58 +53,88 @@ public sealed class RecordingManager : IAsyncDisposable
       return;
     }
 
+    _defaultStorage = storage;
+
     foreach (var camera in camerasResult.AsT0)
-    {
-      var streamsResult = await data.Streams.GetByCameraIdAsync(camera.Id, ct);
-      if (streamsResult.IsT1)
-        continue;
-
-      foreach (var stream in streamsResult.AsT0)
-      {
-        if (!stream.RecordingEnabled)
-          continue;
-
-        var pipeline = _tapRegistry.GetPipeline(camera.Id, stream.Profile);
-        if (pipeline == null || !pipeline.IsConstructed)
-        {
-          _logger.LogWarning(
-            "Cannot record camera {CameraId} profile '{Profile}': pipeline not available",
-            camera.Id, stream.Profile);
-          continue;
-        }
-
-        var header = pipeline.VideoHeader;
-        var videoResult = await _tapRegistry.SubscribeVideoAsync(camera.Id, stream.Profile, ct);
-        if (videoResult.IsT1)
-        {
-          _logger.LogWarning(
-            "Cannot record camera {CameraId} profile '{Profile}': {Message}",
-            camera.Id, stream.Profile, videoResult.AsT1.Message);
-          continue;
-        }
-
-        var duration = camera.SegmentDuration ?? defaultDuration;
-        var writer = new SegmentWriter(
-          camera.Id, stream.Profile, stream.Codec ?? "unknown", stream.Id,
-          duration, storage, data, _eventBus, _logger);
-        writer.OnSegmentFinalized = (streamId, bytes, start, end) =>
-          ByteRateTracker.Record(streamId, bytes, start, end);
-
-        var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        _writers[(camera.Id, stream.Profile)] = (writer, cts);
-
-        _ = RunWriterAsync(writer, videoResult.AsT0, header, cts.Token);
-
-        _logger.LogInformation(
-          "Started recording camera {CameraId} profile '{Profile}' ({Duration}s segments)",
-          camera.Id, stream.Profile, duration);
-      }
-    }
+      await ReconcileAsync(camera.Id, ct);
 
     _eventCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
     WatchStreamStopped(_eventCts.Token);
+    WatchStreamStarted(_eventCts.Token);
+    WatchCameraConfigChanged(_eventCts.Token);
+    WatchCameraRemoved(_eventCts.Token);
 
     _logger.LogInformation("Recording manager started: {Count} stream(s)", _writers.Count);
+  }
+
+  private void StartWriter(
+    Guid cameraId, string profile, string codec, Guid streamId,
+    int segmentDuration, IStorageProvider storage, CancellationToken ct)
+  {
+    var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+    var writer = new SegmentWriter(
+      cameraId, profile, codec, streamId,
+      segmentDuration, storage, _plugins.DataProvider, _eventBus, _logger);
+
+    _writers[(cameraId, profile)] = (writer, cts);
+
+    _ = RunWriterAsync(cameraId, profile, codec, streamId,
+      segmentDuration, storage, cts.Token);
+
+    _logger.LogInformation(
+      "Started recording camera {CameraId} profile '{Profile}' ({Duration}s segments)",
+      cameraId, profile, segmentDuration);
+  }
+
+  internal async Task StopWriterAsync(Guid cameraId, string profile)
+  {
+    if (_writers.TryRemove((cameraId, profile), out var entry))
+    {
+      entry.Cts.Cancel();
+      await entry.Writer.DisposeAsync();
+      entry.Cts.Dispose();
+      _logger.LogInformation(
+        "Stopped recording camera {CameraId} profile '{Profile}'",
+        cameraId, profile);
+    }
+  }
+
+  internal async Task ReconcileAsync(Guid cameraId, CancellationToken ct)
+  {
+    var storage = _defaultStorage ?? _plugins.StorageProviders.FirstOrDefault();
+    if (storage == null) return;
+
+    var data = _plugins.DataProvider;
+    var streamsResult = await data.Streams.GetByCameraIdAsync(cameraId, ct);
+    if (streamsResult.IsT1) return;
+
+    var cameraResult = await data.Cameras.GetByIdAsync(cameraId, ct);
+    if (cameraResult.IsT1) return;
+    var camera = cameraResult.AsT0;
+
+    var defaultDuration = await GetDefaultSegmentDurationAsync(ct);
+    var desiredProfiles = new HashSet<string>();
+
+    foreach (var stream in streamsResult.AsT0)
+    {
+      if (!stream.RecordingEnabled)
+        continue;
+
+      desiredProfiles.Add(stream.Profile);
+
+      if (_writers.ContainsKey((cameraId, stream.Profile)))
+        continue;
+
+      var duration = camera.SegmentDuration ?? defaultDuration;
+      StartWriter(cameraId, stream.Profile, stream.Codec ?? "unknown",
+        stream.Id, duration, storage, ct);
+    }
+
+    var toStop = _writers.Keys
+      .Where(k => k.CameraId == cameraId && !desiredProfiles.Contains(k.Profile))
+      .ToList();
+    foreach (var key in toStop)
+      await StopWriterAsync(key.CameraId, key.Profile);
   }
 
   private void WatchStreamStopped(CancellationToken ct)
@@ -130,18 +163,173 @@ public sealed class RecordingManager : IAsyncDisposable
     }, ct);
   }
 
-  private async Task RunWriterAsync(
-    SegmentWriter writer, IVideoStream videoStream, ReadOnlyMemory<byte> header, CancellationToken ct)
+  private void WatchStreamStarted(CancellationToken ct)
   {
-    try
+    _ = Task.Run(async () =>
     {
-      await writer.RunAsync(videoStream, header, ct);
-    }
-    catch (OperationCanceledException) { }
-    catch (Exception ex)
+      await foreach (var evt in _eventBus.SubscribeAsync<StreamStarted>(ct))
+      {
+        try
+        {
+          await ReconcileAsync(evt.CameraId, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+          _logger.LogError(ex, "Failed to reconcile on StreamStarted for camera {CameraId}", evt.CameraId);
+        }
+      }
+    }, ct);
+  }
+
+  private void WatchCameraConfigChanged(CancellationToken ct)
+  {
+    _ = Task.Run(async () =>
     {
-      _logger.LogError(ex, "Recording writer failed");
+      await foreach (var evt in _eventBus.SubscribeAsync<CameraConfigChanged>(ct))
+      {
+        try
+        {
+          await ReconcileAsync(evt.CameraId, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+          _logger.LogError(ex, "Failed to reconcile on CameraConfigChanged for camera {CameraId}", evt.CameraId);
+        }
+      }
+    }, ct);
+  }
+
+  private void WatchCameraRemoved(CancellationToken ct)
+  {
+    _ = Task.Run(async () =>
+    {
+      await foreach (var evt in _eventBus.SubscribeAsync<CameraRemoved>(ct))
+      {
+        var toStop = _writers.Keys
+          .Where(k => k.CameraId == evt.CameraId)
+          .ToList();
+        foreach (var key in toStop)
+        {
+          try
+          {
+            await StopWriterAsync(key.CameraId, key.Profile);
+          }
+          catch (Exception ex)
+          {
+            _logger.LogError(ex,
+              "Failed to stop writer on CameraRemoved for camera {CameraId} profile '{Profile}'",
+              key.CameraId, key.Profile);
+          }
+        }
+      }
+    }, ct);
+  }
+
+  private const int MaxConsecutiveFailures = 5;
+  private static readonly int[] BackoffSeconds = [1, 2, 4, 8, 15];
+
+  private async Task RunWriterAsync(
+    Guid cameraId, string profile, string codec, Guid streamId,
+    int segmentDuration, IStorageProvider storage, CancellationToken ct)
+  {
+    var consecutiveFailures = 0;
+
+    while (!ct.IsCancellationRequested)
+    {
+      var pipeline = _tapRegistry.GetPipeline(cameraId, profile);
+      if (pipeline == null || !pipeline.IsConstructed)
+      {
+        consecutiveFailures++;
+        if (consecutiveFailures >= MaxConsecutiveFailures)
+        {
+          _logger.LogError(
+            "Giving up recording camera {CameraId} profile '{Profile}' after {Count} failures (no pipeline)",
+            cameraId, profile, consecutiveFailures);
+          return;
+        }
+        try { await DelayBackoff(consecutiveFailures, ct); }
+        catch (OperationCanceledException) { return; }
+        continue;
+      }
+
+      var header = pipeline.VideoHeader;
+      var videoResult = await _tapRegistry.SubscribeVideoAsync(cameraId, profile, ct);
+      if (videoResult.IsT1)
+      {
+        consecutiveFailures++;
+        if (consecutiveFailures >= MaxConsecutiveFailures)
+        {
+          _logger.LogError(
+            "Giving up recording camera {CameraId} profile '{Profile}' after {Count} failures (subscribe failed)",
+            cameraId, profile, consecutiveFailures);
+          return;
+        }
+        try { await DelayBackoff(consecutiveFailures, ct); }
+        catch (OperationCanceledException) { return; }
+        continue;
+      }
+
+      if (!_writers.TryGetValue((cameraId, profile), out var entry))
+        return;
+
+      entry.Writer.OnSegmentFinalized = (sid, bytes, start, end) =>
+      {
+        consecutiveFailures = 0;
+        ByteRateTracker.Record(sid, bytes, start, end);
+      };
+
+      try
+      {
+        await entry.Writer.RunAsync(videoResult.AsT0, header, ct);
+        return;
+      }
+      catch (OperationCanceledException)
+      {
+        return;
+      }
+      catch (Exception ex)
+      {
+        consecutiveFailures++;
+        _logger.LogError(ex,
+          "Recording writer failed for camera {CameraId} profile '{Profile}' (failure {Count}/{Max})",
+          cameraId, profile, consecutiveFailures, MaxConsecutiveFailures);
+
+        if (consecutiveFailures >= MaxConsecutiveFailures)
+        {
+          _logger.LogError(
+            "Giving up recording camera {CameraId} profile '{Profile}' after {Count} consecutive failures",
+            cameraId, profile, consecutiveFailures);
+          return;
+        }
+
+        try { await DelayBackoff(consecutiveFailures, ct); }
+        catch (OperationCanceledException) { return; }
+
+        var newWriter = new SegmentWriter(
+          cameraId, profile, codec, streamId,
+          segmentDuration, storage, _plugins.DataProvider, _eventBus, _logger);
+        if (_writers.TryGetValue((cameraId, profile), out var current))
+        {
+          try
+          {
+            using var disposeCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await current.Writer.DisposeAsync().AsTask().WaitAsync(disposeCts.Token);
+          }
+          catch { }
+          _writers[(cameraId, profile)] = (newWriter, current.Cts);
+        }
+        else
+        {
+          return;
+        }
+      }
     }
+  }
+
+  private static Task DelayBackoff(int failureCount, CancellationToken ct)
+  {
+    var idx = Math.Min(failureCount, BackoffSeconds.Length - 1);
+    return Task.Delay(TimeSpan.FromSeconds(BackoffSeconds[idx]), ct);
   }
 
   private async Task<int> GetDefaultSegmentDurationAsync(CancellationToken ct)

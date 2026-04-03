@@ -27,6 +27,7 @@ public sealed class CameraPipeline : IAsyncDisposable
 
   public Guid CameraId => _cameraId;
   public string Profile => _profile;
+  public string ConnectionUri => _connectionInfo.Uri;
   public bool IsConstructed { get { lock (_lock) return _constructed; } }
   public bool IsActive { get { lock (_lock) return _connection != null; } }
   public VideoStreamInfo? VideoInfo { get { lock (_lock) return (_videoFanOut as IVideoStream)?.Info; } }
@@ -243,6 +244,7 @@ public sealed class CameraPipeline : IAsyncDisposable
     await _eventBus.PublishAsync(new CameraStatusChanged
     {
       CameraId = _cameraId,
+      Profile = _profile,
       Status = "online",
       Timestamp = DateTimeOffset.UtcNow.ToUnixMicroseconds()
     }, ct);
@@ -277,6 +279,7 @@ public sealed class CameraPipeline : IAsyncDisposable
       await _eventBus.PublishAsync(new CameraStatusChanged
       {
         CameraId = _cameraId,
+        Profile = _profile,
         Status = "offline",
         Reason = "no demand",
         Timestamp = DateTimeOffset.UtcNow.ToUnixMicroseconds()

@@ -184,92 +184,6 @@ public class RetentionEngineTests
     Assert.That(storage.PurgedRefs, Does.Contain(seg1.SegmentRef));
   }
 
-  /// <summary>
-  /// SCENARIO:
-  /// Quality stream has segments at 1-2 and 5-6; metadata stream has segments at 1-2, 3-4, 5-6;
-  /// quality segment at 3-4 was purged by days policy
-  ///
-  /// ACTION:
-  /// Run retention evaluation
-  ///
-  /// EXPECTED RESULT:
-  /// Metadata segment at 3-4 is purged (no overlapping quality segment); others remain
-  /// </summary>
-  [Test]
-  public async Task CascadePurge_DeletesOrphanedMetadataSegments()
-  {
-    var now = (ulong)(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000);
-    var qualityStreamId = Guid.NewGuid();
-    var metadataStreamId = Guid.NewGuid();
-
-    var qSeg1 = MakeSegment(qualityStreamId, now - 2_000_000, now - 1_000_000);
-    var qSeg3 = MakeSegment(qualityStreamId, now - 6_000_000, now - 5_000_000);
-
-    var mSeg1 = MakeSegment(metadataStreamId, now - 2_000_000, now - 1_000_000);
-    var mSeg2 = MakeSegment(metadataStreamId, now - 4_000_000, now - 3_000_000);
-    var mSeg3 = MakeSegment(metadataStreamId, now - 6_000_000, now - 5_000_000);
-
-    var data = new FakeDataProvider();
-    var camera = MakeCamera(RetentionMode.Default, 0);
-    data.AddCamera(camera);
-
-    var qualityStream = MakeStream(RetentionMode.Days, 9999, qualityStreamId);
-    var metadataStream = MakeMetadataStream(metadataStreamId);
-    data.AddStream(qualityStream);
-    data.AddStream(metadataStream);
-
-    data.AddSegments(qualityStreamId, [qSeg1, qSeg3]);
-    data.AddSegments(metadataStreamId, [mSeg1, mSeg2, mSeg3]);
-
-    var storage = new FakeStorage();
-    var engine = CreateEngine(data, storage);
-
-    await engine.EvaluateAsync(CancellationToken.None);
-
-    Assert.That(storage.PurgedRefs, Has.Count.EqualTo(1));
-    Assert.That(storage.PurgedRefs[0], Is.EqualTo(mSeg2.SegmentRef));
-  }
-
-  /// <summary>
-  /// SCENARIO:
-  /// Quality stream covers full range; metadata stream has segments within that range
-  ///
-  /// ACTION:
-  /// Run retention evaluation
-  ///
-  /// EXPECTED RESULT:
-  /// No metadata segments are purged (all overlap with quality)
-  /// </summary>
-  [Test]
-  public async Task CascadePurge_KeepsMetadataWithOverlappingQuality()
-  {
-    var now = (ulong)(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000);
-    var qualityStreamId = Guid.NewGuid();
-    var metadataStreamId = Guid.NewGuid();
-
-    var qSeg = MakeSegment(qualityStreamId, now - 10_000_000, now - 1_000_000);
-    var mSeg = MakeSegment(metadataStreamId, now - 5_000_000, now - 3_000_000);
-
-    var data = new FakeDataProvider();
-    var camera = MakeCamera(RetentionMode.Default, 0);
-    data.AddCamera(camera);
-
-    var qualityStream = MakeStream(RetentionMode.Days, 9999, qualityStreamId);
-    var metadataStream = MakeMetadataStream(metadataStreamId);
-    data.AddStream(qualityStream);
-    data.AddStream(metadataStream);
-
-    data.AddSegments(qualityStreamId, [qSeg]);
-    data.AddSegments(metadataStreamId, [mSeg]);
-
-    var storage = new FakeStorage();
-    var engine = CreateEngine(data, storage);
-
-    await engine.EvaluateAsync(CancellationToken.None);
-
-    Assert.That(storage.PurgedRefs, Is.Empty);
-  }
-
   private static RetentionEngine CreateEngine(FakeDataProvider data, FakeStorage storage)
   {
     var host = new FakePluginHost(data, storage);
@@ -289,19 +203,6 @@ public class RetentionEngineTests
     RecordingEnabled = true,
     RetentionMode = mode,
     RetentionValue = value
-  };
-
-  private static CameraStream MakeMetadataStream(Guid streamId) => new()
-  {
-    Id = streamId,
-    CameraId = Guid.NewGuid(),
-    Profile = "motion",
-    Kind = StreamKind.Metadata,
-    FormatId = "motion-grid",
-    Uri = "internal://motion",
-    RecordingEnabled = true,
-    RetentionMode = RetentionMode.Default,
-    RetentionValue = 0
   };
 
   private static Camera MakeCamera(RetentionMode mode, long value) => new()
