@@ -15,8 +15,14 @@
     <ProjectReference Include="../../src/plugins/format/Fmp4/Fmp4.csproj" />
     <ProjectReference Include="../../src/plugins/storage/Filesystem/Filesystem.csproj" />
     <ProjectReference Include="../../src/Server.Recording/Server.Recording.csproj" />
+    <ProjectReference Include="../../src/Server.Core/Server.Core.csproj" />
+    <ProjectReference Include="../../src/Server.Plugins/Server.Plugins.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="coverlet.collector">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
     <PackageReference Include="NUnit" />
     <PackageReference Include="NUnit3TestAdapter" />
     <PackageReference Include="NUnit.Analyzers" />

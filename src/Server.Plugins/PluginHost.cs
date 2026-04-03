@@ -8,6 +8,7 @@ public sealed class PluginHost : IPluginHost
 {
   private readonly List<PluginEntry> _plugins = [];
   private readonly ILogger<PluginHost> _logger;
+  private readonly ILoggerFactory _loggerFactory;
   private readonly DataProviderConfigJsonStore _dataProviderConfig;
   private readonly IEventBus _eventBus;
   private readonly IServerEnvironment _environment;
@@ -54,11 +55,13 @@ public sealed class PluginHost : IPluginHost
 
   public PluginHost(
     ILogger<PluginHost> logger,
+    ILoggerFactory loggerFactory,
     DataProviderConfigJsonStore dataProviderConfig,
     IEventBus eventBus,
     IServerEnvironment environment)
   {
     _logger = logger;
+    _loggerFactory = loggerFactory;
     _dataProviderConfig = dataProviderConfig;
     _eventBus = eventBus;
     _environment = environment;
@@ -173,6 +176,7 @@ public sealed class PluginHost : IPluginHost
       {
         Config = new DataProviderConfig(_dataProviderConfig, entry.Metadata.Id),
         Environment = _environment,
+        LoggerFactory = new PluginLoggerFactory(_loggerFactory, entry.Metadata.Id),
         EventBus = _eventBus
       };
     }
@@ -183,6 +187,7 @@ public sealed class PluginHost : IPluginHost
         ? new DbBackedConfig(_dataProvider.Config, entry.Metadata.Id)
         : new InMemoryConfig(),
       Environment = _environment,
+      LoggerFactory = new PluginLoggerFactory(_loggerFactory, entry.Metadata.Id),
       EventBus = _eventBus,
       DataStore = _dataProvider?.GetDataStore(entry.Metadata.Id),
       StreamTap = _streamTap,

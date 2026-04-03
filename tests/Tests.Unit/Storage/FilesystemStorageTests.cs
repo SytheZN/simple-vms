@@ -20,7 +20,8 @@ public class FilesystemStorageTests
     _plugin.Initialize(new PluginContext
     {
       Config = config,
-      Environment = new FakeEnvironment(_tempDir)
+      Environment = new FakeEnvironment(_tempDir),
+      LoggerFactory = NullPluginLoggerFactory.Instance
     });
   }
 

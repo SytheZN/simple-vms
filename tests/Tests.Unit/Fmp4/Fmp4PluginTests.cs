@@ -126,6 +126,7 @@ public class Fmp4PluginTests
   private static PluginContext CreateContext() => new()
   {
     Config = null!,
-    Environment = null!
+    Environment = null!,
+    LoggerFactory = NullPluginLoggerFactory.Instance
   };
 }

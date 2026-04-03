@@ -8,6 +8,10 @@
     <ProjectReference Include="../../src/plugins/data/Sqlite/Sqlite.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="coverlet.collector">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="NUnit" />
     <PackageReference Include="NUnit3TestAdapter" />
