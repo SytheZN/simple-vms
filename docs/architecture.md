@@ -7,7 +7,7 @@ A network video management system designed for home and power users. It supports
 ## Design Principles
 
 - **No transcoding** - video passes through as opaque data units; the server never decodes or re-encodes
-- **Single port access** - all client communication (API, live video, playback, events) over one QUIC/UDP port
+- **Single port access** - all client communication (API, live video, playback, events) over one TCP/TLS port
 - **Plugin-first** - all major subsystems (capture, storage, formats, detection) are behind extension point interfaces; there are no privileged internal code paths
 - **CPU-only by default** - the server must run efficiently on hardware without a GPU; hardware acceleration is a future plugin concern
 - **Containers first, native supported** - Docker/Podman is the primary deployment, but the server runs as a standalone binary with no container dependency
@@ -17,12 +17,12 @@ A network video management system designed for home and power users. It supports
 | Component | Technology | Notes |
 |-----------|-----------|-------|
 | Server runtime | .NET 10 | LTS, cross-platform, AOT-capable |
-| Server framework | ASP.NET Core (Kestrel) | HTTP for web UI; QUIC for native clients |
+| Server framework | ASP.NET Core (Kestrel) | HTTP for web UI; TCP+TLS tunnel for native clients |
 | Database | Pluggable via `IDataProvider` | Metadata, indexes, config |
 | Web UI | Vue.js 3 + Vite | Embedded SPA served by Kestrel |
 | Client framework | Avalonia UI | Shared core + per-platform shells |
 | Client video | LibVLCSharp | Hardware-accelerated decode on client devices |
-| Secure transport | QUIC (System.Net.Quic / msquic) | Mutual TLS, multiplexed, single UDP port |
+| Secure transport | TCP + TLS 1.3 (SslStream) | Mutual TLS, multiplexed, single TCP port |
 
 ## System Topology
 
@@ -38,10 +38,10 @@ graph TB
         end
 
         server -- NFS --> nas["NAS (data + recordings)"]
-        server -- "QUIC :443" --> lanClients["Clients (LAN)"]
+        server -- "TLS :4433" --> lanClients["Clients (LAN)"]
     end
 
-    server -- "Port forward UDP :443" --> remoteClients["Clients (remote)"]
+    server -- "Port forward TCP :4433" --> remoteClients["Clients (remote)"]
 ```
 
 ## Server Architecture
@@ -51,7 +51,7 @@ graph TB
 ```
 Shared.Models             > Domain models, DTOs, extension point interfaces, events
 Shared.Models/Formats     > Typed data unit and format parameter types for plugin interop
-Shared.Protocol           > QUIC protocol definitions, framing, stream types
+Shared.Protocol           > Tunnel protocol definitions, framing, stream types
 
 Server                    > ASP.NET Core host, startup, DI composition
 Server.Core               > Domain services, orchestration, scheduling
@@ -59,7 +59,7 @@ Server.Api                > HTTP endpoints (web UI, enrollment), middleware
 Server.Onvif              > ONVIF client (discovery, device, media, events, analytics)
 Server.Streaming          > Stream pipeline orchestration, data/video stream fan-out
 Server.Recording          > Segment writer, keyframe indexer, retention engine
-Server.Tunnel             > QUIC listener, mutual TLS, stream dispatch
+Server.Tunnel             > TCP+TLS listener, mutual TLS, stream dispatch
 Server.Plugins            > Plugin host, discovery, lifecycle management
 
 Client.Core               > ViewModels, services, shared controls (Avalonia)
@@ -107,12 +107,12 @@ sequenceDiagram
     participant Database
     participant NFS
 
-    Client->>Server: QUIC stream (timestamp)
+    Client->>Server: Tunnel stream (timestamp)
     Server->>Database: Lookup nearest keyframe
     Database-->>Server: Segment + byte offset
     Server->>NFS: Seek to offset
     NFS-->>Server: Segment data
-    Server->>Client: QUIC stream (muxed fragments)
+    Server->>Client: Tunnel stream (muxed fragments)
 ```
 
 ### Internal Event Bus
@@ -209,7 +209,7 @@ See [plugins.md](plugins.md) for full specification.
 | `IStreamFormat` | Consume `IDataStream<T>`, produce typed `IVideoStream<T>` | fMP4 (H.264/H.265) |
 | `ICameraProvider` | Camera-specific behavior, discovery | ONVIF, Generic RTSP |
 | `IEventFilter` | Process and filter events | Motion zone filter |
-| `INotificationSink` | Deliver notifications | Client push (QUIC) |
+| `INotificationSink` | Deliver notifications | Client push (tunnel) |
 | `IVideoAnalyzer` | Analyze video frames (requires decode) | None (future) |
 | `IStorageProvider` | Read/write recordings | NFS/local filesystem |
 | `IDataProvider` | Metadata storage (cameras, segments, events, config, etc.) | SQLite |
@@ -239,7 +239,7 @@ Plugins receive these services from the plugin host via `PluginContext` (see [pl
 
 ## Security Model
 
-- QUIC transport with mutual TLS (client certificates)
+- TCP transport with mutual TLS (client certificates)
 - Server generates a self-signed root CA on first run
 - Each client receives a unique certificate signed by the root CA
 - Certificate revocation is immediate (delete client record, reject on next handshake)
@@ -258,5 +258,5 @@ Target resource usage for 32 cameras, dual stream each (main 1080p + sub 360p):
 | Disk I/O | Pass-through | Bound by camera bitrate sum, written to NFS |
 | Network (ingest) | ~256 Mbps | 32 × 8 Mbps main + 32 × 512 Kbps sub |
 | Network (client) | Per viewer | One stream per live view |
-| QUIC port | 1 UDP | All client communication |
+| Tunnel port | 1 TCP | All client communication |
 | HTTP port | 1 TCP | Web UI only (LAN) |

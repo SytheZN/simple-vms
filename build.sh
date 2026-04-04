@@ -5,7 +5,7 @@ SOLUTION_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT_DIR="$SOLUTION_DIR/out"
 
 build() {
-  dotnet build "$SOLUTION_DIR/Solution.slnx" -c Release
+  dotnet build "$SOLUTION_DIR/Solution.slnx" -c Release --no-incremental
 }
 
 test() {

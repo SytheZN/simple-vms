@@ -6,7 +6,7 @@ This document defines the entities, relationships, and query patterns that any `
 
 ## Conventions
 
-All timestamps are stored as **Unix microseconds** (`ulong`) - microseconds since 1970-01-01T00:00:00Z. This is consistent with the QUIC protocol timestamp format (see [protocol.md](protocol.md)) and avoids timezone/precision ambiguity across database engines.
+All timestamps are stored as **Unix microseconds** (`ulong`) - microseconds since 1970-01-01T00:00:00Z. This is consistent with the tunnel protocol timestamp format (see [protocol.md](protocol.md)) and avoids timezone/precision ambiguity across database engines.
 
 ## Entities
 

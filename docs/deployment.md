@@ -11,7 +11,7 @@ Both modes require:
 - A data path for persistent data (local or network - the server's I/O patterns are network-storage-safe: no memory-mapped files, no filesystem locking, tolerant of latency)
 - A configured `IDataProvider` plugin (database)
 - A configured `IStorageProvider` plugin (recording storage)
-- UDP port for QUIC (client access)
+- TCP port for tunnel (client access)
 - TCP port for HTTP (web UI, enrollment - LAN only)
 
 The server host is stateless apart from the binary itself. All persistent state lives under the data path.
@@ -21,7 +21,7 @@ The server host is stateless apart from the binary itself. All persistent state 
 | Argument | Default | Description |
 |----------|---------|-------------|
 | `--data-path` | `./data` | Root path for persistent data (certs, plugins) |
-| `--quic-port` | `443` | UDP port for QUIC client connections |
+| `--tunnel-port` | `4433` | TCP port for tunnel client connections |
 | `--http-port` | `8080` | TCP port for HTTP web UI and enrollment |
 | `--bind` | `0.0.0.0` | Bind address |
 
@@ -47,7 +47,7 @@ services:
     image: <image>:latest
     restart: unless-stopped
     ports:
-      - "443:443/udp"    # QUIC (clients)
+      - "4433:4433"      # Tunnel (clients)
       - "8080:8080"      # HTTP (web UI, LAN only)
     volumes:
       - /path/to/data:/data
@@ -59,7 +59,7 @@ No sidecar database container is required by default - the data provider plugin 
 
 ### Podman
 
-Same compose file works with `podman-compose` or `podman play kube`. No root required unless the QUIC port is below 1024 (can be changed to a high port and mapped externally).
+Same compose file works with `podman-compose` or `podman play kube`. No root required unless the tunnel port is below 1024 (can be changed to a high port and mapped externally).
 
 ## Native Deployment
 
@@ -156,12 +156,12 @@ The server's I/O patterns are designed to be network-storage-safe:
 
 | Port | Protocol | Purpose | Exposure |
 |------|----------|---------|----------|
-| 443 (configurable) | UDP | QUIC - all native client communication | LAN + port forward for remote access |
+| 4433 (configurable) | TCP | Tunnel - all native client communication | LAN + port forward for remote access |
 | 8080 (configurable) | TCP | HTTP - web UI, enrollment API | LAN only |
 
 ### Remote Access
 
-For remote client access, forward the QUIC UDP port through the router to the server. The server's external endpoint (hostname/IP) is configured in settings and included in enrollment payloads.
+For remote client access, forward the tunnel TCP port through the router to the server. The server's external endpoint (hostname/IP) is configured in settings and included in enrollment payloads.
 
 Dynamic DNS services (DuckDNS, No-IP, etc.) work well for home connections with changing IPs. The server does not manage DDNS - use the provider's update client separately.
 
@@ -170,7 +170,7 @@ Dynamic DNS services (DuckDNS, No-IP, etc.) work well for home connections with 
 The server needs:
 - Outbound RTSP/TCP to cameras (typically port 554)
 - Outbound ONVIF/HTTP to cameras (typically port 80/443)
-- Inbound UDP on the QUIC port
+- Inbound TCP on the tunnel port
 - Inbound TCP on the HTTP port (LAN only)
 
 ## First Run
@@ -203,7 +203,7 @@ If existing artifacts are found, the server starts normally. Plugins and storage
 - Startup does not fail if plugins or storage are temporarily unavailable
 - The server retries loading plugins and connecting to storage in the background with backoff
 - Cameras and recording start as their dependencies become available
-- The web UI and QUIC listener come up immediately - clients can connect and will see cameras appear as they come online
+- The web UI and tunnel listener come up immediately - clients can connect and will see cameras appear as they come online
 - System health reflects the degraded state until all dependencies are resolved
 
 ## Upgrades

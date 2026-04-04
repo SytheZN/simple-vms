@@ -5,22 +5,22 @@
 The server exposes a single API surface used by both transport paths:
 
 - **HTTP** - serves the web UI and enrollment endpoint on the local network
-- **QUIC** - serves native clients (see [protocol.md](protocol.md) for transport details)
+- **Tunnel** - serves native clients (see [protocol.md](protocol.md) for transport details)
 
-API operations are identical across both transports. The QUIC path uses the same method/path/body structure as HTTP (see protocol stream type `0x0200`). All responses use the standard response envelope (see [response-model.md](response-model.md)).
+API operations are identical across both transports. The tunnel path uses the same method/path/body structure as HTTP (see protocol stream type `0x0200`). All responses use the standard response envelope (see [response-model.md](response-model.md)).
 
-Request and response bodies are JSON over HTTP, MessagePack over QUIC.
+Request and response bodies are JSON on both transports. On the tunnel path, the API framing envelope is MessagePack; only the `body` field carries JSON (see [protocol.md](protocol.md)).
 
-All ID fields are `Guid` values, serialized as lowercase hyphenated strings (e.g. `550e8400-e29b-41d4-a716-446655440000`) in JSON and as binary in MessagePack.
+All ID fields are `Guid` values, serialized as lowercase hyphenated strings (e.g. `550e8400-e29b-41d4-a716-446655440000`).
 
 ## Authentication
 
 - **HTTP**: Unauthenticated by default. Only accessible on the local network. Authentication can be added via the `IAuthProvider` plugin extension point (e.g. PIN, password, LDAP, SSO). When an auth provider is installed, it gates all HTTP endpoints except `/api/v1/enroll`.
-- **QUIC**: Mutual TLS with client certificates. The client identity is derived from the certificate. This is always enforced and not pluggable.
+- **Tunnel**: Mutual TLS with client certificates. The client identity is derived from the certificate. This is always enforced and not pluggable.
 
 ### Authorization
 
-Authorization is pluggable via `IAuthzProvider`. The provider receives an opaque identity string (QUIC client ID from certificate, or the identifier returned by the HTTP auth provider) and decides what is permitted. How identities map to accounts, roles, or permissions is entirely the provider's concern - the core system does not define accounts or roles.
+Authorization is pluggable via `IAuthzProvider`. The provider receives an opaque identity string (tunnel client ID from certificate, or the identifier returned by the HTTP auth provider) and decides what is permitted. How identities map to accounts, roles, or permissions is entirely the provider's concern - the core system does not define accounts or roles.
 
 When no `IAuthzProvider` plugin is installed, all operations are permitted. The authorization layer only filters; it never changes the shape of the API.
 
@@ -44,7 +44,7 @@ See [enrollment.md](enrollment.md) for full details.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `addresses` | string[] | QUIC addresses, ordered (local first) |
+| `addresses` | string[] | Tunnel addresses, ordered (local first) |
 | `ca` | string | Root CA certificate (PEM) |
 | `cert` | string | Client certificate (PEM) |
 | `key` | string | Client private key (PEM) |
@@ -79,7 +79,7 @@ List enrolled clients.
 | `name` | string | User-assigned name |
 | `enrolledAt` | ulong | Unix microseconds |
 | `lastSeenAt` | ulong? | Unix microseconds, last connection |
-| `connected` | bool | Currently connected (runtime state, not persisted - derived from active QUIC connections) |
+| `connected` | bool | Currently connected (runtime state, not persisted - derived from active tunnel connections) |
 
 #### GET /api/v1/clients/{clientId}
 
@@ -518,7 +518,7 @@ Stop a running plugin. Only available for plugins that implement `IUserStartable
 
 ## Streaming
 
-Live video and recording playback use a unified WebSocket endpoint with a binary protocol. The client sends commands (go-live, fetch) and the server pushes fMP4 data. See [protocol.md](protocol.md) for the QUIC equivalent.
+Live video and recording playback use a unified WebSocket endpoint with a binary protocol. The client sends commands (go-live, fetch) and the server pushes fMP4 data. See [protocol.md](protocol.md) for the tunnel protocol equivalent.
 
 #### GET /api/v1/stream/{cameraId}
 

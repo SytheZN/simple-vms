@@ -258,7 +258,7 @@ public interface INotificationSink
 }
 ```
 
-Plugins could implement client push over QUIC, email (SMTP), webhooks, Pushover, Telegram, etc.
+Plugins could implement client push over the tunnel, email (SMTP), webhooks, Pushover, Telegram, etc.
 
 ### IVideoAnalyzer
 
@@ -368,7 +368,7 @@ When no `IAuthProvider` is installed, HTTP is open on LAN by default. Plugins co
 
 ### IAuthzProvider
 
-Authorizes operations and filters results based on identity. Receives an opaque identity string (QUIC client ID from certificate, or the identifier returned by `IAuthProvider` on HTTP) and decides what is permitted. Mapping identities to accounts, roles, or permissions is the provider's responsibility.
+Authorizes operations and filters results based on identity. Receives an opaque identity string (tunnel client ID from certificate, or the identifier returned by `IAuthProvider` on HTTP) and decides what is permitted. Mapping identities to accounts, roles, or permissions is the provider's responsibility.
 
 ```csharp
 public interface IAuthzProvider

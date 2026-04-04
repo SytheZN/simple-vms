@@ -4,7 +4,7 @@
 
 The client is built with Avalonia UI, structured as a shared core library containing all ViewModels, services, and reusable controls, with per-platform shell projects that provide navigation chrome, layout, and platform-specific service implementations.
 
-After enrollment, all communication with the server goes through the QUIC tunnel. The only exception is the enrollment process itself, which uses HTTP on the local network to exchange a token for credentials (see [enrollment.md](enrollment.md)).
+After enrollment, all communication with the server goes through the tunnel. The only exception is the enrollment process itself, which uses HTTP on the local network to exchange a token for credentials (see [enrollment.md](enrollment.md)).
 
 ## Project Structure
 
@@ -53,8 +53,8 @@ Service interfaces are defined in the core. Platform shells provide implementati
 
 | Service | Core or Platform | Description |
 |---------|-----------------|-------------|
-| `ITunnelService` | Core | QUIC connection management, address selection, reconnection |
-| `IApiClient` | Core | Request/response over QUIC API streams |
+| `ITunnelService` | Core | Tunnel connection management, address selection, reconnection |
+| `IApiClient` | Core | Request/response over tunnel API streams |
 | `ILiveStreamService` | Core | Subscribe/unsubscribe to live camera streams |
 | `IPlaybackService` | Core | Playback stream management, seek |
 | `IEventService` | Core | Event channel subscription, event queries |
@@ -162,17 +162,17 @@ Video playback uses LibVLCSharp with the Avalonia integration.
 
 ### Live View
 
-1. `ILiveStreamService` opens a QUIC live subscribe stream (`0x0300`)
+1. `ILiveStreamService` opens a tunnel live subscribe stream (`0x0300`)
 2. Server sends init segment (`ftyp` + `moov`) followed by continuous fMP4 fragments
 3. Fragments are fed to LibVLC via a custom `MediaInput` stream
 4. LibVLC handles hardware-accelerated decode on the client device
 
 ### Playback
 
-1. `IPlaybackService` opens a QUIC playback stream (`0x0301`) with a target timestamp
+1. `IPlaybackService` opens a tunnel playback stream (`0x0301`) with a target timestamp
 2. Server seeks to nearest keyframe, streams fMP4 from there
 3. Same LibVLC pipeline as live view
-4. Seeking: close current stream, open new one with new timestamp (cheap - no QUIC round-trip overhead for stream creation)
+4. Seeking: close current stream, open new one with new timestamp (cheap - no additional handshake for new logical streams)
 
 ### Quality Selection
 
@@ -214,7 +214,7 @@ The timeline fetches data from `GET /api/v1/recordings/{cameraId}/timeline` whic
 3. On scan, parses the JSON payload (address + token)
 4. Calls `POST /api/v1/enroll` with the token on the first reachable address
 5. Stores received credentials via `ICredentialStore`
-6. Connects via QUIC
+6. Connects via tunnel
 
 ### Token Flow (Desktop)
 
@@ -237,7 +237,7 @@ The client maintains a background connection to the server for event notificatio
 | iOS | Background app refresh + push notifications via APNs relay (if configured) |
 
 The background service:
-- Maintains the QUIC connection
+- Maintains the tunnel connection
 - Subscribes to the event channel (stream `0x0400`)
 - Delivers local notifications via the platform `INotificationService`
 - Notification rules are configurable per camera and per event type

@@ -9,7 +9,7 @@ A network video management system for home and power users. Supports up to 32 ca
 ## Highlights
 
 - **Zero transcoding** -- video passes through as raw data units; the server never decodes or re-encodes
-- **Single port access** -- all native client communication (API, live video, playback, events) multiplexed over one QUIC/UDP port
+- **Single port access** -- all native client communication (API, live video, playback, events) multiplexed over one TCP/TLS port
 - **Plugin-first architecture** -- capture, storage, formats, analytics, auth, and notifications are all behind extension point interfaces with no privileged internal code paths
 - **Cross-platform clients** -- native desktop (Windows, Linux, macOS), mobile (Android, iOS), and web UI
 - **Mutual TLS** -- clients authenticate with certificates signed by a server-generated root CA; revocation is immediate
@@ -51,8 +51,8 @@ See [Deployment](docs/deployment.md) for Docker Compose, systemd, and other inst
 | Component      | Technology                                      |
 | -------------- | ----------------------------------------------- |
 | Server         | .NET 10, ASP.NET Core (Kestrel)                 |
-| Transport      | QUIC (System.Net.Quic / msquic), mutual TLS     |
-| Serialization  | MessagePack (QUIC), JSON (HTTP)                 |
+| Transport      | TCP + TLS 1.3 (SslStream), mutual TLS           |
+| Serialization  | MessagePack (tunnel framing), JSON (API bodies) |
 | Database       | Pluggable via `IDataProvider` (SQLite included) |
 | Web UI         | Vue.js 3 + Vite                                 |
 | Native clients | Avalonia UI + LibVLCSharp                       |

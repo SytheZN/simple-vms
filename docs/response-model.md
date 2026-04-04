@@ -2,7 +2,7 @@
 
 ## Overview
 
-All API responses - over both HTTP and QUIC - use a single response envelope. The same model is used regardless of transport; a shared converter maps result codes to HTTP status codes on the HTTP path.
+All API responses - over both HTTP and tunnel - use a single response envelope. The same model is used regardless of transport; a shared converter maps result codes to HTTP status codes on the HTTP path.
 
 ## Response Envelope
 
@@ -109,7 +109,7 @@ Each step in the pipeline short-circuits on error - if an earlier step fails, la
 
 ### Mapping to Response Envelope
 
-At the API boundary (HTTP endpoints, QUIC API stream handlers), the `OneOf<T, Error>` is converted to a `ResponseEnvelope`:
+At the API boundary (HTTP endpoints, tunnel API stream handlers), the `OneOf<T, Error>` is converted to a `ResponseEnvelope`:
 
 - **Success path**: `result` = `Success`, `debugTag` = the handling module's tag, `body` = the value.
 - **Error path**: `result`, `debugTag`, and `message` are taken directly from the `Error`.
@@ -120,9 +120,9 @@ This is the only conversion point. Internal code never constructs response envel
 
 The `result` enum is the single source of truth. Each transport maps from it:
 
-- **QUIC API streams**: `result` and `debugTag` are sent directly in the response message.
+- **Tunnel API streams**: `result` and `debugTag` are sent directly in the response message.
 - **HTTP**: A shared converter maps `result` to an HTTP status code. The full response envelope (including `result` and `debugTag`) is in the response body.
-- **QUIC non-API streams** (live, playback, events): On error, a final message carries `result`, `debugTag`, and `message` before the stream closes. On success, `debugTag` is included in the initial acknowledgement.
+- **Tunnel non-API streams** (live, playback, events): On error, a final message carries `result`, `debugTag`, and `message` before the stream closes. On success, `debugTag` is included in the initial acknowledgement.
 
 The converter is the only place transport-specific status codes are derived. No module or plugin produces HTTP status codes directly.
 

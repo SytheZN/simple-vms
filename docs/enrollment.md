@@ -2,7 +2,7 @@
 
 ## Overview
 
-Enrollment is the process of provisioning a client with the credentials it needs to connect to the server over QUIC. The server generates a short token; the client obtains that token (via QR scan or manual entry) and exchanges it for credentials through the enrollment API.
+Enrollment is the process of provisioning a client with the credentials it needs to connect to the server. The server generates a short token; the client obtains that token (via QR scan or manual entry) and exchanges it for credentials through the enrollment API.
 
 Enrollment requires access to the local network - the enrollment API is not exposed externally. This is intentional: provisioning a new client requires physical/network proximity to the server, providing a strong trust boundary.
 
@@ -43,7 +43,7 @@ sequenceDiagram
     Server-->>Client: Credential bundle
     Client->>Client: Store credentials
 
-    Client->>Server: QUIC handshake (mutual TLS)
+    Client->>Server: TLS handshake (mutual TLS)
     Server-->>Client: Connection established
 
     Note over WebUI: User closes page or<br/>navigates away
@@ -106,9 +106,9 @@ Content-Type: application/json
 ```json
 {
   "addresses": [
-    "192.168.1.50:443",
-    "10.0.0.50:443",
-    "myhome.ddns.net:443"
+    "192.168.1.50:4433",
+    "10.0.0.50:4433",
+    "myhome.ddns.net:4433"
   ],
   "ca": "-----BEGIN CERTIFICATE-----\n...",
   "cert": "-----BEGIN CERTIFICATE-----\n...",
@@ -119,13 +119,13 @@ Content-Type: application/json
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `addresses` | string[] | QUIC addresses to connect to, in order (local first) |
+| `addresses` | string[] | Tunnel addresses to connect to, in order (local first) |
 | `ca` | string | Root CA certificate (PEM) - client uses this to verify the server |
 | `cert` | string | Client certificate signed by the root CA (PEM) |
 | `key` | string | Client private key (PEM) |
 | `clientId` | Guid | Client identifier |
 
-Note that the enrollment API is served over HTTP (port 8080) but the `addresses` in the response point to the QUIC port (443). These are different ports and potentially different addresses.
+Note that the enrollment API is served over HTTP (port 8080) but the `addresses` in the response point to the tunnel port (4433). These are different ports and potentially different addresses.
 
 **Failure:**
 
