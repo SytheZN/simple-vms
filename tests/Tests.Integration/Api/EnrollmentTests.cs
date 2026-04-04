@@ -67,7 +67,7 @@ public sealed class EnrollmentTests
   /// POST /api/v1/enroll with the token
   ///
   /// EXPECTED RESULT:
-  /// 200 with PEM-encoded CA cert, client cert, private key, valid GUID clientId, and QUIC addresses
+  /// 200 with PEM-encoded CA cert, client cert, private key, valid GUID clientId, and tunnel addresses
   /// </summary>
   [Test]
   public async Task CompleteEnrollment_ReturnsCredentials()

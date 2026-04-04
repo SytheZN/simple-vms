@@ -55,11 +55,11 @@ public sealed class EnrollmentService
     var clientId = Guid.NewGuid();
     var bundle = _certs.GenerateClientCert(clientId);
 
-    var quicAddresses = BuildQuicAddresses();
+    var tunnelAddresses = BuildTunnelAddresses();
 
     var response = new EnrollResponse
     {
-      Addresses = quicAddresses,
+      Addresses = tunnelAddresses,
       Ca = _certs.RootCaPem,
       Cert = bundle.CertPem,
       Key = bundle.KeyPem,
@@ -83,14 +83,14 @@ public sealed class EnrollmentService
   public void InvalidateToken(string token) =>
     _pending.TryRemove(token, out _);
 
-  private string[] BuildQuicAddresses()
+  private string[] BuildTunnelAddresses()
   {
     var addresses = new List<string>();
     foreach (var httpAddr in _endpoints.HttpAddresses)
     {
       if (!Uri.TryCreate(httpAddr, UriKind.Absolute, out var uri))
         continue;
-      addresses.Add($"{uri.Host}:{_endpoints.QuicPort}");
+      addresses.Add($"{uri.Host}:{_endpoints.TunnelPort}");
     }
     return [.. addresses];
   }

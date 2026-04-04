@@ -1,7 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsAotCompatible>false</IsAotCompatible>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Tests.Unit" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Shared.Models/Shared.Models.csproj" />
     <ProjectReference Include="../Shared.Protocol/Shared.Protocol.csproj" />
     <ProjectReference Include="../Server.Plugins/Server.Plugins.csproj" />
+    <ProjectReference Include="../Server.Core/Server.Core.csproj" />
+    <ProjectReference Include="../Server.Streaming/Server.Streaming.csproj" />
   </ItemGroup>
 </Project>

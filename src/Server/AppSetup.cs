@@ -4,10 +4,12 @@ using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Server.Api;
 using Server.Core;
+using Server.Core.Routing;
 using Server.Logging;
 using Server.Plugins;
 using Server.Recording;
 using Server.Streaming;
+using Server.Tunnel;
 using Shared.Models;
 using Shared.Models.Events;
 
@@ -19,13 +21,14 @@ public static class AppSetup
   private static RecordingManager? _recordingManager;
   private static RetentionEngine? _retentionEngine;
   private static EventManager? _eventManager;
+  private static TunnelService? _tunnelService;
   private static HybridLoggerProvider? _loggerProvider;
 
   public static void Configure(WebApplicationBuilder builder)
   {
     var config = builder.Configuration;
     var dataPath = config["data-path"]!;
-    var quicPort = config.GetValue("quic-port", 443);
+    var tunnelPort = config.GetValue("tunnel-port", 4433);
 
     _loggerProvider = new HybridLoggerProvider();
 
@@ -45,7 +48,7 @@ public static class AppSetup
     builder.Services.AddSingleton(certManager);
     builder.Services.AddSingleton<ICertificateService>(certManager);
 
-    var endpoints = new ServerEndpoints { QuicPort = quicPort };
+    var endpoints = new ServerEndpoints { TunnelPort = tunnelPort };
     builder.Services.AddSingleton(endpoints);
 
     var eventBus = new EventBus();
@@ -117,6 +120,7 @@ public static class AppSetup
 
     app.Lifetime.ApplicationStopping.Register(() =>
     {
+      _tunnelService?.StopAsync().GetAwaiter().GetResult();
       _eventManager?.DisposeAsync().AsTask().GetAwaiter().GetResult();
       _retentionEngine?.DisposeAsync().AsTask().GetAwaiter().GetResult();
       _recordingManager?.DisposeAsync().AsTask().GetAwaiter().GetResult();
@@ -184,6 +188,18 @@ public static class AppSetup
       pluginHost, eventBus,
       app.Services.GetRequiredService<ILoggerFactory>().CreateLogger<EventManager>());
     await _eventManager.StartAsync(app.Lifetime.ApplicationStopping);
+
+    _tunnelService = new TunnelService(
+      app.Services.GetRequiredService<ICertificateService>(),
+      app.Services.GetRequiredService<ServerEndpoints>(),
+      pluginHost,
+      eventBus,
+      app.Services.GetRequiredService<ConnectionTracker>(),
+      app.Services.GetRequiredService<ApiDispatcher>(),
+      tapRegistry,
+      app.Services,
+      app.Services.GetRequiredService<ILoggerFactory>());
+    await _tunnelService.StartAsync(app.Lifetime.ApplicationStopping);
   }
 
   private static bool TryInitializeCerts(WebApplication app, CertificateManager certManager)

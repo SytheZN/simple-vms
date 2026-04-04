@@ -5,8 +5,13 @@ namespace Shared.Protocol;
 public static class MessageEnvelope
 {
   public const int HeaderSize = 6;
+  public const int MuxHeaderSize = 10;
   public const int MaxPayloadSize = 16 * 1024 * 1024;
   public const int StreamTypeHeaderSize = 2;
+  public const ushort FlagFin = 1 << 15;
+  public const ushort FlagErr = 1 << 14;
+  public const ushort ControlFlagMask = FlagFin | FlagErr;
+  public const ushort TypeFlagMask = unchecked((ushort)~ControlFlagMask);
 
   public static void WriteStreamType(Span<byte> destination, ushort streamType) =>
     BinaryPrimitives.WriteUInt16LittleEndian(destination, streamType);
@@ -31,6 +36,26 @@ public static class MessageEnvelope
         $"Payload size {raw} exceeds maximum {MaxPayloadSize}");
     var length = (int)raw;
     return (flags, length);
+  }
+
+  public static void WriteMuxHeader(Span<byte> destination, uint streamId, ushort flags, int payloadLength)
+  {
+    ArgumentOutOfRangeException.ThrowIfNegative(payloadLength);
+    ArgumentOutOfRangeException.ThrowIfGreaterThan(payloadLength, MaxPayloadSize);
+    BinaryPrimitives.WriteUInt32LittleEndian(destination, streamId);
+    BinaryPrimitives.WriteUInt16LittleEndian(destination[4..], flags);
+    BinaryPrimitives.WriteUInt32LittleEndian(destination[6..], (uint)payloadLength);
+  }
+
+  public static (uint StreamId, ushort Flags, int PayloadLength) ReadMuxHeader(ReadOnlySpan<byte> source)
+  {
+    var streamId = BinaryPrimitives.ReadUInt32LittleEndian(source);
+    var flags = BinaryPrimitives.ReadUInt16LittleEndian(source[4..]);
+    var raw = BinaryPrimitives.ReadUInt32LittleEndian(source[6..]);
+    if (raw > (uint)MaxPayloadSize)
+      throw new InvalidDataException(
+        $"Payload size {raw} exceeds maximum {MaxPayloadSize}");
+    return (streamId, flags, (int)raw);
   }
 }
 

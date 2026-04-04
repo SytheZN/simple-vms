@@ -16,6 +16,7 @@
     <ProjectReference Include="../../src/plugins/storage/Filesystem/Filesystem.csproj" />
     <ProjectReference Include="../../src/Server.Recording/Server.Recording.csproj" />
     <ProjectReference Include="../../src/Server.Core/Server.Core.csproj" />
+    <ProjectReference Include="../../src/Server.Tunnel/Server.Tunnel.csproj" />
     <ProjectReference Include="../../src/Server.Plugins/Server.Plugins.csproj" />
   </ItemGroup>
   <ItemGroup>

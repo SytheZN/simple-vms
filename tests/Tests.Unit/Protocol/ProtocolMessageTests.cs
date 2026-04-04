@@ -4,7 +4,7 @@ using Shared.Protocol;
 namespace Tests.Unit.Protocol;
 
 [TestFixture]
-public class QuicMessageTests
+public class ProtocolMessageTests
 {
   private static readonly MessagePackSerializerOptions Options = ProtocolSerializer.Options;
 

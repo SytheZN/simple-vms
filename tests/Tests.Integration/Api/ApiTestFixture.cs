@@ -45,6 +45,7 @@ public sealed class ApiTestFixture
     {
       ["data-path"] = _tempDir,
       ["http-port"] = "0",
+      ["tunnel-port"] = "0",
       ["bind"] = "127.0.0.1",
       ["auto-certs"] = "true"
     });
