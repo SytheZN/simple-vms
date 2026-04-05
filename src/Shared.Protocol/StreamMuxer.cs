@@ -1,11 +1,10 @@
 using System.Buffers.Binary;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
-using Shared.Protocol;
 
-namespace Server.Tunnel;
+namespace Shared.Protocol;
 
-internal sealed class StreamMuxer : IAsyncDisposable
+public sealed class StreamMuxer : IAsyncDisposable
 {
   public delegate Task StreamHandler(
     ushort streamType,
@@ -19,14 +18,47 @@ internal sealed class StreamMuxer : IAsyncDisposable
   private readonly List<Task> _handlerTasks = [];
   private readonly ILogger _logger;
   private readonly Lock _lock = new();
+  private readonly uint _startStreamId;
+  private uint _nextStreamId;
   private bool _disposed;
 
   public StreamHandler? OnNewStream { get; set; }
 
-  public StreamMuxer(Stream transport, ILogger logger)
+  public StreamMuxer(Stream transport, ILogger logger, uint startStreamId = 0)
   {
     _transport = transport;
     _logger = logger;
+    _startStreamId = startStreamId;
+    _nextStreamId = startStreamId;
+  }
+
+  public (uint StreamId, ChannelReader<MuxMessage> Reader) OpenStream(
+    ushort streamType, ReadOnlyMemory<byte> initialPayload = default)
+  {
+    lock (_lock)
+    {
+      var streamId = _nextStreamId;
+      _nextStreamId += 2;
+
+      var channel = Channel.CreateBounded<MuxMessage>(new BoundedChannelOptions(256)
+      {
+        FullMode = BoundedChannelFullMode.Wait,
+        SingleReader = true,
+        SingleWriter = true
+      });
+      _streams[streamId] = channel;
+
+      var typeHeader = new byte[MessageEnvelope.StreamTypeHeaderSize];
+      MessageEnvelope.WriteStreamType(typeHeader, streamType);
+
+      var payload = new byte[typeHeader.Length + initialPayload.Length];
+      typeHeader.CopyTo(payload.AsSpan());
+      initialPayload.Span.CopyTo(payload.AsSpan(typeHeader.Length));
+
+      _ = SendAsync(streamId, 0, payload, CancellationToken.None);
+
+      return (streamId, channel.Reader);
+    }
   }
 
   public ChannelReader<MuxMessage> GetOrCreateStream(uint streamId)
@@ -182,6 +214,15 @@ internal sealed class StreamMuxer : IAsyncDisposable
   public Task SendFinAsync(uint streamId, CancellationToken ct) =>
     SendAsync(streamId, MessageEnvelope.FlagFin, ReadOnlyMemory<byte>.Empty, ct);
 
+  public void CloseStream(uint streamId)
+  {
+    lock (_lock)
+    {
+      if (_streams.Remove(streamId, out var channel))
+        channel.Writer.TryComplete();
+    }
+  }
+
   public async ValueTask DisposeAsync()
   {
     if (_disposed) return;
@@ -207,4 +248,4 @@ internal sealed class StreamMuxer : IAsyncDisposable
   }
 }
 
-internal readonly record struct MuxMessage(ushort Flags, ReadOnlyMemory<byte> Payload);
+public readonly record struct MuxMessage(ushort Flags, ReadOnlyMemory<byte> Payload);

@@ -1,11 +1,10 @@
 using System.Threading.Channels;
 using MessagePack;
 using Microsoft.Extensions.Logging;
-using Shared.Protocol;
 
-namespace Server.Tunnel.Handlers;
+namespace Shared.Protocol;
 
-internal static class KeepaliveHandler
+public static class KeepaliveHandler
 {
   public static readonly TimeSpan DefaultSendInterval = TimeSpan.FromSeconds(15);
   public static readonly TimeSpan DefaultReceiveTimeout = TimeSpan.FromSeconds(10);
