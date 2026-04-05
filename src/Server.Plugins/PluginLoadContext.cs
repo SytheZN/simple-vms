@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.Loader;
 
@@ -12,6 +13,7 @@ public sealed class PluginLoadContext : AssemblyLoadContext
     _resolver = new AssemblyDependencyResolver(pluginPath);
   }
 
+  [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Plugins are IL assemblies loaded by the JIT at runtime")]
   protected override Assembly? Load(AssemblyName assemblyName)
   {
     if (Default.Assemblies.Any(a => a.GetName().Name == assemblyName.Name))

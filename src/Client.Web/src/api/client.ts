@@ -23,9 +23,9 @@ import type {
 
 class ApiError extends Error {
   result: string
-  debugTag: number
+  debugTag: string
 
-  constructor(result: string, debugTag: number, message: string) {
+  constructor(result: string, debugTag: string, message: string) {
     super(message)
     this.result = result
     this.debugTag = debugTag

@@ -4,7 +4,7 @@ using Shared.Models;
 
 namespace Server.Streaming;
 
-public sealed class DataStreamFanOut<T> : IDataStream<T>, IAsyncDisposable where T : IDataUnit
+public sealed class DataStreamFanOut<T> : IDataStream<T>, IDataStreamFanOut where T : IDataUnit
 {
   private readonly List<Channel<T>> _subscribers = [];
   private readonly Lock _lock = new();
@@ -90,6 +90,10 @@ public sealed class DataStreamFanOut<T> : IDataStream<T>, IAsyncDisposable where
     await foreach (var item in sub.ReadAsync(ct))
       yield return item;
   }
+
+  void IDataStreamFanOut.Write(IDataUnit item) => Write((T)item);
+  IDataStream IDataStreamFanOut.Subscribe(int capacity) => Subscribe(capacity);
+  IDataStream IDataStreamFanOut.SubscribePassive(int capacity) => SubscribePassive(capacity);
 
   public ValueTask DisposeAsync()
   {

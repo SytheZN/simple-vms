@@ -5,13 +5,13 @@ namespace Shared.Models;
 [JsonConverter(typeof(JsonStringEnumConverter<Result>))]
 public enum Result
 {
-  Success,
-  Created,
-  NotFound,
-  BadRequest,
-  Conflict,
-  Unauthorized,
-  Forbidden,
-  InternalError,
-  Unavailable
+  [JsonStringEnumMemberName("success")] Success,
+  [JsonStringEnumMemberName("created")] Created,
+  [JsonStringEnumMemberName("notFound")] NotFound,
+  [JsonStringEnumMemberName("badRequest")] BadRequest,
+  [JsonStringEnumMemberName("conflict")] Conflict,
+  [JsonStringEnumMemberName("unauthorized")] Unauthorized,
+  [JsonStringEnumMemberName("forbidden")] Forbidden,
+  [JsonStringEnumMemberName("internalError")] InternalError,
+  [JsonStringEnumMemberName("unavailable")] Unavailable
 }

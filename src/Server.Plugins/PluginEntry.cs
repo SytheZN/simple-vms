@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.Loader;
 using Shared.Models;
 
@@ -5,6 +6,7 @@ namespace Server.Plugins;
 
 public sealed class PluginEntry
 {
+  [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor | DynamicallyAccessedMemberTypes.Interfaces)]
   public required Type PluginType { get; init; }
   public IPlugin Plugin { get; set; } = null!;
   public PluginMetadata Metadata { get; set; } = null!;

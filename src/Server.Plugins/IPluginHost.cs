@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Shared.Models;
 
 namespace Server.Plugins;
@@ -19,7 +20,9 @@ public interface IPluginHost
   void SetStreamTap(IStreamTap streamTap);
   void SetCameraRegistry(ICameraRegistry cameraRegistry);
   void SetRecordingAccess(IRecordingAccess recordingAccess);
+  [RequiresUnreferencedCode("Plugin discovery loads assemblies dynamically")]
   void Discover(string pluginsPath);
+  [RequiresUnreferencedCode("Plugin initialization uses dynamic type instantiation")]
   void Initialize(bool dataOnly = false);
   Task StartAsync(CancellationToken ct);
   Task StopAsync();

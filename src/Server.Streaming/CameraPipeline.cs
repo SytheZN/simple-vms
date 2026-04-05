@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Logging;
 using Server.Plugins;
 using Shared.Models;
@@ -16,8 +17,8 @@ public sealed class CameraPipeline : IAsyncDisposable
   private readonly ILogger _logger;
   private readonly Lock _lock = new();
 
-  private IAsyncDisposable? _dataFanOut;
-  private IAsyncDisposable? _videoFanOut;
+  private IDataStreamFanOut? _dataFanOut;
+  private IVideoStreamFanOut? _videoFanOut;
   private IStreamConnection? _connection;
   private CancellationTokenSource? _feedCts;
   private Task? _feedLoop;
@@ -30,8 +31,8 @@ public sealed class CameraPipeline : IAsyncDisposable
   public string ConnectionUri => _connectionInfo.Uri;
   public bool IsConstructed { get { lock (_lock) return _constructed; } }
   public bool IsActive { get { lock (_lock) return _connection != null; } }
-  public VideoStreamInfo? VideoInfo { get { lock (_lock) return (_videoFanOut as IVideoStream)?.Info; } }
-  public ReadOnlyMemory<byte> VideoHeader { get { lock (_lock) return (_videoFanOut as IVideoStream)?.Header ?? ReadOnlyMemory<byte>.Empty; } }
+  public VideoStreamInfo? VideoInfo { get { lock (_lock) return _videoFanOut?.Info; } }
+  public ReadOnlyMemory<byte> VideoHeader { get { lock (_lock) return _videoFanOut?.Header ?? ReadOnlyMemory<byte>.Empty; } }
 
   public Action? OnParameterMismatch { get; set; }
 
@@ -82,25 +83,12 @@ public sealed class CameraPipeline : IAsyncDisposable
     var connection = connectResult.AsT0;
     var dataStream = connection.DataStream;
 
-    var fanOut = CreateTypedDataFanOut(dataStream);
-    if (fanOut == null)
-    {
-      await connection.DisposeAsync();
-      return Error.Create(ModuleIds.Streaming, 0x0011, Result.InternalError,
-        "Failed to create data stream fan-out");
-    }
-
-    var muxInput = SubscribePassiveFromFanOut(fanOut);
-    if (muxInput == null)
-    {
-      await connection.DisposeAsync();
-      return Error.Create(ModuleIds.Streaming, 0x0012, Result.InternalError,
-        "Failed to subscribe to data fan-out");
-    }
+    var fanOut = CreateDataFanOut(dataStream);
+    var muxInput = fanOut.SubscribePassive(256);
 
     StartFeeding(connection, fanOut, dataStream);
 
-    IAsyncDisposable? videoFanOut = null;
+    IVideoStreamFanOut? videoFanOut = null;
     var format = _pluginHost.FindFormat(dataStream.FrameType);
     if (format != null)
     {
@@ -108,7 +96,7 @@ public sealed class CameraPipeline : IAsyncDisposable
       if (pipelineResult.IsT0)
       {
         var videoStream = pipelineResult.AsT0;
-        videoFanOut = CreateTypedVideoFanOut(videoStream);
+        videoFanOut = CreateVideoFanOut(videoStream);
         _logger.LogInformation(
           "Pipeline constructed for camera {CameraId} profile '{Profile}', mime={MimeType}",
           _cameraId, _profile, videoStream.Info.MimeType);
@@ -152,14 +140,7 @@ public sealed class CameraPipeline : IAsyncDisposable
     }
 
     lock (_lock)
-    {
-      var subscribeMethod = _dataFanOut!.GetType().GetMethod("Subscribe");
-      if (subscribeMethod == null)
-        return Error.Create(ModuleIds.Streaming, 0x0004, Result.InternalError,
-          "Data fan-out does not support Subscribe");
-
-      return OneOf<IDataStream, Error>.FromT0((IDataStream)subscribeMethod.Invoke(_dataFanOut, [256])!);
-    }
+      return OneOf<IDataStream, Error>.FromT0(_dataFanOut!.Subscribe(256));
   }
 
   public async Task<OneOf<IVideoStream, Error>> SubscribeVideoAsync(CancellationToken ct)
@@ -172,17 +153,11 @@ public sealed class CameraPipeline : IAsyncDisposable
       if (!_constructed)
         return Error.Create(ModuleIds.Streaming, 0x0006, Result.Unavailable,
           "Pipeline not constructed");
-      if (_videoFanOut is not IVideoStream)
+      if (_videoFanOut == null)
         return Error.Create(ModuleIds.Streaming, 0x0007, Result.Unavailable,
           "No video pipeline available");
 
-      var subscribeMethod = _videoFanOut.GetType().GetMethod("Subscribe");
-      if (subscribeMethod == null)
-        return Error.Create(ModuleIds.Streaming, 0x0008, Result.InternalError,
-          "Video fan-out does not support Subscribe");
-
-      return OneOf<IVideoStream, Error>.FromT0(
-        (IVideoStream)subscribeMethod.Invoke(_videoFanOut, [256])!);
+      return OneOf<IVideoStream, Error>.FromT0(_videoFanOut.Subscribe(256));
     }
   }
 
@@ -290,25 +265,19 @@ public sealed class CameraPipeline : IAsyncDisposable
     }
   }
 
-  private void StartFeeding(IStreamConnection connection, IAsyncDisposable fanOut, IDataStream dataStream)
+  private void StartFeeding(IStreamConnection connection, IDataStreamFanOut fanOut, IDataStream dataStream)
   {
     var cts = new CancellationTokenSource();
-    var writeMethod = fanOut.GetType().GetMethod("Write");
-    if (writeMethod == null) return;
 
     lock (_lock)
       _feedCts = cts;
 
     _feedLoop = Task.Run(async () =>
     {
-      var readMethod = dataStream.GetType().GetMethod("ReadAsync");
-      if (readMethod == null) return;
-
-      var enumerable = (IAsyncEnumerable<IDataUnit>)readMethod.Invoke(dataStream, [cts.Token])!;
       try
       {
-        await foreach (var item in enumerable)
-          writeMethod.Invoke(fanOut, [item]);
+        await foreach (var item in dataStream.ReadAsync(cts.Token))
+          fanOut.Write(item);
       }
       catch (OperationCanceledException) { }
       catch (Exception ex)
@@ -386,8 +355,8 @@ public sealed class CameraPipeline : IAsyncDisposable
       bool hasDemand;
       lock (_lock)
       {
-        hasDemand = GetFanOutSubscriberCount(_dataFanOut) > 0
-          || GetFanOutSubscriberCount(_videoFanOut) > 0;
+        hasDemand = (_dataFanOut?.SubscriberCount ?? 0) > 0
+          || (_videoFanOut?.SubscriberCount ?? 0) > 0;
       }
 
       if (!hasDemand)
@@ -428,43 +397,26 @@ public sealed class CameraPipeline : IAsyncDisposable
     }
   }
 
-  private IAsyncDisposable? CreateTypedDataFanOut(IDataStream dataStream)
+  [RequiresDynamicCode("Fan-out generic type is constructed at runtime")]
+  private IDataStreamFanOut CreateDataFanOut(IDataStream dataStream)
   {
-    var frameType = dataStream.FrameType;
-    var fanOutType = typeof(DataStreamFanOut<>).MakeGenericType(frameType);
-    var fanOut = (IAsyncDisposable)Activator.CreateInstance(fanOutType, dataStream.Info)!;
-
-    fanOutType.GetProperty("OnDemand")?.SetValue(fanOut, new Action(OnDemand));
-    fanOutType.GetProperty("OnEmpty")?.SetValue(fanOut, new Action(OnEmpty));
-    fanOutType.GetProperty("Logger")?.SetValue(fanOut, _logger);
-
+    var fanOutType = typeof(DataStreamFanOut<>).MakeGenericType(dataStream.FrameType);
+    var fanOut = (IDataStreamFanOut)Activator.CreateInstance(fanOutType, dataStream.Info)!;
+    fanOut.OnDemand = OnDemand;
+    fanOut.OnEmpty = OnEmpty;
+    fanOut.Logger = _logger;
     return fanOut;
   }
 
-  private static IDataStream? SubscribePassiveFromFanOut(IAsyncDisposable fanOut)
+  [RequiresDynamicCode("Fan-out generic type is constructed at runtime")]
+  private IVideoStreamFanOut CreateVideoFanOut(IVideoStream videoStream)
   {
-    var subscribeMethod = fanOut.GetType().GetMethod("SubscribePassive");
-    return subscribeMethod?.Invoke(fanOut, [256]) as IDataStream;
-  }
-
-  private IAsyncDisposable? CreateTypedVideoFanOut(IVideoStream videoStream)
-  {
-    var frameType = videoStream.FrameType;
-    var fanOutType = typeof(VideoStreamFanOut<>).MakeGenericType(frameType);
-    var fanOut = (IAsyncDisposable)Activator.CreateInstance(fanOutType, videoStream)!;
-
-    fanOutType.GetProperty("OnDemand")?.SetValue(fanOut, new Action(OnDemand));
-    fanOutType.GetProperty("OnEmpty")?.SetValue(fanOut, new Action(OnEmpty));
-    fanOutType.GetProperty("Logger")?.SetValue(fanOut, _logger);
-
+    var fanOutType = typeof(VideoStreamFanOut<>).MakeGenericType(videoStream.FrameType);
+    var fanOut = (IVideoStreamFanOut)Activator.CreateInstance(fanOutType, videoStream)!;
+    fanOut.OnDemand = OnDemand;
+    fanOut.OnEmpty = OnEmpty;
+    fanOut.Logger = _logger;
     return fanOut;
-  }
-
-  private static int GetFanOutSubscriberCount(IAsyncDisposable? fanOut)
-  {
-    if (fanOut == null) return 0;
-    return fanOut.GetType().GetProperty("SubscriberCount")
-      ?.GetValue(fanOut) as int? ?? 0;
   }
 
   public async ValueTask DisposeAsync()

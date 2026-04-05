@@ -11,7 +11,7 @@ export type Result =
 
 export interface ResponseEnvelope<T = unknown> {
   result: Result
-  debugTag: number
+  debugTag: string
   message?: string
   body?: T
 }

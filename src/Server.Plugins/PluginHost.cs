@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using Microsoft.Extensions.Logging;
 using Shared.Models;
@@ -67,6 +68,7 @@ public sealed class PluginHost : IPluginHost
     _environment = environment;
   }
 
+  [RequiresUnreferencedCode("Plugin discovery loads assemblies dynamically")]
   public void Discover(string pluginsPath)
   {
     if (!Directory.Exists(pluginsPath))
@@ -88,6 +90,7 @@ public sealed class PluginHost : IPluginHost
       LoadPlugin(dll);
   }
 
+  [RequiresUnreferencedCode("Plugin initialization uses dynamic type instantiation")]
   public void Initialize(bool dataOnly = false)
   {
     ReinstantiatePlugins();
@@ -155,6 +158,7 @@ public sealed class PluginHost : IPluginHost
     }
   }
 
+  [RequiresUnreferencedCode("Plugin types are instantiated dynamically")]
   private void ReinstantiatePlugins()
   {
     ClearExtensionPoints();
@@ -250,6 +254,7 @@ public sealed class PluginHost : IPluginHost
     _authzProviders.Clear();
   }
 
+  [RequiresUnreferencedCode("Plugin assemblies are loaded and inspected dynamically")]
   private void LoadPlugin(string dll)
   {
     try
@@ -301,7 +306,8 @@ public sealed class PluginHost : IPluginHost
     [typeof(IAuthzProvider)] = "authz"
   };
 
-  private static string[] DetectExtensionPoints(Type pluginType)
+  private static string[] DetectExtensionPoints(
+    [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] Type pluginType)
   {
     return pluginType.GetInterfaces()
       .Where(ExtensionPointNames.ContainsKey)
@@ -309,6 +315,7 @@ public sealed class PluginHost : IPluginHost
       .ToArray();
   }
 
+  [RequiresUnreferencedCode("Plugin types are discovered dynamically")]
   private static IEnumerable<Type> FindPluginTypes(Assembly assembly)
   {
     return assembly.GetTypes()

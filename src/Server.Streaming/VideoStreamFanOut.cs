@@ -4,7 +4,7 @@ using Shared.Models;
 
 namespace Server.Streaming;
 
-public sealed class VideoStreamFanOut<T> : IVideoStream<T>, IAsyncDisposable where T : IDataUnit
+public sealed class VideoStreamFanOut<T> : IVideoStream<T>, IVideoStreamFanOut where T : IDataUnit
 {
   private readonly IVideoStream<T> _source;
   private readonly List<Subscriber> _subscribers = [];
@@ -168,6 +168,8 @@ public sealed class VideoStreamFanOut<T> : IVideoStream<T>, IAsyncDisposable whe
     public Channel<T> Channel { get; } = channel;
     public bool WaitingForKeyframe { get; set; } = waitingForKeyframe;
   }
+
+  IVideoStream IVideoStreamFanOut.Subscribe(int capacity) => Subscribe(capacity);
 
   public async ValueTask DisposeAsync()
   {

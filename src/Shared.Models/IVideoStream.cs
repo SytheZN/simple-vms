@@ -8,7 +8,7 @@ public interface IVideoStream
   IAsyncEnumerable<IDataUnit> ReadAsync(CancellationToken ct);
 }
 
-public interface IVideoStream<T> : IVideoStream where T : IDataUnit
+public interface IVideoStream<out T> : IVideoStream where T : IDataUnit
 {
   new IAsyncEnumerable<T> ReadAsync(CancellationToken ct);
 

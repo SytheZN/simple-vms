@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
@@ -24,11 +25,12 @@ public static class AppSetup
   private static TunnelService? _tunnelService;
   private static HybridLoggerProvider? _loggerProvider;
 
+  [RequiresUnreferencedCode("Plugin discovery loads assemblies dynamically")]
   public static void Configure(WebApplicationBuilder builder)
   {
     var config = builder.Configuration;
     var dataPath = config["data-path"]!;
-    var tunnelPort = config.GetValue("tunnel-port", 4433);
+    var tunnelPort = int.TryParse(config["tunnel-port"], out var tp) ? tp : 4433;
 
     _loggerProvider = new HybridLoggerProvider();
 
@@ -87,7 +89,7 @@ public static class AppSetup
 
     builder.WebHost.ConfigureKestrel((ctx, kestrel) =>
     {
-      var httpPort = ctx.Configuration.GetValue("http-port", 8080);
+      var httpPort = int.TryParse(ctx.Configuration["http-port"], out var hp) ? hp : 8080;
       var bind = ctx.Configuration["bind"] ?? "0.0.0.0";
       kestrel.Listen(IPAddress.Parse(bind), httpPort, listen =>
       {
@@ -96,6 +98,7 @@ public static class AppSetup
     });
   }
 
+  [RequiresUnreferencedCode("Plugin initialization uses dynamic type instantiation")]
   public static async Task InitializeAsync(WebApplication app)
   {
     if (app.Environment.IsDevelopment())
@@ -150,6 +153,7 @@ public static class AppSetup
     }
   }
 
+  [RequiresUnreferencedCode("Plugin initialization uses dynamic type instantiation")]
   internal static async Task CompleteStartupAsync(WebApplication app)
   {
     var pluginHost = app.Services.GetRequiredService<IPluginHost>();
@@ -204,7 +208,7 @@ public static class AppSetup
 
   private static bool TryInitializeCerts(WebApplication app, CertificateManager certManager)
   {
-    if (app.Configuration.GetValue<bool>("auto-certs"))
+    if (bool.TryParse(app.Configuration["auto-certs"], out var autoCerts) && autoCerts)
     {
       if (!certManager.TryLoadCerts())
         certManager.GenerateCerts();
@@ -225,6 +229,7 @@ public static class AppSetup
     }, ct);
   }
 
+  [RequiresUnreferencedCode("Plugin initialization uses dynamic type instantiation")]
   private static async Task PollForCertsAsync(
     WebApplication app, CertificateManager certManager, SystemHealth systemHealth)
   {
