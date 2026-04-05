@@ -9,7 +9,24 @@ build() {
 }
 
 test() {
-  dotnet test "$SOLUTION_DIR/Solution.slnx" -c Release --no-build
+  rm -rf "$OUT_DIR/coverage"
+
+  dotnet test "$SOLUTION_DIR/Solution.slnx" -c Release --no-build \
+    --collect:"XPlat Code Coverage" \
+    --results-directory "$OUT_DIR/coverage"
+
+  local reports
+  reports=$(find "$OUT_DIR/coverage" -name "coverage.cobertura.xml" -printf "%p;" 2>/dev/null)
+  if [ -n "$reports" ]; then
+    dotnet tool restore
+    dotnet tool run reportgenerator \
+      -reports:"${reports%;}" \
+      -targetdir:"$OUT_DIR/coverage/merged" \
+      -reporttypes:Cobertura\;TextSummary \
+      > /dev/null
+
+    cat "$OUT_DIR/coverage/merged/Summary.txt"
+  fi
 }
 
 publish() {

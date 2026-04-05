@@ -1,6 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <InternalsVisibleTo Include="Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../Shared.Models/Shared.Models.csproj" />
     <ProjectReference Include="../Shared.Protocol/Shared.Protocol.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="LibVLCSharp.Avalonia" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
   </ItemGroup>
 </Project>

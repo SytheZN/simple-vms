@@ -94,6 +94,17 @@ public static class StreamMessageReader
   public static ClientMessageType ReadType(ReadOnlySpan<byte> data) =>
     (ClientMessageType)data[0];
 
+  public static ServerMessageType ReadServerType(ReadOnlySpan<byte> data) =>
+    (ServerMessageType)data[0];
+
+  public static InitMessage ReadInit(ReadOnlySpan<byte> data)
+  {
+    var profileLen = data[1];
+    var profile = Encoding.UTF8.GetString(data.Slice(2, profileLen));
+    var payload = data[(2 + profileLen)..].ToArray();
+    return new InitMessage(profile, payload);
+  }
+
   public static LiveMessage ReadLive(ReadOnlySpan<byte> data)
   {
     var profileLen = data[1];

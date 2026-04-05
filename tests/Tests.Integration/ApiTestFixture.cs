@@ -12,7 +12,7 @@ using Server.Core;
 using Shared.Models;
 using Dto = Shared.Models.Dto;
 
-namespace Tests.Integration.Api;
+namespace Tests.Integration;
 
 [SetUpFixture]
 public sealed class ApiTestFixture

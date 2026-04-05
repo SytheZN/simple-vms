@@ -68,6 +68,7 @@ public sealed class TunnelService
     _listener = new TcpListener(IPAddress.Any, _endpoints.TunnelPort);
     _listener.Start();
 
+    _endpoints.TunnelPort = ((IPEndPoint)_listener.LocalEndpoint).Port;
     _logger.LogInformation("Tunnel listening on port {Port}", _endpoints.TunnelPort);
     _acceptLoop = AcceptLoopAsync(_cts.Token);
     return Task.CompletedTask;
@@ -140,7 +141,11 @@ public sealed class TunnelService
       var serial = remoteCert.GetSerialNumberString().ToLowerInvariant();
       var validationResult = await _validator.ValidateAsync(serial, ct);
       if (validationResult.IsT1)
+      {
+        _logger.LogDebug("Client validation failed for serial {Serial}: {Error}",
+          serial, validationResult.AsT1.Message);
         return;
+      }
 
       clientId = validationResult.AsT0;
       _connections.SetConnected(clientId, true);
@@ -162,8 +167,18 @@ public sealed class TunnelService
 
       await using var muxer = new StreamMuxer(sslStream, _logger);
 
-      if (!await ExchangeVersionAsync(sslStream, connectionCt))
+      using var versionCts = CancellationTokenSource.CreateLinkedTokenSource(connectionCt);
+      versionCts.CancelAfter(TimeSpan.FromSeconds(10));
+      try
+      {
+        if (!await ExchangeVersionAsync(sslStream, versionCts.Token))
+          return;
+      }
+      catch (OperationCanceledException) when (versionCts.IsCancellationRequested && !connectionCt.IsCancellationRequested)
+      {
+        _logger.LogDebug("Client {ClientId} timed out during version exchange", clientId);
         return;
+      }
 
       muxer.OnNewStream = (streamType, streamId, reader, streamCt) =>
         HandleStreamAsync(streamType, streamId, reader, muxer, streamCt);
@@ -347,14 +362,24 @@ public sealed class TunnelService
     SslPolicyErrors sslPolicyErrors)
   {
     if (certificate == null)
+    {
+      _logger.LogDebug("Client cert validation: no certificate");
       return false;
+    }
 
-    using var cert = new X509Certificate2(certificate);
+    using var cert = X509CertificateLoader.LoadCertificate(certificate.GetRawCertData());
     using var customChain = new X509Chain();
     customChain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
     customChain.ChainPolicy.CustomTrustStore.Add(_certs.RootCa);
     customChain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
 
-    return customChain.Build(cert);
+    var result = customChain.Build(cert);
+    if (!result)
+    {
+      _logger.LogDebug("Client cert validation failed for {Subject}: {Status}",
+        cert.Subject,
+        string.Join(", ", customChain.ChainStatus.Select(s => s.StatusInformation)));
+    }
+    return result;
   }
 }

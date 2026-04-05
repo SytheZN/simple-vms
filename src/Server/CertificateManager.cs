@@ -85,7 +85,7 @@ public sealed class CertificateManager : ICertificateService
     {
       CertPem = withKey.ExportCertificatePem(),
       KeyPem = key.ExportRSAPrivateKeyPem(),
-      Serial = serial
+      Serial = cert.GetSerialNumberString().ToLowerInvariant()
     };
   }
 

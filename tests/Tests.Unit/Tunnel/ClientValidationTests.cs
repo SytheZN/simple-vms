@@ -22,7 +22,7 @@ public class ClientValidationTests
   public async Task Validate_ValidSerial_ReturnsClientId()
   {
     var clientId = Guid.NewGuid();
-    var client = new Client
+    var client = new Shared.Models.Client
     {
       Id = clientId,
       Name = "test",
@@ -70,7 +70,7 @@ public class ClientValidationTests
   [Test]
   public async Task Validate_RevokedClient_ReturnsForbidden()
   {
-    var client = new Client
+    var client = new Shared.Models.Client
     {
       Id = Guid.NewGuid(),
       Name = "revoked",
@@ -95,25 +95,25 @@ public class ClientValidationTests
 
   private sealed class FakeClientRepository : IClientRepository
   {
-    private readonly Client? _client;
+    private readonly Shared.Models.Client? _client;
 
-    public FakeClientRepository(Client? client) => _client = client;
+    public FakeClientRepository(Shared.Models.Client? client) => _client = client;
 
-    public Task<OneOf<Client, Error>> GetByCertificateSerialAsync(string serial, CancellationToken ct)
+    public Task<OneOf<Shared.Models.Client, Error>> GetByCertificateSerialAsync(string serial, CancellationToken ct)
     {
       if (_client != null && _client.CertificateSerial == serial)
-        return Task.FromResult<OneOf<Client, Error>>(_client);
-      return Task.FromResult<OneOf<Client, Error>>(
+        return Task.FromResult<OneOf<Shared.Models.Client, Error>>(_client);
+      return Task.FromResult<OneOf<Shared.Models.Client, Error>>(
         Error.Create(ModuleIds.Tunnel, 0, Result.NotFound, "not found"));
     }
 
-    public Task<OneOf<IReadOnlyList<Client>, Error>> GetAllAsync(CancellationToken ct) =>
+    public Task<OneOf<IReadOnlyList<Shared.Models.Client>, Error>> GetAllAsync(CancellationToken ct) =>
       throw new NotImplementedException();
-    public Task<OneOf<Client, Error>> GetByIdAsync(Guid id, CancellationToken ct) =>
+    public Task<OneOf<Shared.Models.Client, Error>> GetByIdAsync(Guid id, CancellationToken ct) =>
       throw new NotImplementedException();
-    public Task<OneOf<Success, Error>> CreateAsync(Client client, CancellationToken ct) =>
+    public Task<OneOf<Success, Error>> CreateAsync(Shared.Models.Client client, CancellationToken ct) =>
       throw new NotImplementedException();
-    public Task<OneOf<Success, Error>> UpdateAsync(Client client, CancellationToken ct) =>
+    public Task<OneOf<Success, Error>> UpdateAsync(Shared.Models.Client client, CancellationToken ct) =>
       throw new NotImplementedException();
   }
 

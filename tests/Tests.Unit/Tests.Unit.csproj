@@ -18,6 +18,7 @@
     <ProjectReference Include="../../src/Server.Core/Server.Core.csproj" />
     <ProjectReference Include="../../src/Server.Tunnel/Server.Tunnel.csproj" />
     <ProjectReference Include="../../src/Server.Plugins/Server.Plugins.csproj" />
+    <ProjectReference Include="../../src/Client.Core/Client.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="coverlet.collector">

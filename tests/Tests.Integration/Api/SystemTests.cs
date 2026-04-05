@@ -31,7 +31,7 @@ public sealed class SystemTests
 
     var envelope = await ApiTestFixture.Envelope<HealthResponse>(response);
     Assert.That(envelope.Result, Is.EqualTo(Result.Success));
-    Assert.That(envelope.DebugTag, Is.Not.EqualTo(DebugTag.None));
+    Assert.That(envelope.DebugTag, Is.EqualTo(new DebugTag(ModuleIds.SystemManagement, 0x0010)));
 
     var body = envelope.Body!;
     Assert.That(body.Status, Is.AnyOf("healthy", "degraded", "unhealthy"));

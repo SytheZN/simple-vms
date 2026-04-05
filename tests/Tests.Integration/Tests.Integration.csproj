@@ -6,6 +6,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/Server/Server.csproj" />
     <ProjectReference Include="../../src/plugins/data/Sqlite/Sqlite.csproj" />
+    <ProjectReference Include="../../src/Client.Core/Client.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="coverlet.collector">

@@ -14,6 +14,9 @@ public static class ModuleIds
   public const ushort PluginManagement = 0x000A;
   public const ushort Setup = 0x000B;
 
+  public const ushort ClientRangeStart = 0x0080;
+  public const ushort ClientRangeEnd = 0x00FF;
+
   public const ushort PluginRangeStart = 0x1000;
   public const ushort PluginRangeEnd = 0xFFFF;
 

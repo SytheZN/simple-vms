@@ -122,7 +122,7 @@ public sealed class ClientRepositoryTests
       error => Assert.Fail($"GetById failed: {error.Message}"));
   }
 
-  private static Client MakeClient() => new()
+  private static Shared.Models.Client MakeClient() => new()
   {
     Id = Guid.NewGuid(),
     Name = "My Phone",

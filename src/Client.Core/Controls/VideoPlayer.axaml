@@ -1,0 +1,11 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vlc="using:LibVLCSharp.Avalonia"
+             x:Class="Client.Core.Controls.VideoPlayer">
+  <Panel>
+    <vlc:VideoView x:Name="VideoView" />
+    <Canvas x:Name="MotionOverlay"
+            IsVisible="False"
+            IsHitTestVisible="False" />
+  </Panel>
+</UserControl>
