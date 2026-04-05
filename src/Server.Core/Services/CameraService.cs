@@ -162,26 +162,31 @@ public sealed class CameraService
 
     var camera = result.AsT0;
 
-    if (request.Name != null) camera.Name = request.Name;
-    if (request.SegmentDuration.HasValue) camera.SegmentDuration = request.SegmentDuration;
+    camera.Name = request.Name ?? camera.Name;
+    camera.SegmentDuration = request.SegmentDuration;
+
     if (request.Retention != null)
     {
       camera.RetentionMode = Enum.Parse<RetentionMode>(request.Retention.Mode, ignoreCase: true);
       camera.RetentionValue = request.Retention.Value;
     }
+    else
+    {
+      camera.RetentionMode = RetentionMode.Default;
+      camera.RetentionValue = 0;
+    }
+
     if (request.Credentials != null)
     {
       var creds = Credentials.FromUserPass(request.Credentials.Username, request.Credentials.Password);
       camera.Credentials = System.Text.Encoding.UTF8.GetBytes(
         System.Text.Json.JsonSerializer.Serialize(creds.Values, CredentialsJsonContext.Default.IReadOnlyDictionaryStringString));
     }
-    if (request.RtspPortOverride.HasValue)
-    {
-      if (request.RtspPortOverride.Value > 0)
-        camera.Config["rtspPortOverride"] = request.RtspPortOverride.Value.ToString();
-      else
-        camera.Config.Remove("rtspPortOverride");
-    }
+
+    if (request.RtspPortOverride != null && request.RtspPortOverride > 0)
+      camera.Config["rtspPortOverride"] = request.RtspPortOverride.Value.ToString();
+    else
+      camera.Config.Remove("rtspPortOverride");
     camera.UpdatedAt = DateTimeOffset.UtcNow.ToUnixMicroseconds();
 
     var updateResult = await _plugins.DataProvider.Cameras.UpdateAsync(camera, ct);

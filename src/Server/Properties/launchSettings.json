@@ -2,7 +2,8 @@
   "profiles": {
     "Server": {
       "commandName": "Project",
-      "commandLineArgs": "--data-path ../../debug/data --http-port 8080 --quic-port 4433",
+      "commandLineArgs": "--data-path ../../debug/data --http-port 8080 --tunnel-port 4433",
+      "applicationUrl": "",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
       }

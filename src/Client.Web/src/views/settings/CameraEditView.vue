@@ -55,16 +55,14 @@ async function save() {
       body.credentials = { username: username.value, password: password.value }
 
     const port = parseInt(rtspPort.value, 10)
-    body.rtspPortOverride = (!isNaN(port) && port > 0) ? port : 0
+    body.rtspPortOverride = (!isNaN(port) && port > 0) ? port : undefined
 
     const dur = parseInt(segmentDuration.value, 10)
-    if (!isNaN(dur) && dur > 0)
-      body.segmentDuration = dur
+    body.segmentDuration = (!isNaN(dur) && dur > 0) ? dur : undefined
 
-    if (retentionMode.value !== 'default')
-      body.retention = { mode: retentionMode.value, value: parseInt(retentionValue.value, 10) || 0 }
-    else if (camera.value?.retentionMode)
-      body.retention = null
+    body.retention = retentionMode.value !== 'default'
+      ? { mode: retentionMode.value, value: parseInt(retentionValue.value, 10) || 0 }
+      : undefined
 
     const streamUpdates: UpdateStreamConfig[] = streams.value.map(s => ({
       profile: s.profile,

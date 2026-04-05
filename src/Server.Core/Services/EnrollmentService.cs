@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
+using System.Net;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using System.Security.Cryptography;
-using System.Text.Json;
 using Server.Plugins;
 using Shared.Models;
 using Shared.Models.Dto;
@@ -12,7 +14,9 @@ public sealed class EnrollmentService
   private static readonly char[] TokenChars =
     "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".ToCharArray();
 
-  private readonly ConcurrentDictionary<string, ulong> _pending = new();
+  private static readonly TimeSpan TokenGracePeriod = TimeSpan.FromSeconds(10);
+
+  private readonly ConcurrentDictionary<string, TokenState> _pending = new();
   private readonly ICertificateService _certs;
   private readonly IPluginHost _plugins;
   private readonly ServerEndpoints _endpoints;
@@ -30,32 +34,49 @@ public sealed class EnrollmentService
   public OneOf<StartEnrollmentResponse, Error> StartEnrollment()
   {
     var token = GenerateToken();
-    _pending[token] = DateTimeOffset.UtcNow.ToUnixMicroseconds();
 
-    var qrPayload = new QrPayload
+    var state = new TokenState();
+    state.StartGraceExpiry(TokenGracePeriod, () => _pending.TryRemove(token, out _));
+    _pending[token] = state;
+
+    return new StartEnrollmentResponse { Token = token };
+  }
+
+  public async Task<OneOf<Success, Error>> HoldTokenAsync(string token, CancellationToken ct)
+  {
+    if (!_pending.TryGetValue(token, out var state))
+      return Error.Create(ModuleIds.Enrollment, 0x0002, Result.NotFound,
+        "Invalid or expired enrollment token");
+
+    state.CancelGraceExpiry();
+
+    try
     {
-      V = 1,
-      Addresses = _endpoints.HttpAddresses,
-      Token = token
-    };
-    var qrData = JsonSerializer.Serialize(qrPayload, EnrollmentJsonContext.Default.QrPayload);
+      await Task.Delay(Timeout.Infinite, ct);
+    }
+    catch (OperationCanceledException) { }
 
-    return new StartEnrollmentResponse { Token = token, QrData = qrData };
+    if (_pending.ContainsKey(token))
+      state.StartGraceExpiry(TokenGracePeriod, () => _pending.TryRemove(token, out _));
+
+    return new Success();
   }
 
   public async Task<OneOf<EnrollResponse, Error>> CompleteEnrollmentAsync(
     string token, CancellationToken ct)
   {
-    if (!_pending.TryRemove(token, out _))
+    if (!_pending.TryRemove(token, out var state))
       return new Error(
         Result.NotFound,
         new DebugTag(ModuleIds.Enrollment, 0x0001),
         "Invalid or expired enrollment token");
 
+    state.CancelGraceExpiry();
+
     var clientId = Guid.NewGuid();
     var bundle = _certs.GenerateClientCert(clientId);
 
-    var tunnelAddresses = BuildTunnelAddresses();
+    var tunnelAddresses = await BuildTunnelAddressesAsync(ct);
 
     var response = new EnrollResponse
     {
@@ -80,20 +101,43 @@ public sealed class EnrollmentService
       error => error);
   }
 
-  public void InvalidateToken(string token) =>
-    _pending.TryRemove(token, out _);
-
-  private string[] BuildTunnelAddresses()
+  private async Task<string[]> BuildTunnelAddressesAsync(CancellationToken ct)
   {
     var addresses = new List<string>();
-    foreach (var httpAddr in _endpoints.HttpAddresses)
+    var port = _endpoints.TunnelPort;
+
+    foreach (var ip in GetLocalIps())
+      addresses.Add($"{ip}:{port}");
+
+    try
     {
-      if (!Uri.TryCreate(httpAddr, UriKind.Absolute, out var uri))
-        continue;
-      addresses.Add($"{uri.Host}:{_endpoints.TunnelPort}");
+      var settings = await _plugins.DataProvider.Config.GetAllAsync("server", ct);
+      if (settings.IsT0)
+      {
+        var externalEndpoint = settings.AsT0.GetValueOrDefault("server.externalEndpoint");
+        if (!string.IsNullOrWhiteSpace(externalEndpoint))
+        {
+          var ext = externalEndpoint.Contains(':')
+            ? externalEndpoint
+            : $"{externalEndpoint}:{port}";
+          addresses.Add(ext);
+        }
+      }
     }
+    catch { }
+
     return [.. addresses];
   }
+
+  private static List<string> GetLocalIps() =>
+    NetworkInterface.GetAllNetworkInterfaces()
+      .Where(ni => ni.OperationalStatus == OperationalStatus.Up
+                && ni.NetworkInterfaceType != NetworkInterfaceType.Loopback)
+      .SelectMany(ni => ni.GetIPProperties().UnicastAddresses)
+      .Where(a => a.Address.AddressFamily == AddressFamily.InterNetwork
+               && !IPAddress.IsLoopback(a.Address))
+      .Select(a => a.Address.ToString())
+      .ToList();
 
   private static string GenerateToken()
   {
@@ -108,5 +152,37 @@ public sealed class EnrollmentService
       for (var i = 0; i < 4; i++)
         span[5 + i] = TokenChars[b[4 + i] % TokenChars.Length];
     });
+  }
+
+  private sealed class TokenState
+  {
+    private CancellationTokenSource? _graceCts;
+
+    public void StartGraceExpiry(TimeSpan delay, Action onExpired)
+    {
+      CancelGraceExpiry();
+      _graceCts = new CancellationTokenSource();
+      var cts = _graceCts;
+      _ = Task.Run(async () =>
+      {
+        try
+        {
+          await Task.Delay(delay, cts.Token);
+          onExpired();
+        }
+        catch (OperationCanceledException) { }
+      });
+    }
+
+    public void CancelGraceExpiry()
+    {
+      var prev = _graceCts;
+      _graceCts = null;
+      if (prev != null)
+      {
+        prev.Cancel();
+        prev.Dispose();
+      }
+    }
   }
 }

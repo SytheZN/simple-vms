@@ -1,3 +1,4 @@
+using Server.Plugins;
 using Shared.Models;
 
 namespace Server.Api.Middleware;
@@ -13,15 +14,10 @@ public sealed class AuthMiddleware
 
   public async Task InvokeAsync(HttpContext context)
   {
-    var authProvider = context.RequestServices.GetService<IAuthProvider>();
+    var pluginHost = context.RequestServices.GetRequiredService<IPluginHost>();
+    var authProvider = pluginHost.AuthProviders.FirstOrDefault();
 
     if (authProvider == null)
-    {
-      await _next(context);
-      return;
-    }
-
-    if (context.Request.Path.StartsWithSegments("/api/v1/enroll"))
     {
       await _next(context);
       return;

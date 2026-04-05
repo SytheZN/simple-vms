@@ -12,7 +12,8 @@ const error = ref('')
 const editingId = ref<string | null>(null)
 const editName = ref('')
 
-let heartbeat: ReturnType<typeof setInterval> | undefined
+let holdAbort: AbortController | undefined
+let pollInterval: ReturnType<typeof setInterval> | undefined
 
 async function loadClients() {
   try {
@@ -30,12 +31,21 @@ async function startEnrollment() {
   try {
     const res = await api.enrollment.start()
     token.value = res.token
-    qrDataUrl.value = await QRCode.toDataURL(res.qrData, {
+
+    const qrPayload = JSON.stringify({
+      v: 1,
+      addresses: [window.location.host],
+      token: res.token
+    })
+    qrDataUrl.value = await QRCode.toDataURL(qrPayload, {
       width: 256,
       margin: 2,
       color: { dark: '#000000', light: '#ffffff' }
     })
-    heartbeat = setInterval(loadClients, 3000)
+
+    holdAbort = new AbortController()
+    api.enrollment.hold(res.token, holdAbort.signal)
+    pollInterval = setInterval(loadClients, 3000)
   } catch (e) {
     enrolling.value = false
     if (e instanceof ApiError) error.value = e.message
@@ -43,10 +53,12 @@ async function startEnrollment() {
 }
 
 function cancelEnrollment() {
+  holdAbort?.abort()
+  holdAbort = undefined
+  clearInterval(pollInterval)
   enrolling.value = false
   token.value = ''
   qrDataUrl.value = ''
-  clearInterval(heartbeat)
 }
 
 async function startEdit(client: ClientListItem) {
@@ -78,11 +90,18 @@ function formatTime(micros: number): string {
 }
 
 watch(enrolling, (val) => {
-  if (!val) clearInterval(heartbeat)
+  if (!val) {
+    holdAbort?.abort()
+    holdAbort = undefined
+    clearInterval(pollInterval)
+  }
 })
 
 onMounted(loadClients)
-onUnmounted(() => clearInterval(heartbeat))
+onUnmounted(() => {
+  holdAbort?.abort()
+  clearInterval(pollInterval)
+})
 </script>
 
 <template>

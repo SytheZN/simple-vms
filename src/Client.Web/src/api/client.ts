@@ -74,6 +74,8 @@ function qs(params: Record<string, string | number | undefined>): string {
 export const api = {
   enrollment: {
     start: () => post<StartEnrollmentResponse>('/api/v1/clients/enroll'),
+    hold: (token: string, signal: AbortSignal) =>
+      fetch(`/api/v1/clients/enroll/${token}/hold`, { signal }).catch(() => {}),
   },
 
   clients: {

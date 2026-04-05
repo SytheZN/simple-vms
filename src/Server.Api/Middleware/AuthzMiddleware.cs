@@ -1,3 +1,4 @@
+using Server.Plugins;
 using Shared.Models;
 
 namespace Server.Api.Middleware;
@@ -13,7 +14,8 @@ public sealed class AuthzMiddleware
 
   public async Task InvokeAsync(HttpContext context)
   {
-    var authzProvider = context.RequestServices.GetService<IAuthzProvider>();
+    var pluginHost = context.RequestServices.GetRequiredService<IPluginHost>();
+    var authzProvider = pluginHost.AuthzProviders.FirstOrDefault();
 
     if (authzProvider == null)
     {

@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Text.Json;
 using Shared.Models;
 using Shared.Models.Dto;
 
@@ -33,30 +32,6 @@ public sealed class EnrollmentTests
     var envelope = await ApiTestFixture.Envelope<StartEnrollmentResponse>(response);
     Assert.That(envelope.Result, Is.EqualTo(Result.Created));
     Assert.That(envelope.Body!.Token, Does.Match(@"^[A-Z2-9]{4}-[A-Z2-9]{4}$"));
-  }
-
-  /// <summary>
-  /// SCENARIO:
-  /// Server is running with no pending tokens
-  ///
-  /// ACTION:
-  /// POST /api/v1/clients/enroll
-  ///
-  /// EXPECTED RESULT:
-  /// Response contains qrData that is valid JSON with v=1, addresses array, and the token
-  /// </summary>
-  [Test]
-  public async Task StartEnrollment_QrDataContainsValidPayload()
-  {
-    var response = await _client.PostAsync("/api/v1/clients/enroll", null);
-    var body = (await ApiTestFixture.Envelope<StartEnrollmentResponse>(response)).Body!;
-
-    var qr = JsonSerializer.Deserialize<QrPayload>(body.QrData,
-      EnrollmentJsonContext.Default.QrPayload)!;
-
-    Assert.That(qr.V, Is.EqualTo(1));
-    Assert.That(qr.Token, Is.EqualTo(body.Token));
-    Assert.That(qr.Addresses, Is.Not.Empty);
   }
 
   /// <summary>

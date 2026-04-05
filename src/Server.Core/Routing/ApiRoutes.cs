@@ -29,6 +29,13 @@ public static class ApiRoutes
         ApiResult.Created(result, new DebugTag(ModuleIds.Enrollment, 0x0010)));
     });
 
+    dispatcher.Add("GET", "/api/v1/clients/enroll/{token}/hold", async (req, ct) =>
+    {
+      var enrollment = req.Resolve<EnrollmentService>();
+      var result = await enrollment.HoldTokenAsync(req.RouteString("token"), ct);
+      return ApiResult.Ok(result, new DebugTag(ModuleIds.Enrollment, 0x0012));
+    });
+
     dispatcher.Add("POST", "/api/v1/enroll", async (req, ct) =>
     {
       var enrollment = req.Resolve<EnrollmentService>();

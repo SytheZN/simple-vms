@@ -97,7 +97,6 @@ export interface UpdateClientRequest {
 
 export interface StartEnrollmentResponse {
   token: string
-  qrData: string
 }
 
 export interface DiscoveryRequest {
