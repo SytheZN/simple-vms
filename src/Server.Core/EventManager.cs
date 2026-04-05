@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Server.Plugins;
 using Shared.Models;
@@ -307,9 +306,7 @@ public sealed class EventManager : IAsyncDisposable
     {
       try
       {
-        var dict = JsonSerializer.Deserialize(
-          camera.Credentials, CredentialsJsonContext.Default.IReadOnlyDictionaryStringString)
-          as IReadOnlyDictionary<string, string>;
+        var dict = camera.Credentials.ParseCredentials();
         if (dict != null)
           creds = Credentials.FromUserPass(
             dict.TryGetValue("username", out var u) ? u : "",

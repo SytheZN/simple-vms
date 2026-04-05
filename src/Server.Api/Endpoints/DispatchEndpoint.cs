@@ -1,7 +1,7 @@
 using System.Text.Json;
+using Server.Core;
 using Server.Core.Routing;
 using Shared.Models;
-using Shared.Models.Dto;
 
 namespace Server.Api.Endpoints;
 
@@ -40,9 +40,7 @@ public static class DispatchEndpoint
       Path = context.Request.Path.Value ?? "/",
       Query = query,
       Services = context.RequestServices,
-      BodyDeserializer = bodyBytes != null
-        ? type => DeserializeJson(bodyBytes, type)
-        : null
+      BodyBytes = bodyBytes
     };
 
     Task<ResponseEnvelope>? result;
@@ -52,7 +50,7 @@ public static class DispatchEndpoint
       if (result != null)
       {
         var envelope = await result;
-        return Results.Json(envelope, ApiResponse.SerializerOptions,
+        return Results.Json(envelope, ServerJsonContext.Default.ResponseEnvelope,
           statusCode: envelope.Result.ToHttpStatusCode());
       }
     }
@@ -67,7 +65,7 @@ public static class DispatchEndpoint
           DebugTag = new DebugTag(ModuleIds.Api, 0x0003),
           Message = ex.Message
         },
-        ApiResponse.SerializerOptions,
+        ServerJsonContext.Default.ResponseEnvelope,
         statusCode: 400);
     }
 
@@ -78,41 +76,7 @@ public static class DispatchEndpoint
         DebugTag = new DebugTag(ModuleIds.Api, 0x0002),
         Message = $"No route for {request.Method} {request.Path}"
       },
-      ApiResponse.SerializerOptions,
+      ServerJsonContext.Default.ResponseEnvelope,
       statusCode: 404);
   }
-
-  private static object? DeserializeJson(byte[] bytes, Type type)
-  {
-    if (type == typeof(Dictionary<string, object>))
-      return DeserializeObjectDictionary(bytes);
-
-    var result = JsonSerializer.Deserialize(bytes, type, ApiResponse.SerializerOptions);
-
-    if (result is ValidateFieldRequest { Value: JsonElement el } vfr)
-      return new ValidateFieldRequest { Key = vfr.Key, Value = UnwrapJsonElement(el) };
-
-    return result;
-  }
-
-  private static Dictionary<string, object> DeserializeObjectDictionary(byte[] bytes)
-  {
-    var raw = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
-      bytes, ApiResponse.SerializerOptions);
-    if (raw == null)
-      throw new InvalidOperationException("Expected a JSON object body");
-    return raw.ToDictionary(
-      kvp => kvp.Key,
-      kvp => UnwrapJsonElement(kvp.Value));
-  }
-
-  private static object UnwrapJsonElement(JsonElement element) => element.ValueKind switch
-  {
-    JsonValueKind.String => element.GetString()!,
-    JsonValueKind.Number => element.TryGetInt64(out var l) ? l : element.GetDouble(),
-    JsonValueKind.True => true,
-    JsonValueKind.False => false,
-    JsonValueKind.Null => null!,
-    _ => element.ToString()
-  };
 }

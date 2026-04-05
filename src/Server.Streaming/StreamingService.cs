@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Server.Core;
 using Server.Plugins;
 using Shared.Models;
 using Shared.Models.Events;
@@ -319,7 +320,7 @@ public sealed class StreamingService : IAsyncDisposable
     {
       try
       {
-        credentials = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(creds);
+        credentials = creds.ParseCredentialsDictionary();
       }
       catch (System.Text.Json.JsonException)
       {

@@ -66,7 +66,7 @@ public class OnvifPluginTests
   {
     var plugin = CreatePlugin();
 
-    var result = plugin.ApplyValues(new Dictionary<string, object>
+    var result = plugin.ApplyValues(new Dictionary<string, string>
     {
       ["username"] = "newuser",
       ["password"] = "newpass"
@@ -132,12 +132,12 @@ public class OnvifPluginTests
 
   private sealed class InMemoryConfig : IConfig
   {
-    private readonly Dictionary<string, object> _store = [];
+    private readonly Dictionary<string, string> _store = [];
 
-    public T Get<T>(string key, T defaultValue) =>
-      _store.TryGetValue(key, out var val) && val is T typed ? typed : defaultValue;
+    public string Get(string key, string defaultValue) =>
+      _store.TryGetValue(key, out var val) ? val : defaultValue;
 
-    public void Set<T>(string key, T value) => _store[key] = value!;
+    public void Set(string key, string value) => _store[key] = value;
   }
 
   private sealed class FakeEnvironment : IServerEnvironment

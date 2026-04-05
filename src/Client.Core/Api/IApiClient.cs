@@ -56,10 +56,10 @@ public interface IApiClient
   Task<OneOf<PluginListItem, Error>> GetPluginAsync(string id, CancellationToken ct = default);
   Task<OneOf<IReadOnlyList<SettingGroup>, Error>> GetPluginConfigSchemaAsync(
     string id, CancellationToken ct = default);
-  Task<OneOf<IReadOnlyDictionary<string, System.Text.Json.JsonElement>, Error>> GetPluginConfigAsync(
+  Task<OneOf<IReadOnlyDictionary<string, string>, Error>> GetPluginConfigAsync(
     string id, CancellationToken ct = default);
   Task<OneOf<Success, Error>> UpdatePluginConfigAsync(
-    string id, Dictionary<string, System.Text.Json.JsonElement> values, CancellationToken ct = default);
+    string id, Dictionary<string, string> values, CancellationToken ct = default);
   Task<OneOf<Success, Error>> ValidatePluginFieldAsync(
     string id, ValidateFieldRequest request, CancellationToken ct = default);
   Task<OneOf<Success, Error>> StartPluginAsync(string id, CancellationToken ct = default);

@@ -1,3 +1,5 @@
+using System.Text.Json;
+using Server.Core;
 using Server.Plugins;
 using Shared.Models;
 
@@ -45,7 +47,7 @@ public sealed class AuthzMiddleware
     context.Response.StatusCode = Result.Forbidden.ToHttpStatusCode();
     context.Response.ContentType = "application/json";
     await context.Response.WriteAsync(
-      System.Text.Json.JsonSerializer.Serialize(envelope, ApiResponse.SerializerOptions),
+      JsonSerializer.Serialize(envelope, ServerJsonContext.Default.ResponseEnvelope),
       context.RequestAborted);
   }
 }

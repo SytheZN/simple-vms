@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Shared.Models;
 
 namespace Tests.Integration.Sqlite;
@@ -37,11 +38,11 @@ public sealed class PluginDataStoreTests
     await store1.SetAsync("key", "value-a");
     await store2.SetAsync("key", "value-b");
 
-    (await store1.GetAsync<string>("key")).Switch(
+    (await store1.GetAsync("key")).Switch(
       val => Assert.That(val, Is.EqualTo("value-a")),
       error => Assert.Fail($"Get store1 failed: {error.Message}"));
 
-    (await store2.GetAsync<string>("key")).Switch(
+    (await store2.GetAsync("key")).Switch(
       val => Assert.That(val, Is.EqualTo("value-b")),
       error => Assert.Fail($"Get store2 failed: {error.Message}"));
   }
@@ -67,18 +68,18 @@ public sealed class PluginDataStoreTests
 
     await store1.DeleteAsync("key");
 
-    (await store1.GetAsync<string>("key")).Switch(
+    (await store1.GetAsync("key")).Switch(
       val => Assert.That(val, Is.Null),
       error => Assert.Fail($"Get store1 failed: {error.Message}"));
 
-    (await store2.GetAsync<string>("key")).Switch(
+    (await store2.GetAsync("key")).Switch(
       val => Assert.That(val, Is.EqualTo("value-b")),
       error => Assert.Fail($"Get store2 failed: {error.Message}"));
   }
 
   /// <summary>
   /// SCENARIO:
-  /// A plugin has stored 3 complex objects with a key prefix
+  /// A plugin has stored 3 JSON-serialized objects with a key prefix
   ///
   /// ACTION:
   /// GetAll with the prefix
@@ -91,11 +92,11 @@ public sealed class PluginDataStoreTests
   {
     var store = _db.GetDataStore("test-plugin");
 
-    await store.SetAsync("user:1", new TestUser("Alice", 30));
-    await store.SetAsync("user:2", new TestUser("Bob", 25));
-    await store.SetAsync("user:3", new TestUser("Charlie", 35));
+    await store.SetAsync("user:1", JsonSerializer.Serialize(new TestUser("Alice", 30)));
+    await store.SetAsync("user:2", JsonSerializer.Serialize(new TestUser("Bob", 25)));
+    await store.SetAsync("user:3", JsonSerializer.Serialize(new TestUser("Charlie", 35)));
 
-    (await store.GetAllAsync<TestUser>("user:")).Switch(
+    (await store.GetAllAsync("user:")).Switch(
       allUsers => Assert.That(allUsers, Has.Count.EqualTo(3)),
       error => Assert.Fail($"GetAll failed: {error.Message}"));
   }
@@ -115,11 +116,15 @@ public sealed class PluginDataStoreTests
   {
     var store = _db.GetDataStore("query-test");
 
-    await store.SetAsync("user:1", new TestUser("Alice", 30));
-    await store.SetAsync("user:2", new TestUser("Bob", 25));
-    await store.SetAsync("user:3", new TestUser("Charlie", 35));
+    await store.SetAsync("user:1", JsonSerializer.Serialize(new TestUser("Alice", 30)));
+    await store.SetAsync("user:2", JsonSerializer.Serialize(new TestUser("Bob", 25)));
+    await store.SetAsync("user:3", JsonSerializer.Serialize(new TestUser("Charlie", 35)));
 
-    (await store.QueryAsync<TestUser>(u => u.Age > 28)).Switch(
+    (await store.QueryAsync(json =>
+    {
+      var user = JsonSerializer.Deserialize<TestUser>(json);
+      return user != null && user.Age > 28;
+    })).Switch(
       over28 => Assert.That(over28, Has.Count.EqualTo(2)),
       error => Assert.Fail($"Query failed: {error.Message}"));
   }
@@ -139,7 +144,7 @@ public sealed class PluginDataStoreTests
   {
     var store = _db.GetDataStore("empty-plugin");
 
-    (await store.GetAsync<string>("nonexistent")).Switch(
+    (await store.GetAsync("nonexistent")).Switch(
       val => Assert.That(val, Is.Null),
       error => Assert.Fail($"Get failed: {error.Message}"));
   }

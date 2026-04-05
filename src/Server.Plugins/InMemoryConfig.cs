@@ -4,11 +4,11 @@ namespace Server.Plugins;
 
 public sealed class InMemoryConfig : IConfig
 {
-  private readonly Dictionary<string, object> _values = [];
+  private readonly Dictionary<string, string> _values = [];
 
-  public T Get<T>(string key, T defaultValue) =>
-    _values.TryGetValue(key, out var raw) && raw is T typed ? typed : defaultValue;
+  public string Get(string key, string defaultValue) =>
+    _values.TryGetValue(key, out var value) ? value : defaultValue;
 
-  public void Set<T>(string key, T value) =>
-    _values[key] = value!;
+  public void Set(string key, string value) =>
+    _values[key] = value;
 }

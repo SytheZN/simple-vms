@@ -5,13 +5,6 @@ namespace Server.Plugins;
 
 public sealed class DataProviderConfigJsonStore
 {
-  private static readonly JsonSerializerOptions JsonOptions = new()
-  {
-    WriteIndented = true,
-    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-  };
-
   private readonly string _path;
   private DataProviderConfigData _data;
 
@@ -24,14 +17,14 @@ public sealed class DataProviderConfigJsonStore
     _data = Load();
   }
 
-  public IReadOnlyDictionary<string, object> GetProviderSettings(string assemblyName)
+  public IReadOnlyDictionary<string, string> GetProviderSettings(string assemblyName)
   {
     if (_data.Providers.TryGetValue(assemblyName, out var settings))
       return settings;
-    return new Dictionary<string, object>();
+    return new Dictionary<string, string>();
   }
 
-  public void SetProviderSettings(string assemblyName, Dictionary<string, object> settings)
+  public void SetProviderSettings(string assemblyName, Dictionary<string, string> settings)
   {
     _data.Providers[assemblyName] = settings;
     Save();
@@ -49,7 +42,7 @@ public sealed class DataProviderConfigJsonStore
       return new DataProviderConfigData();
 
     var json = File.ReadAllText(_path);
-    return JsonSerializer.Deserialize<DataProviderConfigData>(json, JsonOptions)
+    return JsonSerializer.Deserialize(json, DataProviderConfigJsonContext.Default.DataProviderConfigData)
       ?? new DataProviderConfigData();
   }
 
@@ -59,12 +52,19 @@ public sealed class DataProviderConfigJsonStore
     if (dir != null)
       Directory.CreateDirectory(dir);
 
-    File.WriteAllText(_path, JsonSerializer.Serialize(_data, JsonOptions));
+    File.WriteAllText(_path, JsonSerializer.Serialize(_data, DataProviderConfigJsonContext.Default.DataProviderConfigData));
   }
 }
 
 internal sealed class DataProviderConfigData
 {
   public string? Active { get; set; }
-  public Dictionary<string, Dictionary<string, object>> Providers { get; set; } = [];
+  public Dictionary<string, Dictionary<string, string>> Providers { get; set; } = [];
 }
+
+[JsonSourceGenerationOptions(
+  PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+  WriteIndented = true,
+  DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+[JsonSerializable(typeof(DataProviderConfigData))]
+internal partial class DataProviderConfigJsonContext : JsonSerializerContext;

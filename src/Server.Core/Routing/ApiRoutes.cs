@@ -26,7 +26,8 @@ public static class ApiRoutes
       var enrollment = req.Resolve<EnrollmentService>();
       var result = enrollment.StartEnrollment();
       return Task.FromResult(
-        ApiResult.Created(result, new DebugTag(ModuleIds.Enrollment, 0x0010)));
+        ApiResult.Created(result, new DebugTag(ModuleIds.Enrollment, 0x0010),
+          ServerJsonContext.Default.StartEnrollmentResponse));
     });
 
     dispatcher.Add("GET", "/api/v1/clients/enroll/{token}/hold", async (req, ct) =>
@@ -39,9 +40,10 @@ public static class ApiRoutes
     dispatcher.Add("POST", "/api/v1/enroll", async (req, ct) =>
     {
       var enrollment = req.Resolve<EnrollmentService>();
-      var body = req.Body<EnrollRequest>();
+      var body = req.Body(ServerJsonContext.Default.EnrollRequest);
       var result = await enrollment.CompleteEnrollmentAsync(body.Token, ct);
-      return ApiResult.Ok(result, new DebugTag(ModuleIds.Enrollment, 0x0011));
+      return ApiResult.Ok(result, new DebugTag(ModuleIds.Enrollment, 0x0011),
+        ServerJsonContext.Default.EnrollResponse);
     });
   }
 
@@ -51,35 +53,43 @@ public static class ApiRoutes
     {
       var cameras = req.Resolve<CameraService>();
       var result = await cameras.GetAllAsync(req.QueryString("status"), ct);
-      return ApiResult.Ok(result, new DebugTag(ModuleIds.CameraManagement, 0x0010));
+      return ApiResult.Ok(result, new DebugTag(ModuleIds.CameraManagement, 0x0010),
+        ServerJsonContext.Default.IReadOnlyListCameraListItem);
     });
 
     dispatcher.Add("POST", "/api/v1/cameras", async (req, ct) =>
     {
       var cameras = req.Resolve<CameraService>();
-      var result = await cameras.CreateAsync(req.Body<CreateCameraRequest>(), ct);
-      return ApiResult.Created(result, new DebugTag(ModuleIds.CameraManagement, 0x0011));
+      var result = await cameras.CreateAsync(
+        req.Body(ServerJsonContext.Default.CreateCameraRequest), ct);
+      return ApiResult.Created(result, new DebugTag(ModuleIds.CameraManagement, 0x0011),
+        ServerJsonContext.Default.CameraListItem);
     });
 
     dispatcher.Add("POST", "/api/v1/cameras/probe", async (req, ct) =>
     {
       var cameras = req.Resolve<CameraService>();
-      var result = await cameras.ProbeAsync(req.Body<ProbeRequest>(), ct);
-      return ApiResult.Ok(result, new DebugTag(ModuleIds.CameraManagement, 0x0016));
+      var result = await cameras.ProbeAsync(
+        req.Body(ServerJsonContext.Default.ProbeRequest), ct);
+      return ApiResult.Ok(result, new DebugTag(ModuleIds.CameraManagement, 0x0016),
+        ServerJsonContext.Default.ProbeResponse);
     });
 
     dispatcher.Add("GET", "/api/v1/cameras/{id:guid}", async (req, ct) =>
     {
       var cameras = req.Resolve<CameraService>();
       var result = await cameras.GetByIdAsync(req.RouteGuid("id"), ct);
-      return ApiResult.Ok(result, new DebugTag(ModuleIds.CameraManagement, 0x0012));
+      return ApiResult.Ok(result, new DebugTag(ModuleIds.CameraManagement, 0x0012),
+        ServerJsonContext.Default.CameraListItem);
     });
 
     dispatcher.Add("PUT", "/api/v1/cameras/{id:guid}", async (req, ct) =>
     {
       var cameras = req.Resolve<CameraService>();
-      var result = await cameras.UpdateAsync(req.RouteGuid("id"), req.Body<UpdateCameraRequest>(), ct);
-      return ApiResult.Ok(result, new DebugTag(ModuleIds.CameraManagement, 0x0013));
+      var result = await cameras.UpdateAsync(
+        req.RouteGuid("id"), req.Body(ServerJsonContext.Default.UpdateCameraRequest), ct);
+      return ApiResult.Ok(result, new DebugTag(ModuleIds.CameraManagement, 0x0013),
+        ServerJsonContext.Default.CameraListItem);
     });
 
     dispatcher.Add("DELETE", "/api/v1/cameras/{id:guid}", async (req, ct) =>
@@ -93,7 +103,8 @@ public static class ApiRoutes
     {
       var cameras = req.Resolve<CameraService>();
       var result = await cameras.RefreshAsync(req.RouteGuid("id"), ct);
-      return ApiResult.Ok(result, new DebugTag(ModuleIds.CameraManagement, 0x0017));
+      return ApiResult.Ok(result, new DebugTag(ModuleIds.CameraManagement, 0x0017),
+        ServerJsonContext.Default.CameraListItem);
     });
 
     dispatcher.Add("POST", "/api/v1/cameras/{id:guid}/restart", async (req, ct) =>
@@ -110,20 +121,23 @@ public static class ApiRoutes
     {
       var clients = req.Resolve<ClientService>();
       var result = await clients.GetAllAsync(ct);
-      return ApiResult.Ok(result, new DebugTag(ModuleIds.ClientManagement, 0x0010));
+      return ApiResult.Ok(result, new DebugTag(ModuleIds.ClientManagement, 0x0010),
+        ServerJsonContext.Default.IReadOnlyListClientListItem);
     });
 
     dispatcher.Add("GET", "/api/v1/clients/{id:guid}", async (req, ct) =>
     {
       var clients = req.Resolve<ClientService>();
       var result = await clients.GetByIdAsync(req.RouteGuid("id"), ct);
-      return ApiResult.Ok(result, new DebugTag(ModuleIds.ClientManagement, 0x0011));
+      return ApiResult.Ok(result, new DebugTag(ModuleIds.ClientManagement, 0x0011),
+        ServerJsonContext.Default.ClientListItem);
     });
 
     dispatcher.Add("PUT", "/api/v1/clients/{id:guid}", async (req, ct) =>
     {
       var clients = req.Resolve<ClientService>();
-      var result = await clients.UpdateAsync(req.RouteGuid("id"), req.Body<UpdateClientRequest>(), ct);
+      var result = await clients.UpdateAsync(
+        req.RouteGuid("id"), req.Body(ServerJsonContext.Default.UpdateClientRequest), ct);
       return ApiResult.Ok(result, new DebugTag(ModuleIds.ClientManagement, 0x0012));
     });
 
@@ -140,8 +154,10 @@ public static class ApiRoutes
     dispatcher.Add("POST", "/api/v1/discovery", async (req, ct) =>
     {
       var discovery = req.Resolve<DiscoveryService>();
-      var result = await discovery.DiscoverAsync(req.Body<DiscoveryRequest>(), ct);
-      return ApiResult.Ok(result, new DebugTag(ModuleIds.Discovery, 0x0010));
+      var result = await discovery.DiscoverAsync(
+        req.Body(ServerJsonContext.Default.DiscoveryRequest), ct);
+      return ApiResult.Ok(result, new DebugTag(ModuleIds.Discovery, 0x0010),
+        ServerJsonContext.Default.IReadOnlyListDiscoveredCameraDto);
     });
   }
 
@@ -156,7 +172,8 @@ public static class ApiRoutes
         req.QueryULong("from"),
         req.QueryULong("to"),
         ct);
-      return ApiResult.Ok(result, new DebugTag(ModuleIds.Recording, 0x0010));
+      return ApiResult.Ok(result, new DebugTag(ModuleIds.Recording, 0x0010),
+        ServerJsonContext.Default.IReadOnlyListRecordingSegmentDto);
     });
 
     dispatcher.Add("GET", "/api/v1/recordings/{cameraId:guid}/timeline", async (req, ct) =>
@@ -168,7 +185,8 @@ public static class ApiRoutes
         req.QueryULong("from"),
         req.QueryULong("to"),
         ct);
-      return ApiResult.Ok(result, new DebugTag(ModuleIds.Recording, 0x0011));
+      return ApiResult.Ok(result, new DebugTag(ModuleIds.Recording, 0x0011),
+        ServerJsonContext.Default.TimelineResponse);
     });
   }
 
@@ -185,14 +203,16 @@ public static class ApiRoutes
         req.QueryIntOrDefault("limit", 100),
         req.QueryIntOrDefault("offset", 0),
         ct);
-      return ApiResult.Ok(result, new DebugTag(ModuleIds.Events, 0x0010));
+      return ApiResult.Ok(result, new DebugTag(ModuleIds.Events, 0x0010),
+        ServerJsonContext.Default.IReadOnlyListEventDto);
     });
 
     dispatcher.Add("GET", "/api/v1/events/{id:guid}", async (req, ct) =>
     {
       var events = req.Resolve<EventService>();
       var result = await events.GetByIdAsync(req.RouteGuid("id"), ct);
-      return ApiResult.Ok(result, new DebugTag(ModuleIds.Events, 0x0011));
+      return ApiResult.Ok(result, new DebugTag(ModuleIds.Events, 0x0011),
+        ServerJsonContext.Default.EventDto);
     });
   }
 
@@ -202,13 +222,15 @@ public static class ApiRoutes
     {
       var retention = req.Resolve<RetentionService>();
       var result = await retention.GetGlobalAsync(ct);
-      return ApiResult.Ok(result, new DebugTag(ModuleIds.Retention, 0x0010));
+      return ApiResult.Ok(result, new DebugTag(ModuleIds.Retention, 0x0010),
+        ServerJsonContext.Default.RetentionPolicy);
     });
 
     dispatcher.Add("PUT", "/api/v1/retention", async (req, ct) =>
     {
       var retention = req.Resolve<RetentionService>();
-      var result = await retention.SetGlobalAsync(req.Body<RetentionPolicy>(), ct);
+      var result = await retention.SetGlobalAsync(
+        req.Body(ServerJsonContext.Default.RetentionPolicy), ct);
       return ApiResult.Ok(result, new DebugTag(ModuleIds.Retention, 0x0011));
     });
   }
@@ -219,27 +241,31 @@ public static class ApiRoutes
     {
       var system = req.Resolve<SystemService>();
       return Task.FromResult(
-        ApiResult.Success(system.GetHealth(), new DebugTag(ModuleIds.SystemManagement, 0x0010)));
+        ApiResult.Success(system.GetHealth(), new DebugTag(ModuleIds.SystemManagement, 0x0010),
+          ServerJsonContext.Default.HealthResponse));
     });
 
     dispatcher.Add("GET", "/api/v1/system/storage", async (req, ct) =>
     {
       var system = req.Resolve<SystemService>();
       var result = await system.GetStorageAsync(ct);
-      return ApiResult.Ok(result, new DebugTag(ModuleIds.SystemManagement, 0x0011));
+      return ApiResult.Ok(result, new DebugTag(ModuleIds.SystemManagement, 0x0011),
+        ServerJsonContext.Default.StorageResponse);
     });
 
     dispatcher.Add("GET", "/api/v1/system/settings", async (req, ct) =>
     {
       var system = req.Resolve<SystemService>();
       var result = await system.GetSettingsAsync(ct);
-      return ApiResult.Ok(result, new DebugTag(ModuleIds.SystemManagement, 0x0012));
+      return ApiResult.Ok(result, new DebugTag(ModuleIds.SystemManagement, 0x0012),
+        ServerJsonContext.Default.ServerSettings);
     });
 
     dispatcher.Add("PUT", "/api/v1/system/settings", async (req, ct) =>
     {
       var system = req.Resolve<SystemService>();
-      var result = await system.UpdateSettingsAsync(req.Body<ServerSettings>(), ct);
+      var result = await system.UpdateSettingsAsync(
+        req.Body(ServerJsonContext.Default.ServerSettings), ct);
       return ApiResult.Ok(result, new DebugTag(ModuleIds.SystemManagement, 0x0013));
     });
 
@@ -265,7 +291,8 @@ public static class ApiRoutes
       var plugins = req.Resolve<PluginService>();
       var result = plugins.GetAll(req.QueryString("type"));
       return Task.FromResult(
-        ApiResult.Ok(result, new DebugTag(ModuleIds.PluginManagement, 0x0010)));
+        ApiResult.Ok(result, new DebugTag(ModuleIds.PluginManagement, 0x0010),
+          ServerJsonContext.Default.IReadOnlyListPluginListItem));
     });
 
     dispatcher.Add("GET", "/api/v1/plugins/{id}", (req, _) =>
@@ -273,7 +300,8 @@ public static class ApiRoutes
       var plugins = req.Resolve<PluginService>();
       var result = plugins.GetById(req.RouteString("id"));
       return Task.FromResult(
-        ApiResult.Ok(result, new DebugTag(ModuleIds.PluginManagement, 0x0011)));
+        ApiResult.Ok(result, new DebugTag(ModuleIds.PluginManagement, 0x0011),
+          ServerJsonContext.Default.PluginListItem));
     });
 
     dispatcher.Add("OPTIONS", "/api/v1/plugins/{id}/config", (req, _) =>
@@ -281,7 +309,8 @@ public static class ApiRoutes
       var plugins = req.Resolve<PluginService>();
       var result = plugins.GetConfigSchema(req.RouteString("id"));
       return Task.FromResult(
-        ApiResult.Ok(result, new DebugTag(ModuleIds.PluginManagement, 0x0014)));
+        ApiResult.Ok(result, new DebugTag(ModuleIds.PluginManagement, 0x0014),
+          ServerJsonContext.Default.IReadOnlyListSettingGroup));
     });
 
     dispatcher.Add("GET", "/api/v1/plugins/{id}/config", (req, _) =>
@@ -289,13 +318,14 @@ public static class ApiRoutes
       var plugins = req.Resolve<PluginService>();
       var result = plugins.GetConfigValues(req.RouteString("id"));
       return Task.FromResult(
-        ApiResult.Ok(result, new DebugTag(ModuleIds.PluginManagement, 0x0015)));
+        ApiResult.Ok(result, new DebugTag(ModuleIds.PluginManagement, 0x0015),
+          ServerJsonContext.Default.IReadOnlyDictionaryStringString));
     });
 
     dispatcher.Add("PUT", "/api/v1/plugins/{id}/config", (req, _) =>
     {
       var plugins = req.Resolve<PluginService>();
-      var values = req.Body<Dictionary<string, object>>();
+      var values = req.Body(ServerJsonContext.Default.DictionaryStringString);
       var result = plugins.ApplyConfigValues(req.RouteString("id"), values);
       return Task.FromResult(
         ApiResult.Ok(result, new DebugTag(ModuleIds.PluginManagement, 0x0016)));
@@ -304,7 +334,7 @@ public static class ApiRoutes
     dispatcher.Add("POST", "/api/v1/plugins/{id}/config/validate", (req, _) =>
     {
       var plugins = req.Resolve<PluginService>();
-      var body = req.Body<ValidateFieldRequest>();
+      var body = req.Body(ServerJsonContext.Default.ValidateFieldRequest);
       var result = plugins.ValidateField(req.RouteString("id"), body.Key, body.Value);
       return Task.FromResult(
         ApiResult.Ok(result, new DebugTag(ModuleIds.PluginManagement, 0x0017)));

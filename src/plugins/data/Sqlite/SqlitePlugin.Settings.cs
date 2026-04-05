@@ -37,31 +37,30 @@ public sealed partial class SqliteProvider : IPluginSettings
     }
   ];
 
-  public IReadOnlyDictionary<string, object> GetValues() =>
-    new Dictionary<string, object>
+  public IReadOnlyDictionary<string, string> GetValues() =>
+    new Dictionary<string, string>
     {
       ["directory"] = _config.Get("directory", _environment.DataPath),
       ["filename"] = _config.Get("filename", "server.db")
     };
 
-  public OneOf<Success, Error> ValidateValue(string key, object value)
+  public OneOf<Success, Error> ValidateValue(string key, string value)
   {
-    var str = value?.ToString();
     switch (key)
     {
       case "directory":
-        if (string.IsNullOrWhiteSpace(str))
+        if (string.IsNullOrWhiteSpace(value))
           return new Error(Result.BadRequest, new DebugTag(ModuleIds.PluginSqliteMigration, 0x0010),
             "Directory is required");
-        if (!Directory.Exists(str))
+        if (!Directory.Exists(value))
           return new Error(Result.BadRequest, new DebugTag(ModuleIds.PluginSqliteMigration, 0x0011),
-            $"Directory does not exist: {str}");
+            $"Directory does not exist: {value}");
         break;
       case "filename":
-        if (string.IsNullOrWhiteSpace(str))
+        if (string.IsNullOrWhiteSpace(value))
           return new Error(Result.BadRequest, new DebugTag(ModuleIds.PluginSqliteMigration, 0x0012),
             "Filename is required");
-        if (str.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        if (value.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
           return new Error(Result.BadRequest, new DebugTag(ModuleIds.PluginSqliteMigration, 0x0013),
             "Filename contains invalid characters");
         break;
@@ -69,7 +68,7 @@ public sealed partial class SqliteProvider : IPluginSettings
     return new Success();
   }
 
-  public OneOf<Success, Error> ApplyValues(IReadOnlyDictionary<string, object> values)
+  public OneOf<Success, Error> ApplyValues(IReadOnlyDictionary<string, string> values)
   {
     foreach (var (key, value) in values)
     {
@@ -78,9 +77,9 @@ public sealed partial class SqliteProvider : IPluginSettings
     }
 
     if (values.TryGetValue("directory", out var dir))
-      _config.Set("directory", dir.ToString()!);
+      _config.Set("directory", dir);
     if (values.TryGetValue("filename", out var file))
-      _config.Set("filename", file.ToString()!);
+      _config.Set("filename", file);
 
     return new Success();
   }

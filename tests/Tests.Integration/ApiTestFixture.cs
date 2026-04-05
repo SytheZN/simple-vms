@@ -1,14 +1,14 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Server;
-using Server.Api;
-using Server.Plugins;
 using Server.Core;
+using Server.Plugins;
 using Shared.Models;
 using Dto = Shared.Models.Dto;
 
@@ -34,7 +34,7 @@ public sealed class ApiTestFixture
 
     var dpConfig = new DataProviderConfigJsonStore(_tempDir);
     dpConfig.SetActive("sqlite");
-    dpConfig.SetProviderSettings("sqlite", new Dictionary<string, object>
+    dpConfig.SetProviderSettings("sqlite", new Dictionary<string, string>
     {
       ["directory"] = _tempDir,
       ["filename"] = "server.db"
@@ -91,16 +91,22 @@ public sealed class ApiTestFixture
     return enroll.Body!.ClientId.ToString();
   }
 
+  private static readonly JsonSerializerOptions TestJsonOptions = new()
+  {
+    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
+  };
+
   public static async Task<ResponseEnvelope> Envelope(HttpResponseMessage response)
   {
     var json = await response.Content.ReadAsStringAsync();
-    return JsonSerializer.Deserialize<ResponseEnvelope>(json, ApiResponse.SerializerOptions)!;
+    return JsonSerializer.Deserialize<ResponseEnvelope>(json, TestJsonOptions)!;
   }
 
   public static async Task<ResponseEnvelope<T>> Envelope<T>(HttpResponseMessage response)
   {
     var json = await response.Content.ReadAsStringAsync();
-    return JsonSerializer.Deserialize<ResponseEnvelope<T>>(json, ApiResponse.SerializerOptions)!;
+    return JsonSerializer.Deserialize<ResponseEnvelope<T>>(json, TestJsonOptions)!;
   }
 
   private static void CopyPluginAssemblies(string targetDir)

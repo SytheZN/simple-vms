@@ -162,7 +162,7 @@ public sealed class PluginTests
     var response = await _client.GetAsync("/api/v1/plugins/sqlite/config");
     Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
 
-    var envelope = await ApiTestFixture.Envelope<Dictionary<string, object>>(response);
+    var envelope = await ApiTestFixture.Envelope<Dictionary<string, string>>(response);
     Assert.That(envelope.Result, Is.EqualTo(Result.Success));
     Assert.That(envelope.Body, Does.ContainKey("directory"));
     Assert.That(envelope.Body, Does.ContainKey("filename"));

@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 
 namespace Server.Core.Routing;
 
@@ -8,12 +10,16 @@ public sealed class ApiRequest
   public required string Path { get; init; }
   public Dictionary<string, string> RouteValues { get; set; } = [];
   public Dictionary<string, string> Query { get; init; } = [];
-  public Func<Type, object?>? BodyDeserializer { get; init; }
+  public byte[]? BodyBytes { get; init; }
   public required IServiceProvider Services { get; init; }
 
-  public T Body<T>() where T : class =>
-    (T?)BodyDeserializer?.Invoke(typeof(T))
-    ?? throw new InvalidOperationException($"No body provided or deserialization failed for {typeof(T).Name}");
+  public T Body<T>(JsonTypeInfo<T> typeInfo) where T : class
+  {
+    if (BodyBytes is not { Length: > 0 })
+      throw new InvalidOperationException($"No body provided for {typeof(T).Name}");
+    return JsonSerializer.Deserialize(BodyBytes, typeInfo)
+      ?? throw new InvalidOperationException($"Deserialization returned null for {typeof(T).Name}");
+  }
 
   public T Resolve<T>() where T : notnull =>
     (T?)Services.GetService(typeof(T))

@@ -132,8 +132,7 @@ public sealed class CameraService
       ProviderId = request.ProviderId
         ?? _plugins.CameraProviders.FirstOrDefault()?.ProviderId
         ?? "onvif",
-      Credentials = System.Text.Encoding.UTF8.GetBytes(
-        System.Text.Json.JsonSerializer.Serialize(creds.Values, CredentialsJsonContext.Default.IReadOnlyDictionaryStringString)),
+      Credentials = creds.Values.ToCredentialsJson(),
       CreatedAt = now,
       UpdatedAt = now
     };
@@ -179,8 +178,7 @@ public sealed class CameraService
     if (request.Credentials != null)
     {
       var creds = Credentials.FromUserPass(request.Credentials.Username, request.Credentials.Password);
-      camera.Credentials = System.Text.Encoding.UTF8.GetBytes(
-        System.Text.Json.JsonSerializer.Serialize(creds.Values, CredentialsJsonContext.Default.IReadOnlyDictionaryStringString));
+      camera.Credentials = creds.Values.ToCredentialsJson();
     }
 
     if (request.RtspPortOverride != null && request.RtspPortOverride > 0)
@@ -231,9 +229,7 @@ public sealed class CameraService
     Credentials creds;
     if (camera.Credentials is { Length: > 0 })
     {
-      var dict = System.Text.Json.JsonSerializer.Deserialize(
-        camera.Credentials, CredentialsJsonContext.Default.IReadOnlyDictionaryStringString)
-        as IReadOnlyDictionary<string, string>;
+      var dict = camera.Credentials.ParseCredentials();
       creds = dict != null
         ? Credentials.FromUserPass(
             dict.TryGetValue("username", out var u) ? u : "",

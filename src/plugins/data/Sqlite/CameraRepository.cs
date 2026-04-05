@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Shared.Models;
 
@@ -162,8 +161,8 @@ internal sealed class CameraRepository : ICameraRepository
     cmd.Parameters.AddWithValue("@providerId", camera.ProviderId);
     cmd.Parameters.AddWithValue("@credentials", (object?)camera.Credentials ?? DBNull.Value);
     cmd.Parameters.AddWithValue("@segmentDuration", (object?)camera.SegmentDuration ?? DBNull.Value);
-    cmd.Parameters.AddWithValue("@capabilities", JsonSerializer.Serialize(camera.Capabilities));
-    cmd.Parameters.AddWithValue("@config", JsonSerializer.Serialize(camera.Config));
+    cmd.Parameters.AddWithValue("@capabilities", camera.Capabilities.ToJson());
+    cmd.Parameters.AddWithValue("@config", camera.Config.ToJson());
     cmd.Parameters.AddWithValue("@retentionMode", (int)camera.RetentionMode);
     cmd.Parameters.AddWithValue("@retentionValue", (long)camera.RetentionValue);
     cmd.Parameters.AddWithValue("@createdAt", (long)camera.CreatedAt);
@@ -182,10 +181,8 @@ internal sealed class CameraRepository : ICameraRepository
         ? null : (byte[])reader["credentials"],
       SegmentDuration = reader.IsDBNull(reader.GetOrdinal("segment_duration"))
         ? null : reader.GetInt32(reader.GetOrdinal("segment_duration")),
-      Capabilities = JsonSerializer.Deserialize<string[]>(
-        reader.GetString(reader.GetOrdinal("capabilities"))) ?? [],
-      Config = JsonSerializer.Deserialize<Dictionary<string, string>>(
-        reader.GetString(reader.GetOrdinal("config"))) ?? [],
+      Capabilities = reader.GetString(reader.GetOrdinal("capabilities")).ToStringArray(),
+      Config = reader.GetString(reader.GetOrdinal("config")).ToStringDictionary(),
       RetentionMode = (RetentionMode)reader.GetInt32(reader.GetOrdinal("retention_mode")),
       RetentionValue = reader.GetInt64(reader.GetOrdinal("retention_value")),
       CreatedAt = (ulong)reader.GetInt64(reader.GetOrdinal("created_at")),

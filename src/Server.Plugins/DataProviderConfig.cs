@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Shared.Models;
 
 namespace Server.Plugins;
@@ -14,37 +13,16 @@ public sealed class DataProviderConfig : IConfig
     _assemblyName = assemblyName;
   }
 
-  public T Get<T>(string key, T defaultValue)
+  public string Get(string key, string defaultValue)
   {
     var settings = _jsonStore.GetProviderSettings(_assemblyName);
-    if (!settings.TryGetValue(key, out var raw))
-      return defaultValue;
-
-    if (raw is T typed)
-      return typed;
-
-    if (raw is JsonElement element)
-    {
-      var deserialized = element.Deserialize<T>();
-      if (deserialized != null)
-        return deserialized;
-    }
-
-    try
-    {
-      return (T)Convert.ChangeType(raw, typeof(T));
-    }
-    catch
-    {
-      return defaultValue;
-    }
+    return settings.TryGetValue(key, out var value) ? value : defaultValue;
   }
 
-  public void Set<T>(string key, T value)
+  public void Set(string key, string value)
   {
-    var settings = new Dictionary<string, object>(_jsonStore.GetProviderSettings(_assemblyName)
-      .Select(kvp => new KeyValuePair<string, object>(kvp.Key, kvp.Value)));
-    settings[key] = value!;
+    var settings = new Dictionary<string, string>(_jsonStore.GetProviderSettings(_assemblyName));
+    settings[key] = value;
     _jsonStore.SetProviderSettings(_assemblyName, settings);
   }
 }

@@ -1,5 +1,4 @@
 using System.Text;
-using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Shared.Models;
 namespace Data.Sqlite;
@@ -100,7 +99,7 @@ internal sealed class EventRepository : IEventRepository
         cmd.Parameters.AddWithValue("@endTime",
           evt.EndTime.HasValue ? (object)(long)evt.EndTime.Value : DBNull.Value);
         cmd.Parameters.AddWithValue("@metadata",
-          evt.Metadata != null ? (object)JsonSerializer.Serialize(evt.Metadata) : DBNull.Value);
+          evt.Metadata != null ? (object)evt.Metadata.ToJson() : DBNull.Value);
         cmd.ExecuteNonQuery();
         return new Success();
       }
@@ -156,7 +155,7 @@ internal sealed class EventRepository : IEventRepository
       StartTime = (ulong)reader.GetInt64(reader.GetOrdinal("start_time")),
       EndTime = reader.IsDBNull(endTimeOrdinal) ? null : (ulong)reader.GetInt64(endTimeOrdinal),
       Metadata = reader.IsDBNull(metadataOrdinal)
-        ? null : JsonSerializer.Deserialize<Dictionary<string, string>>(reader.GetString(metadataOrdinal))
+        ? null : reader.GetString(metadataOrdinal).ToStringDictionaryOrNull()
     };
   }
 }

@@ -247,10 +247,10 @@ public class FilesystemStorageTests
   {
     private readonly Dictionary<string, string> _values;
     public FakeConfig(Dictionary<string, string> values) => _values = values;
-    public T Get<T>(string key, T defaultValue) =>
-      _values.TryGetValue(key, out var val) ? (T)(object)val : defaultValue;
-    public void Set<T>(string key, T value) =>
-      _values[key] = value?.ToString() ?? "";
+    public string Get(string key, string defaultValue) =>
+      _values.TryGetValue(key, out var val) ? val : defaultValue;
+    public void Set(string key, string value) =>
+      _values[key] = value;
   }
 
   private sealed class FakeEnvironment : IServerEnvironment

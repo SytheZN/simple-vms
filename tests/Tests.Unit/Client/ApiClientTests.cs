@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using System.Threading.Channels;
 using Client.Core.Api;
 using Client.Core.Tunnel;
@@ -13,6 +14,7 @@ namespace Tests.Unit.Client;
 [TestFixture]
 public class ApiClientTests
 {
+  private static ClientJsonContext Json => ClientJsonContext.Default;
   /// <summary>
   /// SCENARIO:
   /// ApiClient sends a GET request with no body
@@ -29,7 +31,7 @@ public class ApiClientTests
     var (client, tunnel) = CreateClient();
 
     var health = new HealthResponse { Status = "healthy", Uptime = 60, Version = "1.0" };
-    tunnel.NextResponse = CreateResponse(Result.Success, health);
+    tunnel.NextResponse = CreateResponse(Result.Success, health, Json.HealthResponse);
 
     var result = await client.GetHealthAsync(CancellationToken.None);
 
@@ -88,7 +90,7 @@ public class ApiClientTests
       Streams = [],
       Capabilities = []
     };
-    tunnel.NextResponse = CreateResponse(Result.Created, camera);
+    tunnel.NextResponse = CreateResponse(Result.Created, camera, Json.CameraListItem);
 
     var request = new CreateCameraRequest { Address = "192.168.1.100" };
     var result = await client.CreateCameraAsync(request, CancellationToken.None);
@@ -107,15 +109,14 @@ public class ApiClientTests
     return (client, tunnel);
   }
 
-  private static ApiResponseMessage CreateResponse(Result result, object body)
+  private static ApiResponseMessage CreateResponse<T>(
+    Result result, T body, JsonTypeInfo<T> typeInfo)
   {
-    var bodyBytes = JsonSerializer.SerializeToUtf8Bytes(
-      body, ClientJsonContext.Default.Options.GetTypeInfo(body.GetType()));
     return new ApiResponseMessage
     {
       Result = (byte)result,
       DebugTag = 0x00010001,
-      Body = bodyBytes
+      Body = JsonSerializer.SerializeToUtf8Bytes(body, typeInfo)
     };
   }
 
@@ -221,7 +222,7 @@ public class ApiClientTests
   {
     var (client, tunnel) = CreateClient();
     var events = new List<EventDto>();
-    tunnel.NextResponse = CreateResponse(Result.Success, events);
+    tunnel.NextResponse = CreateResponse(Result.Success, events, Json.ListEventDto);
     var cameraId = Guid.NewGuid();
     await client.GetEventsAsync(cameraId, "motion", 1000, 2000, 50, 10, CancellationToken.None);
     Assert.That(tunnel.LastRequest!.Method, Is.EqualTo("GET"));
@@ -244,7 +245,7 @@ public class ApiClientTests
   public async Task GetRetention_DeserializesPolicy()
   {
     var (client, tunnel) = CreateClient();
-    tunnel.NextResponse = CreateResponse(Result.Success, new RetentionPolicy { Mode = "days", Value = 30 });
+    tunnel.NextResponse = CreateResponse(Result.Success, new RetentionPolicy { Mode = "days", Value = 30 }, Json.RetentionPolicy);
     var result = await client.GetRetentionAsync(CancellationToken.None);
     Assert.That(result.IsT0, Is.True);
     Assert.That(result.AsT0.Mode, Is.EqualTo("days"));
@@ -285,7 +286,7 @@ public class ApiClientTests
   {
     var (client, tunnel) = CreateClient();
     tunnel.NextResponse = CreateResponse(Result.Success,
-      new StorageResponse { Stores = [] });
+      new StorageResponse { Stores = [] }, Json.StorageResponse);
     var result = await client.GetStorageAsync(CancellationToken.None);
     Assert.That(result.IsT0, Is.True);
   }
@@ -304,7 +305,7 @@ public class ApiClientTests
   public async Task GetSettings_ReturnsServerSettings()
   {
     var (client, tunnel) = CreateClient();
-    tunnel.NextResponse = CreateResponse(Result.Success, new ServerSettings());
+    tunnel.NextResponse = CreateResponse(Result.Success, new ServerSettings(), Json.ServerSettings);
     var result = await client.GetSettingsAsync(CancellationToken.None);
     Assert.That(result.IsT0, Is.True);
   }
@@ -364,7 +365,7 @@ public class ApiClientTests
   {
     var (client, tunnel) = CreateClient();
     var plugins = new List<PluginListItem>();
-    tunnel.NextResponse = CreateResponse(Result.Success, plugins);
+    tunnel.NextResponse = CreateResponse(Result.Success, plugins, Json.ListPluginListItem);
     await client.GetPluginsAsync("storage", CancellationToken.None);
     Assert.That(tunnel.LastRequest!.Path, Is.EqualTo("/api/v1/plugins?type=storage"));
   }
@@ -384,7 +385,7 @@ public class ApiClientTests
   {
     var (client, tunnel) = CreateClient();
     var clients = new List<ClientListItem>();
-    tunnel.NextResponse = CreateResponse(Result.Success, clients);
+    tunnel.NextResponse = CreateResponse(Result.Success, clients, Json.ListClientListItem);
     await client.GetClientsAsync(CancellationToken.None);
     Assert.That(tunnel.LastRequest!.Method, Is.EqualTo("GET"));
     Assert.That(tunnel.LastRequest.Path, Is.EqualTo("/api/v1/clients"));
@@ -426,7 +427,7 @@ public class ApiClientTests
   {
     var (client, tunnel) = CreateClient();
     var recordings = new List<RecordingSegmentDto>();
-    tunnel.NextResponse = CreateResponse(Result.Success, recordings);
+    tunnel.NextResponse = CreateResponse(Result.Success, recordings, Json.ListRecordingSegmentDto);
     var cameraId = Guid.NewGuid();
     await client.GetRecordingsAsync(cameraId, 1000, 2000, "sub", CancellationToken.None);
     Assert.That(tunnel.LastRequest!.Path, Does.Contain($"/api/v1/recordings/{cameraId}"));
@@ -448,7 +449,7 @@ public class ApiClientTests
   {
     var (client, tunnel) = CreateClient();
     tunnel.NextResponse = CreateResponse(Result.Success,
-      new TimelineResponse { Spans = [], Events = [] });
+      new TimelineResponse { Spans = [], Events = [] }, Json.TimelineResponse);
     var cameraId = Guid.NewGuid();
     await client.GetTimelineAsync(cameraId, 1000, 2000, "main", CancellationToken.None);
     Assert.That(tunnel.LastRequest!.Path, Does.Contain($"/api/v1/recordings/{cameraId}/timeline"));
@@ -509,7 +510,7 @@ public class ApiClientTests
   {
     var (client, tunnel) = CreateClient();
     var discovered = new List<DiscoveredCameraDto>();
-    tunnel.NextResponse = CreateResponse(Result.Success, discovered);
+    tunnel.NextResponse = CreateResponse(Result.Success, discovered, Json.ListDiscoveredCameraDto);
     await client.DiscoverAsync(new DiscoveryRequest { Subnets = ["192.168.1.0/24"] }, CancellationToken.None);
     Assert.That(tunnel.LastRequest!.Method, Is.EqualTo("POST"));
     Assert.That(tunnel.LastRequest.Path, Is.EqualTo("/api/v1/discovery"));
@@ -531,7 +532,7 @@ public class ApiClientTests
   {
     var tunnel = new RequestCapturingTunnel { GenerationValue = 1 };
     var client = new ApiClient(tunnel, NullLogger<ApiClient>.Instance);
-    tunnel.NextResponse = CreateResponse(Result.Success, new HealthResponse { Status = "healthy", Uptime = 0, Version = "1" });
+    tunnel.NextResponse = CreateResponse(Result.Success, new HealthResponse { Status = "healthy", Uptime = 0, Version = "1" }, Json.HealthResponse);
     tunnel.IncrementGenerationOnRead = true;
 
     var result = await client.GetHealthAsync(CancellationToken.None);

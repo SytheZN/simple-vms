@@ -27,24 +27,23 @@ public sealed partial class FilesystemPlugin : IPluginSettings
     }
   ];
 
-  public IReadOnlyDictionary<string, object> GetValues() =>
-    new Dictionary<string, object>
+  public IReadOnlyDictionary<string, string> GetValues() =>
+    new Dictionary<string, string>
     {
       ["path"] = _config.Get("path", Path.Combine(_environment.DataPath, "recordings"))
     };
 
-  public OneOf<Success, Error> ValidateValue(string key, object value)
+  public OneOf<Success, Error> ValidateValue(string key, string value)
   {
     if (key != "path")
       return new Success();
 
-    var str = value?.ToString();
-    if (string.IsNullOrWhiteSpace(str))
+    if (string.IsNullOrWhiteSpace(value))
       return new Error(Result.BadRequest,
         new DebugTag(ModuleIds.PluginFilesystemStorage, 0x0010),
         "Recordings path is required");
 
-    if (str.IndexOfAny(Path.GetInvalidPathChars()) >= 0)
+    if (value.IndexOfAny(Path.GetInvalidPathChars()) >= 0)
       return new Error(Result.BadRequest,
         new DebugTag(ModuleIds.PluginFilesystemStorage, 0x0011),
         "Path contains invalid characters");
@@ -52,7 +51,7 @@ public sealed partial class FilesystemPlugin : IPluginSettings
     return new Success();
   }
 
-  public OneOf<Success, Error> ApplyValues(IReadOnlyDictionary<string, object> values)
+  public OneOf<Success, Error> ApplyValues(IReadOnlyDictionary<string, string> values)
   {
     foreach (var (key, value) in values)
     {
@@ -61,7 +60,7 @@ public sealed partial class FilesystemPlugin : IPluginSettings
     }
 
     if (values.TryGetValue("path", out var path))
-      _config.Set("path", path.ToString()!);
+      _config.Set("path", path);
 
     return new Success();
   }

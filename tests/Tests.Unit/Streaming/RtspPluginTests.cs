@@ -81,8 +81,8 @@ public class RtspPluginTests
 
   private sealed class FakeConfig : IConfig
   {
-    public T Get<T>(string key, T defaultValue) => defaultValue;
-    public void Set<T>(string key, T value) { }
+    public string Get(string key, string defaultValue) => defaultValue;
+    public void Set(string key, string value) { }
   }
 
   private sealed class FakeEnvironment : IServerEnvironment

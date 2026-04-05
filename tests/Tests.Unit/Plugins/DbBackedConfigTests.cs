@@ -8,13 +8,13 @@ public class DbBackedConfigTests
 {
   /// <summary>
   /// SCENARIO:
-  /// Config repo has a stored JSON string value for a key
+  /// Config repo has a stored string value for a key
   ///
   /// ACTION:
   /// Call Get with the key
   ///
   /// EXPECTED RESULT:
-  /// Returns the deserialized value
+  /// Returns the stored value
   /// </summary>
   [Test]
   public void Get_ExistingKey_ReturnsStoredValue()
@@ -22,7 +22,7 @@ public class DbBackedConfigTests
     var repo = new FakeConfigRepo();
     repo.Store["test-plugin"] = new Dictionary<string, string>
     {
-      ["mykey"] = "\"hello\""
+      ["mykey"] = "hello"
     };
     var config = new DbBackedConfig(repo, "test-plugin");
 
@@ -47,9 +47,9 @@ public class DbBackedConfigTests
     var repo = new FakeConfigRepo();
     var config = new DbBackedConfig(repo, "test-plugin");
 
-    var result = config.Get("missing", 42);
+    var result = config.Get("missing", "fallback");
 
-    Assert.That(result, Is.EqualTo(42));
+    Assert.That(result, Is.EqualTo("fallback"));
   }
 
   /// <summary>
@@ -106,10 +106,10 @@ public class DbBackedConfigTests
   /// Call Set, then read back from the repo
   ///
   /// EXPECTED RESULT:
-  /// The repo contains the JSON-serialized value
+  /// The repo contains the raw string value
   /// </summary>
   [Test]
-  public void Set_StoresSerializedValue()
+  public void Set_StoresValue()
   {
     var repo = new FakeConfigRepo();
     var config = new DbBackedConfig(repo, "test-plugin");
@@ -117,51 +117,52 @@ public class DbBackedConfigTests
     config.Set("path", "/data/recordings");
 
     Assert.That(repo.LastSetKey, Is.EqualTo("path"));
-    Assert.That(repo.LastSetValue, Is.EqualTo("\"/data/recordings\""));
+    Assert.That(repo.LastSetValue, Is.EqualTo("/data/recordings"));
   }
 
   /// <summary>
   /// SCENARIO:
-  /// An integer value is set via the config
+  /// A string value is set and then retrieved
   ///
   /// ACTION:
-  /// Call Set with an integer, then Get it back
+  /// Call Set then Get
   ///
   /// EXPECTED RESULT:
   /// Round-trips correctly
   /// </summary>
   [Test]
-  public void Set_Integer_RoundTrips()
+  public void Set_String_RoundTrips()
   {
     var repo = new FakeConfigRepo();
     var config = new DbBackedConfig(repo, "test-plugin");
 
-    config.Set("port", 8080);
+    config.Set("port", "8080");
 
-    var result = config.Get("port", 0);
-    Assert.That(result, Is.EqualTo(8080));
+    var result = config.Get("port", "0");
+    Assert.That(result, Is.EqualTo("8080"));
   }
 
   /// <summary>
   /// SCENARIO:
-  /// A boolean value is set via the config
+  /// Multiple keys are set and retrieved
   ///
   /// ACTION:
-  /// Call Set with a boolean, then Get it back
+  /// Set two keys, then Get both back
   ///
   /// EXPECTED RESULT:
-  /// Round-trips correctly
+  /// Both values round-trip correctly
   /// </summary>
   [Test]
-  public void Set_Boolean_RoundTrips()
+  public void Set_MultipleKeys_RoundTrip()
   {
     var repo = new FakeConfigRepo();
     var config = new DbBackedConfig(repo, "test-plugin");
 
-    config.Set("enabled", true);
+    config.Set("enabled", "true");
+    config.Set("name", "test");
 
-    var result = config.Get("enabled", false);
-    Assert.That(result, Is.True);
+    Assert.That(config.Get("enabled", "false"), Is.EqualTo("true"));
+    Assert.That(config.Get("name", ""), Is.EqualTo("test"));
   }
 
   private sealed class FakeConfigRepo : IConfigRepository

@@ -34,8 +34,8 @@ public class FakeApiClient : IApiClient
   public virtual Task<OneOf<IReadOnlyList<PluginListItem>, Error>> GetPluginsAsync(string? ty, CancellationToken ct) => throw new NotImplementedException();
   public virtual Task<OneOf<PluginListItem, Error>> GetPluginAsync(string id, CancellationToken ct) => throw new NotImplementedException();
   public virtual Task<OneOf<IReadOnlyList<SettingGroup>, Error>> GetPluginConfigSchemaAsync(string id, CancellationToken ct) => throw new NotImplementedException();
-  public virtual Task<OneOf<IReadOnlyDictionary<string, System.Text.Json.JsonElement>, Error>> GetPluginConfigAsync(string id, CancellationToken ct) => throw new NotImplementedException();
-  public virtual Task<OneOf<Success, Error>> UpdatePluginConfigAsync(string id, Dictionary<string, System.Text.Json.JsonElement> v, CancellationToken ct) => throw new NotImplementedException();
+  public virtual Task<OneOf<IReadOnlyDictionary<string, string>, Error>> GetPluginConfigAsync(string id, CancellationToken ct) => throw new NotImplementedException();
+  public virtual Task<OneOf<Success, Error>> UpdatePluginConfigAsync(string id, Dictionary<string, string> v, CancellationToken ct) => throw new NotImplementedException();
   public virtual Task<OneOf<Success, Error>> ValidatePluginFieldAsync(string id, ValidateFieldRequest r, CancellationToken ct) => throw new NotImplementedException();
   public virtual Task<OneOf<Success, Error>> StartPluginAsync(string id, CancellationToken ct) => throw new NotImplementedException();
   public virtual Task<OneOf<Success, Error>> StopPluginAsync(string id, CancellationToken ct) => throw new NotImplementedException();

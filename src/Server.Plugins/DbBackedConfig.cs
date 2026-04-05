@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Shared.Models;
 
 namespace Server.Plugins;
@@ -14,17 +13,16 @@ public sealed class DbBackedConfig : IConfig
     _pluginId = pluginId;
   }
 
-  public T Get<T>(string key, T defaultValue)
+  public string Get(string key, string defaultValue)
   {
     var result = _repo.GetAsync(_pluginId, key).GetAwaiter().GetResult();
     return result.Match(
-      value => value != null ? JsonSerializer.Deserialize<T>(value) ?? defaultValue : defaultValue,
+      value => value ?? defaultValue,
       _ => defaultValue);
   }
 
-  public void Set<T>(string key, T value)
+  public void Set(string key, string value)
   {
-    var json = JsonSerializer.Serialize(value);
-    _repo.SetAsync(_pluginId, key, json).GetAwaiter().GetResult();
+    _repo.SetAsync(_pluginId, key, value).GetAwaiter().GetResult();
   }
 }

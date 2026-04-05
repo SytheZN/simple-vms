@@ -49,7 +49,7 @@ public sealed class PluginService
     return settings.GetSchema().ToList();
   }
 
-  public OneOf<IReadOnlyDictionary<string, object>, Error> GetConfigValues(string id)
+  public OneOf<IReadOnlyDictionary<string, string>, Error> GetConfigValues(string id)
   {
     var entry = _host.Plugins.FirstOrDefault(p => p.Metadata.Id == id);
     if (entry == null)
@@ -68,7 +68,7 @@ public sealed class PluginService
   }
 
   public OneOf<Success, Error> ApplyConfigValues(
-    string id, IReadOnlyDictionary<string, object> values)
+    string id, IReadOnlyDictionary<string, string> values)
   {
     var entry = _host.Plugins.FirstOrDefault(p => p.Metadata.Id == id);
     if (entry == null)
@@ -86,7 +86,7 @@ public sealed class PluginService
     return settings.ApplyValues(values);
   }
 
-  public OneOf<Success, Error> ValidateField(string id, string key, object value)
+  public OneOf<Success, Error> ValidateField(string id, string key, string value)
   {
     var entry = _host.Plugins.FirstOrDefault(p => p.Metadata.Id == id);
     if (entry == null)

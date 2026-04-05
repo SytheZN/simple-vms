@@ -1,14 +1,16 @@
-using System.Diagnostics.CodeAnalysis;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Shared.Models;
 using Shared.Models.Dto;
 
-namespace Client.Core.Api;
+namespace Server.Core;
 
 [JsonSourceGenerationOptions(
   PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+[JsonSerializable(typeof(ResponseEnvelope))]
 [JsonSerializable(typeof(EnrollRequest))]
 [JsonSerializable(typeof(EnrollResponse))]
+[JsonSerializable(typeof(StartEnrollmentResponse))]
 [JsonSerializable(typeof(CameraListItem))]
 [JsonSerializable(typeof(IReadOnlyList<CameraListItem>))]
 [JsonSerializable(typeof(List<CameraListItem>))]
@@ -20,7 +22,6 @@ namespace Client.Core.Api;
 [JsonSerializable(typeof(IReadOnlyList<ClientListItem>))]
 [JsonSerializable(typeof(List<ClientListItem>))]
 [JsonSerializable(typeof(UpdateClientRequest))]
-[JsonSerializable(typeof(StartEnrollmentResponse))]
 [JsonSerializable(typeof(DiscoveryRequest))]
 [JsonSerializable(typeof(DiscoveredCameraDto))]
 [JsonSerializable(typeof(IReadOnlyList<DiscoveredCameraDto>))]
@@ -29,12 +30,15 @@ namespace Client.Core.Api;
 [JsonSerializable(typeof(IReadOnlyList<RecordingSegmentDto>))]
 [JsonSerializable(typeof(List<RecordingSegmentDto>))]
 [JsonSerializable(typeof(TimelineResponse))]
+[JsonSerializable(typeof(TimelineSpan))]
+[JsonSerializable(typeof(TimelineEvent))]
 [JsonSerializable(typeof(EventDto))]
 [JsonSerializable(typeof(IReadOnlyList<EventDto>))]
 [JsonSerializable(typeof(List<EventDto>))]
 [JsonSerializable(typeof(RetentionPolicy))]
 [JsonSerializable(typeof(HealthResponse))]
 [JsonSerializable(typeof(StorageResponse))]
+[JsonSerializable(typeof(StorageStoreDto))]
 [JsonSerializable(typeof(ServerSettings))]
 [JsonSerializable(typeof(PluginListItem))]
 [JsonSerializable(typeof(IReadOnlyList<PluginListItem>))]
@@ -42,16 +46,14 @@ namespace Client.Core.Api;
 [JsonSerializable(typeof(SettingGroup))]
 [JsonSerializable(typeof(IReadOnlyList<SettingGroup>))]
 [JsonSerializable(typeof(List<SettingGroup>))]
-[JsonSerializable(typeof(Dictionary<string, string>))]
-[JsonSerializable(typeof(IReadOnlyDictionary<string, string>))]
+[JsonSerializable(typeof(SettingField))]
 [JsonSerializable(typeof(ValidateFieldRequest))]
 [JsonSerializable(typeof(CredentialsDto))]
 [JsonSerializable(typeof(StreamProfileDto))]
 [JsonSerializable(typeof(RetentionOverride))]
 [JsonSerializable(typeof(UpdateStreamConfig))]
-[JsonSerializable(typeof(StorageStoreDto))]
-[JsonSerializable(typeof(TimelineSpan))]
-[JsonSerializable(typeof(TimelineEvent))]
-[JsonSerializable(typeof(SettingField))]
-[ExcludeFromCodeCoverage]
-internal partial class ClientJsonContext : JsonSerializerContext;
+[JsonSerializable(typeof(Dictionary<string, string>))]
+[JsonSerializable(typeof(IReadOnlyDictionary<string, string>))]
+[JsonSerializable(typeof(string[]))]
+[JsonSerializable(typeof(JsonElement))]
+public partial class ServerJsonContext : JsonSerializerContext;

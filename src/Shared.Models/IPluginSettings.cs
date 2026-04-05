@@ -3,9 +3,9 @@ namespace Shared.Models;
 public interface IPluginSettings
 {
   IReadOnlyList<SettingGroup> GetSchema();
-  IReadOnlyDictionary<string, object> GetValues();
-  OneOf<Success, Error> ValidateValue(string key, object value);
-  OneOf<Success, Error> ApplyValues(IReadOnlyDictionary<string, object> values);
+  IReadOnlyDictionary<string, string> GetValues();
+  OneOf<Success, Error> ValidateValue(string key, string value);
+  OneOf<Success, Error> ApplyValues(IReadOnlyDictionary<string, string> values);
 }
 
 public record SettingGroup
@@ -24,6 +24,6 @@ public record SettingField
   public required string Label { get; init; }
   public required string Type { get; init; }
   public string? Description { get; init; }
-  public object? DefaultValue { get; init; }
+  public string? DefaultValue { get; init; }
   public bool Required { get; init; }
 }

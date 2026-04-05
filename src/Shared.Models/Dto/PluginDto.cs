@@ -15,5 +15,5 @@ public sealed class PluginListItem
 public sealed class ValidateFieldRequest
 {
   public required string Key { get; init; }
-  public required object Value { get; init; }
+  public required string Value { get; init; }
 }

@@ -1,5 +1,3 @@
-using System.Linq.Expressions;
-using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Shared.Models;
 namespace Data.Sqlite;
@@ -16,9 +14,9 @@ internal sealed class DataStore : IDataStore
     _pluginId = pluginId;
   }
 
-  public Task<OneOf<T?, Error>> GetAsync<T>(string key, CancellationToken ct)
+  public Task<OneOf<string?, Error>> GetAsync(string key, CancellationToken ct)
   {
-    return _queue.ExecuteAsync<OneOf<T?, Error>>(conn =>
+    return _queue.ExecuteAsync<OneOf<string?, Error>>(conn =>
     {
       try
       {
@@ -26,8 +24,7 @@ internal sealed class DataStore : IDataStore
         cmd.CommandText = "SELECT value FROM plugin_data WHERE plugin_id = @pluginId AND key = @key";
         cmd.Parameters.AddWithValue("@pluginId", _pluginId);
         cmd.Parameters.AddWithValue("@key", key);
-        var result = cmd.ExecuteScalar() as string;
-        return result != null ? JsonSerializer.Deserialize<T>(result) : default;
+        return cmd.ExecuteScalar() as string;
       }
       catch (Exception ex)
       {
@@ -36,9 +33,9 @@ internal sealed class DataStore : IDataStore
     }, ct);
   }
 
-  public Task<OneOf<IReadOnlyList<KeyValuePair<string, T>>, Error>> GetAllAsync<T>(string? prefix, CancellationToken ct)
+  public Task<OneOf<IReadOnlyList<KeyValuePair<string, string>>, Error>> GetAllAsync(string? prefix, CancellationToken ct)
   {
-    return _queue.ExecuteAsync<OneOf<IReadOnlyList<KeyValuePair<string, T>>, Error>>(conn =>
+    return _queue.ExecuteAsync<OneOf<IReadOnlyList<KeyValuePair<string, string>>, Error>>(conn =>
     {
       try
       {
@@ -59,13 +56,12 @@ internal sealed class DataStore : IDataStore
         }
 
         using var reader = cmd.ExecuteReader();
-        var results = new List<KeyValuePair<string, T>>();
+        var results = new List<KeyValuePair<string, string>>();
         while (reader.Read())
         {
           var key = reader.GetString(0);
-          var value = JsonSerializer.Deserialize<T>(reader.GetString(1));
-          if (value != null)
-            results.Add(new KeyValuePair<string, T>(key, value));
+          var value = reader.GetString(1);
+          results.Add(new KeyValuePair<string, string>(key, value));
         }
         return results;
       }
@@ -76,7 +72,7 @@ internal sealed class DataStore : IDataStore
     }, ct);
   }
 
-  public Task<OneOf<Success, Error>> SetAsync<T>(string key, T value, CancellationToken ct)
+  public Task<OneOf<Success, Error>> SetAsync(string key, string value, CancellationToken ct)
   {
     return _queue.ExecuteAsync<OneOf<Success, Error>>(conn =>
     {
@@ -89,7 +85,7 @@ internal sealed class DataStore : IDataStore
           """;
         cmd.Parameters.AddWithValue("@pluginId", _pluginId);
         cmd.Parameters.AddWithValue("@key", key);
-        cmd.Parameters.AddWithValue("@value", JsonSerializer.Serialize(value));
+        cmd.Parameters.AddWithValue("@value", value);
         cmd.ExecuteNonQuery();
         return new Success();
       }
@@ -120,11 +116,9 @@ internal sealed class DataStore : IDataStore
     }, ct);
   }
 
-  public Task<OneOf<IReadOnlyList<KeyValuePair<string, T>>, Error>> QueryAsync<T>(
-    Expression<Func<T, bool>> predicate, CancellationToken ct)
+  public Task<OneOf<IReadOnlyList<KeyValuePair<string, string>>, Error>> QueryAsync(Func<string, bool> predicate, CancellationToken ct)
   {
-    var compiled = predicate.Compile();
-    return _queue.ExecuteAsync<OneOf<IReadOnlyList<KeyValuePair<string, T>>, Error>>(conn =>
+    return _queue.ExecuteAsync<OneOf<IReadOnlyList<KeyValuePair<string, string>>, Error>>(conn =>
     {
       try
       {
@@ -133,13 +127,13 @@ internal sealed class DataStore : IDataStore
         cmd.Parameters.AddWithValue("@pluginId", _pluginId);
 
         using var reader = cmd.ExecuteReader();
-        var results = new List<KeyValuePair<string, T>>();
+        var results = new List<KeyValuePair<string, string>>();
         while (reader.Read())
         {
           var key = reader.GetString(0);
-          var value = JsonSerializer.Deserialize<T>(reader.GetString(1));
-          if (value != null && compiled(value))
-            results.Add(new KeyValuePair<string, T>(key, value));
+          var value = reader.GetString(1);
+          if (predicate(value))
+            results.Add(new KeyValuePair<string, string>(key, value));
         }
         return results;
       }

@@ -1,8 +1,8 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Threading.Channels;
 using MessagePack;
 using Microsoft.Extensions.Logging;
+using Server.Core;
 using Server.Core.Routing;
 using Shared.Models;
 using Shared.Protocol;
@@ -11,12 +11,6 @@ namespace Server.Tunnel.Handlers;
 
 internal static class ApiHandler
 {
-  private static readonly JsonSerializerOptions JsonOptions = new()
-  {
-    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
-  };
-
   public static async Task RunAsync(
     ChannelReader<MuxMessage> reader,
     Func<ushort, ReadOnlyMemory<byte>, CancellationToken, Task> writeFn,
@@ -34,9 +28,7 @@ internal static class ApiHandler
       Method = request.Method,
       Path = request.Path,
       Services = services,
-      BodyDeserializer = request.Body is { Length: > 0 }
-        ? type => JsonSerializer.Deserialize(request.Body, type, JsonOptions)
-        : null
+      BodyBytes = request.Body is { Length: > 0 } ? request.Body : null
     };
 
     ResponseEnvelope envelope;
@@ -73,8 +65,8 @@ internal static class ApiHandler
       Result = (byte)envelope.Result,
       DebugTag = envelope.DebugTag.Value,
       Message = envelope.Message,
-      Body = envelope.Body != null
-        ? JsonSerializer.SerializeToUtf8Bytes(envelope.Body, envelope.Body.GetType(), JsonOptions)
+      Body = envelope.Body.HasValue
+        ? JsonSerializer.SerializeToUtf8Bytes(envelope.Body.Value, ServerJsonContext.Default.JsonElement)
         : null
     };
 
