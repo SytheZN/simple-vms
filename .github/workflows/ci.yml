@@ -324,8 +324,8 @@ jobs:
           needs.build.outputs.is_main == 'true' &&
           needs.build.outputs.is_tagged != 'true'
         run: |
-          gh release list --json tagName,isPrerelease \
-            --jq '[.[] | select(.isPrerelease) | select(.tagName | startswith("pre/"))] | sort_by(.tagName) | reverse | .[3:][] | .tagName' \
+          gh release list --json tagName,isPrerelease,createdAt \
+            --jq '[.[] | select(.isPrerelease) | select(.tagName | startswith("pre/"))] | sort_by(.createdAt) | reverse | .[3:][] | .tagName' \
             | while read -r tag; do
               gh release delete "$tag" --yes
               git push origin ":refs/tags/$tag" 2>&1 || true
