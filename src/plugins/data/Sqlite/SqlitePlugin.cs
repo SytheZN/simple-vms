@@ -20,14 +20,14 @@ public sealed partial class SqliteProvider : IPlugin
     _config = context.Config;
     _environment = context.Environment;
     SQLitePCL.Batteries.Init();
-    var directory = _config.Get("directory", _environment.DataPath);
-    var filename = _config.Get("filename", "server.db");
-    InitializeProvider(Path.Combine(directory, filename));
     return new Success();
   }
 
   public async Task<OneOf<Success, Error>> StartAsync(CancellationToken ct)
   {
+    var directory = _config.Get("directory", _environment.DataPath);
+    var filename = _config.Get("filename", "server.db");
+    InitializeProvider(Path.Combine(directory, filename));
     return await MigrateAsync(ct);
   }
 

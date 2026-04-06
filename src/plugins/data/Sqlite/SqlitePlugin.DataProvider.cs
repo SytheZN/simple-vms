@@ -35,6 +35,27 @@ public sealed partial class SqliteProvider : IDataProvider
     _connection = new SqliteConnection(connectionString);
     _connection.Open();
 
+    using (var pragma = _connection.CreateCommand())
+    {
+      pragma.CommandText = "PRAGMA locking_mode = EXCLUSIVE";
+      pragma.ExecuteNonQuery();
+    }
+    using (var pragma = _connection.CreateCommand())
+    {
+      pragma.CommandText = "PRAGMA journal_mode = WAL";
+      pragma.ExecuteNonQuery();
+    }
+    using (var pragma = _connection.CreateCommand())
+    {
+      pragma.CommandText = "PRAGMA synchronous = NORMAL";
+      pragma.ExecuteNonQuery();
+    }
+    using (var pragma = _connection.CreateCommand())
+    {
+      pragma.CommandText = "PRAGMA foreign_keys = ON";
+      pragma.ExecuteNonQuery();
+    }
+
     _queue.Start(work => work(_connection));
 
     Cameras = new CameraRepository(_queue);
@@ -59,10 +80,6 @@ public sealed partial class SqliteProvider : IDataProvider
       {
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-        PRAGMA journal_mode = WAL;
-        PRAGMA synchronous = NORMAL;
-        PRAGMA foreign_keys = ON;
-
         CREATE TABLE IF NOT EXISTS cameras (
           id TEXT NOT NULL PRIMARY KEY,
           name TEXT NOT NULL,
