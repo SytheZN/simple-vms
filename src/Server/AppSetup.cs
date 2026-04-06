@@ -99,6 +99,7 @@ public static class AppSetup
   }
 
   [RequiresUnreferencedCode("Plugin initialization uses dynamic type instantiation")]
+  [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]
   public static async Task InitializeAsync(WebApplication app)
   {
     if (app.Environment.IsDevelopment())
@@ -154,6 +155,7 @@ public static class AppSetup
   }
 
   [RequiresUnreferencedCode("Plugin initialization uses dynamic type instantiation")]
+  [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]
   internal static async Task CompleteStartupAsync(WebApplication app)
   {
     var pluginHost = app.Services.GetRequiredService<IPluginHost>();
@@ -230,6 +232,7 @@ public static class AppSetup
   }
 
   [RequiresUnreferencedCode("Plugin initialization uses dynamic type instantiation")]
+  [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]
   private static async Task PollForCertsAsync(
     WebApplication app, CertificateManager certManager, SystemHealth systemHealth)
   {

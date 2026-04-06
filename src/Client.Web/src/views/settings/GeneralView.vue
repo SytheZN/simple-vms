@@ -62,7 +62,7 @@ onMounted(load)
 
     <section v-if="health" class="space-y-4">
       <h2 class="section-subheading">System Health</h2>
-      <div class="grid grid-cols-3 gap-4">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div class="card p-4 space-y-1">
           <span class="section-subheading">Status</span>
           <span class="block text-2xl font-bold text-text capitalize">{{ health.status }}</span>
@@ -80,7 +80,7 @@ onMounted(load)
 
     <section class="space-y-4">
       <h2 class="section-subheading">Appearance</h2>
-      <div class="card p-6 space-y-4 max-w-lg">
+      <div class="card p-6 space-y-4">
         <div class="space-y-1">
           <label class="label">Theme</label>
           <div class="flex gap-2">
@@ -112,7 +112,7 @@ onMounted(load)
 
     <section class="space-y-4">
       <h2 class="section-subheading">Server</h2>
-      <div class="card p-6 space-y-4 max-w-lg">
+      <div class="card p-6 space-y-4">
         <div class="space-y-1">
           <label class="label">Server Name</label>
           <input class="input" v-model="settings.serverName" placeholder="My VMS" />

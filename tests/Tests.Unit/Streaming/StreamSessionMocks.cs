@@ -226,6 +226,11 @@ internal sealed class StubSegmentRepository(
 
   public Task<OneOf<Success, Error>> DeleteBatchAsync(IReadOnlyList<Guid> ids, CancellationToken ct) =>
     Task.FromResult<OneOf<Success, Error>>(new Success());
+
+  public Task<OneOf<IReadOnlyList<StreamStorageUsage>, Error>> GetSizeBreakdownAsync(CancellationToken ct) =>
+    Task.FromResult(
+      OneOf<IReadOnlyList<StreamStorageUsage>, Error>.FromT0(
+        (IReadOnlyList<StreamStorageUsage>)Array.Empty<StreamStorageUsage>()));
 }
 
 internal sealed class StubStorageProvider : IStorageProvider

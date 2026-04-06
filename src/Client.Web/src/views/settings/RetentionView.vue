@@ -51,7 +51,7 @@ onMounted(load)
 
     <section class="space-y-4">
       <h2 class="section-subheading">Recording</h2>
-      <div class="card p-6 space-y-4 max-w-lg">
+      <div class="card p-6 space-y-4">
         <div class="space-y-1">
           <label class="label">Segment Duration (seconds)</label>
           <input class="input" type="number" v-model.number="settings.segmentDuration" placeholder="300" />
@@ -61,7 +61,7 @@ onMounted(load)
 
     <section class="space-y-4">
       <h2 class="section-subheading">Retention Policy</h2>
-      <div class="card p-6 space-y-4 max-w-lg">
+      <div class="card p-6 space-y-4">
         <div class="space-y-1">
           <label class="label">Mode</label>
           <select class="input" v-model="retention.mode">
@@ -73,20 +73,6 @@ onMounted(load)
         <div class="space-y-1">
           <label class="label">Value</label>
           <input class="input" type="number" v-model.number="retention.value" />
-        </div>
-      </div>
-    </section>
-
-    <section class="space-y-4">
-      <h2 class="section-subheading">Default Credentials</h2>
-      <div class="card p-6 space-y-4 max-w-lg">
-        <div class="space-y-1">
-          <label class="label">Username</label>
-          <input class="input" :value="settings.defaultCredentials?.username" @input="settings.defaultCredentials = { username: ($event.target as HTMLInputElement).value, password: settings.defaultCredentials?.password ?? '' }" placeholder="admin" />
-        </div>
-        <div class="space-y-1">
-          <label class="label">Password</label>
-          <input class="input" type="password" :value="settings.defaultCredentials?.password" @input="settings.defaultCredentials = { username: settings.defaultCredentials?.username ?? '', password: ($event.target as HTMLInputElement).value }" />
         </div>
       </div>
     </section>

@@ -193,12 +193,7 @@ onUnmounted(() => {
 
 <template>
   <div class="space-y-4">
-    <div class="flex items-center gap-3">
-      <router-link to="/" class="btn btn-ghost btn-sm">
-        <i class="ph ph-arrow-left icon-sm"></i>
-      </router-link>
-      <h1 v-if="camera" class="section-heading mb-0">{{ camera.name }}</h1>
-    </div>
+    <h1 v-if="camera" class="section-heading">{{ camera.name }}</h1>
 
     <div v-if="error || streamer.error.value" class="toast toast-danger">
       <i class="ph ph-x-circle icon-xl"></i>

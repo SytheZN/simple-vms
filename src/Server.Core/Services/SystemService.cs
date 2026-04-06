@@ -27,6 +27,22 @@ public sealed class SystemService
 
   public async Task<OneOf<StorageResponse, Error>> GetStorageAsync(CancellationToken ct)
   {
+    IReadOnlyList<StorageBreakdownItem>? breakdown = null;
+    try
+    {
+      var result = await _plugins.DataProvider.Segments.GetSizeBreakdownAsync(ct);
+      if (result.IsT0)
+        breakdown = result.AsT0.Select(u => new StorageBreakdownItem
+        {
+          CameraId = u.CameraId,
+          CameraName = u.CameraName,
+          StreamProfile = u.StreamProfile,
+          SizeBytes = u.SizeBytes,
+          DurationMicros = u.DurationMicros
+        }).ToList();
+    }
+    catch {}
+
     var stores = new List<StorageStoreDto>();
     foreach (var provider in _plugins.StorageProviders)
     {
@@ -38,7 +54,8 @@ public sealed class SystemService
           TotalBytes = stats.TotalBytes,
           UsedBytes = stats.UsedBytes,
           FreeBytes = stats.FreeBytes,
-          RecordingBytes = stats.RecordingBytes
+          RecordingBytes = stats.RecordingBytes,
+          Breakdown = breakdown
         });
       }
       catch
@@ -69,8 +86,7 @@ public sealed class SystemService
       SegmentDuration = int.TryParse(settings.GetValueOrDefault("server.segmentDuration"), out var sd)
         ? sd : null,
       DiscoverySubnets = settings.GetValueOrDefault("server.discoverySubnets")
-        ?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
-      DefaultCredentials = ReadCredentials(settings)
+        ?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
     };
   }
 
@@ -99,31 +115,6 @@ public sealed class SystemService
         string.Join(',', request.DiscoverySubnets), ct);
       if (r.IsT1) return r.AsT1;
     }
-    if (request.DefaultCredentials != null)
-    {
-      var r = await _plugins.DataProvider.Config.SetAsync("server", "server.defaultCredentials.username",
-        request.DefaultCredentials.Username, ct);
-      if (r.IsT1) return r.AsT1;
-      r = await _plugins.DataProvider.Config.SetAsync("server", "server.defaultCredentials.password",
-        request.DefaultCredentials.Password, ct);
-      if (r.IsT1) return r.AsT1;
-    }
-
     return new Success();
-  }
-
-  private static CredentialsDto? ReadCredentials(IReadOnlyDictionary<string, string> settings)
-  {
-    var username = settings.GetValueOrDefault("server.defaultCredentials.username");
-    var password = settings.GetValueOrDefault("server.defaultCredentials.password");
-
-    if (username == null && password == null)
-      return null;
-
-    return new CredentialsDto
-    {
-      Username = username ?? "",
-      Password = password ?? ""
-    };
   }
 }

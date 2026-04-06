@@ -47,7 +47,7 @@ onMounted(async () => {
       <div class="text-lg font-bold text-primary px-3 py-3 mb-2">
         <i class="ph ph-shield-check icon-md"></i> VMS
       </div>
-      <router-link to="/" class="nav-link" active-class="nav-link-active" exact>
+      <router-link to="/gallery" class="nav-link" :class="{ 'nav-link-active': route.path.startsWith('/gallery') }">
         <i class="ph ph-squares-four icon-sm"></i> Gallery
       </router-link>
       <router-link to="/events" class="nav-link" active-class="nav-link-active">

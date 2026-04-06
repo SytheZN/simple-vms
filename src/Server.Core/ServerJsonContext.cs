@@ -39,6 +39,7 @@ namespace Server.Core;
 [JsonSerializable(typeof(HealthResponse))]
 [JsonSerializable(typeof(StorageResponse))]
 [JsonSerializable(typeof(StorageStoreDto))]
+[JsonSerializable(typeof(StorageBreakdownItem))]
 [JsonSerializable(typeof(ServerSettings))]
 [JsonSerializable(typeof(PluginListItem))]
 [JsonSerializable(typeof(IReadOnlyList<PluginListItem>))]

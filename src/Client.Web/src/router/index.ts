@@ -5,8 +5,9 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/setup', name: 'setup', component: SetupView },
-    { path: '/', name: 'gallery', component: () => import('@/views/GalleryView.vue') },
-    { path: '/camera/:id', name: 'camera', component: () => import('@/views/CameraView.vue') },
+    { path: '/', redirect: '/gallery' },
+    { path: '/gallery', name: 'gallery', component: () => import('@/views/GalleryView.vue') },
+    { path: '/gallery/:id', name: 'camera', component: () => import('@/views/CameraView.vue') },
     { path: '/events', name: 'events', component: () => import('@/views/EventsView.vue') },
     { path: '/clients', name: 'clients', component: () => import('@/views/EnrollmentView.vue') },
     { path: '/settings', redirect: '/settings/general' },

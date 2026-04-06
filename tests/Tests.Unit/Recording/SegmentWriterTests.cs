@@ -416,6 +416,8 @@ public class SegmentWriterTests
 
     public Task<OneOf<Success, Error>> DeleteBatchAsync(IReadOnlyList<Guid> ids, CancellationToken ct) =>
       throw new NotImplementedException();
+    public Task<OneOf<IReadOnlyList<StreamStorageUsage>, Error>> GetSizeBreakdownAsync(CancellationToken ct) =>
+      throw new NotImplementedException();
   }
 
   private sealed class FakeKeyframeRepository : IKeyframeRepository

@@ -396,6 +396,8 @@ public class RetentionEngineTests
         list.RemoveAll(s => ids.Contains(s.Id));
       return Task.FromResult<OneOf<Success, Error>>(new Success());
     }
+    public Task<OneOf<IReadOnlyList<StreamStorageUsage>, Error>> GetSizeBreakdownAsync(CancellationToken ct) =>
+      throw new NotImplementedException();
   }
 
   private sealed class FakeKeyframeRepo : IKeyframeRepository

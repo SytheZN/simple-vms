@@ -107,39 +107,12 @@ onUnmounted(() => {
 <template>
   <div class="space-y-8">
     <h1 class="section-heading">Clients</h1>
-    <div>
-      <button v-if="!enrolling" class="btn btn-primary" @click="startEnrollment">
-        <i class="ph ph-plus icon-sm"></i> Add Client
-      </button>
-    </div>
-
     <div v-if="error" class="toast toast-danger">
       <i class="ph ph-x-circle icon-xl"></i>
       <div>
         <span class="font-medium">Error</span>
         <p>{{ error }}</p>
       </div>
-    </div>
-
-    <div v-if="enrolling" class="card p-6 space-y-4 max-w-md">
-      <h2 class="text-lg font-semibold text-text flex items-center gap-2">
-        <i class="ph ph-qr-code icon-md text-primary"></i> Enroll Client
-      </h2>
-      <p class="text-sm text-text-muted">Scan the QR code with a mobile client, or enter the token manually on a desktop client.</p>
-
-      <div v-if="qrDataUrl" class="flex justify-center">
-        <img :src="qrDataUrl" alt="Enrollment QR code" class="rounded-lg" />
-      </div>
-
-      <div class="flex items-center justify-center gap-2 text-2xl font-bold font-mono text-text tracking-widest">
-        {{ token }}
-      </div>
-
-      <p class="text-xs text-text-muted text-center">Token is valid while this panel is open.</p>
-
-      <button class="btn btn-secondary w-full" @click="cancelEnrollment">
-        <i class="ph ph-x icon-sm"></i> Cancel
-      </button>
     </div>
 
     <div class="card overflow-hidden">
@@ -150,7 +123,11 @@ onUnmounted(() => {
             <th>Status</th>
             <th>Enrolled</th>
             <th>Last Seen</th>
-            <th></th>
+            <th class="text-right w-0 whitespace-nowrap">
+              <button class="btn btn-primary btn-sm" @click="startEnrollment">
+                <i class="ph ph-plus icon-sm"></i> Add Client
+              </button>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -191,6 +168,31 @@ onUnmounted(() => {
           </tr>
         </tbody>
       </table>
+    </div>
+  </div>
+
+  <div v-if="enrolling" class="modal-container" @click.self="cancelEnrollment">
+    <div class="modal-backdrop"></div>
+    <div class="relative card p-6 max-w-md w-full shadow-modal space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="section-subheading flex items-center gap-2">
+          <i class="ph ph-qr-code icon-md text-primary"></i> Enroll Client
+        </h2>
+        <button class="btn btn-ghost btn-sm" @click="cancelEnrollment">
+          <i class="ph ph-x icon-sm"></i>
+        </button>
+      </div>
+      <p class="text-sm text-text-muted">Scan the QR code with a mobile client, or enter the token manually on a desktop client.</p>
+
+      <div v-if="qrDataUrl" class="flex justify-center">
+        <img :src="qrDataUrl" alt="Enrollment QR code" class="rounded-lg" />
+      </div>
+
+      <div class="flex items-center justify-center gap-2 text-2xl font-bold font-mono text-text tracking-widest">
+        {{ token }}
+      </div>
+
+      <p class="text-xs text-text-muted text-center">Token is valid while this panel is open.</p>
     </div>
   </div>
 </template>

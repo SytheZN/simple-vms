@@ -50,6 +50,7 @@ namespace Client.Core.Api;
 [JsonSerializable(typeof(RetentionOverride))]
 [JsonSerializable(typeof(UpdateStreamConfig))]
 [JsonSerializable(typeof(StorageStoreDto))]
+[JsonSerializable(typeof(StorageBreakdownItem))]
 [JsonSerializable(typeof(TimelineSpan))]
 [JsonSerializable(typeof(TimelineEvent))]
 [JsonSerializable(typeof(SettingField))]

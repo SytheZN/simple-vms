@@ -167,6 +167,46 @@ internal sealed class SegmentRepository : ISegmentRepository
     }, ct);
   }
 
+  public Task<OneOf<IReadOnlyList<StreamStorageUsage>, Error>> GetSizeBreakdownAsync(CancellationToken ct)
+  {
+    return _queue.ExecuteAsync<OneOf<IReadOnlyList<StreamStorageUsage>, Error>>(conn =>
+    {
+      try
+      {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+          SELECT c.id AS camera_id, c.name AS camera_name, s.profile,
+                 COALESCE(SUM(seg.size_bytes), 0) AS size_bytes,
+                 COALESCE(SUM(seg.end_time - seg.start_time), 0) AS duration_micros
+          FROM cameras c
+          JOIN streams s ON s.camera_id = c.id
+          LEFT JOIN segments seg ON seg.stream_id = s.id
+          GROUP BY c.id, c.name, s.profile
+          ORDER BY size_bytes DESC
+          """;
+        using var reader = cmd.ExecuteReader();
+        var results = new List<StreamStorageUsage>();
+        while (reader.Read())
+        {
+          results.Add(new StreamStorageUsage
+          {
+            CameraId = Guid.Parse(reader.GetString(reader.GetOrdinal("camera_id"))),
+            CameraName = reader.GetString(reader.GetOrdinal("camera_name")),
+            StreamProfile = reader.GetString(reader.GetOrdinal("profile")),
+            SizeBytes = reader.GetInt64(reader.GetOrdinal("size_bytes")),
+            DurationMicros = (ulong)reader.GetInt64(reader.GetOrdinal("duration_micros"))
+          });
+        }
+        return results;
+      }
+      catch (Exception ex)
+      {
+        return Error.Create(ModuleId, 0x000D, Result.InternalError,
+          $"Failed to get size breakdown: {ex.Message}");
+      }
+    }, ct);
+  }
+
   public Task<OneOf<Success, Error>> CreateAsync(Segment segment, CancellationToken ct)
   {
     return _queue.ExecuteAsync<OneOf<Success, Error>>(conn =>

@@ -169,6 +169,15 @@ export interface StorageStore {
   usedBytes: number
   freeBytes: number
   recordingBytes: number
+  breakdown?: StorageBreakdownItem[]
+}
+
+export interface StorageBreakdownItem {
+  cameraId: string
+  cameraName: string
+  streamProfile: string
+  sizeBytes: number
+  durationMicros: number
 }
 
 export interface ServerSettings {
@@ -176,7 +185,6 @@ export interface ServerSettings {
   externalEndpoint?: string
   segmentDuration?: number
   discoverySubnets?: string[]
-  defaultCredentials?: Credentials
 }
 
 export interface PluginListItem {

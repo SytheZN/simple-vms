@@ -41,7 +41,7 @@ public sealed partial class FilesystemPlugin : IStorageProvider
 
   public Task<StorageStats> GetStatsAsync(CancellationToken ct)
   {
-    var driveInfo = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(_rootPath))!);
+    var driveInfo = new DriveInfo(Path.GetFullPath(_rootPath));
     long recordingBytes = 0;
     if (Directory.Exists(_rootPath))
     {

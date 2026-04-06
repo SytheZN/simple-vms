@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Logging;
 using Server.Core;
 using Server.Plugins;
@@ -26,6 +27,7 @@ public sealed class StreamingService : IAsyncDisposable
     _logger = logger;
   }
 
+  [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]
   public async Task StartAsync(CancellationToken ct)
   {
     var dataProvider = _pluginHost.DataProvider;
@@ -80,6 +82,7 @@ public sealed class StreamingService : IAsyncDisposable
       _tapRegistry.Pipelines.Count);
   }
 
+  [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]
   private void WatchCameraAdded(CancellationToken ct)
   {
     _ = Task.Run(async () =>
@@ -110,6 +113,7 @@ public sealed class StreamingService : IAsyncDisposable
     }, ct);
   }
 
+  [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]
   private void WatchCameraConfigChanged(CancellationToken ct)
   {
     _ = Task.Run(async () =>
@@ -125,6 +129,7 @@ public sealed class StreamingService : IAsyncDisposable
     }, ct);
   }
 
+  [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]
   private async Task AddPipelinesForCameraAsync(Guid cameraId, CancellationToken ct)
   {
     var dataProvider = _pluginHost.DataProvider;
@@ -165,6 +170,7 @@ public sealed class StreamingService : IAsyncDisposable
     }
   }
 
+  [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]
   private async Task RetryConstructAsync(CameraPipeline pipeline, CancellationToken ct)
   {
     int[] delays = [1, 2, 4, 8, 15];
@@ -207,6 +213,7 @@ public sealed class StreamingService : IAsyncDisposable
     }
   }
 
+  [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]
   private async Task ReconcilePipelinesForCameraAsync(Guid cameraId, CancellationToken ct)
   {
     var dataProvider = _pluginHost.DataProvider;
@@ -262,6 +269,7 @@ public sealed class StreamingService : IAsyncDisposable
     await StopAsync();
   }
 
+  [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]
   private async Task RebuildPipelineAsync(Camera camera, CameraStream stream)
   {
     _logger.LogInformation(

@@ -33,6 +33,17 @@ const dialogProbing = ref(false)
 const dialogProbeError = ref('')
 const dialogAdding = ref(false)
 
+const onvifUsername = ref('')
+const onvifPassword = ref('')
+
+async function loadOnvifCreds() {
+  try {
+    const values = await api.plugins.configValues('onvif') as Record<string, string>
+    onvifUsername.value = values.username ?? ''
+    onvifPassword.value = values.password ?? ''
+  } catch {}
+}
+
 async function loadCameras() {
   loading.value = true
   try {
@@ -82,8 +93,8 @@ async function runDiscovery() {
 function openDialog(cam?: DiscoveredCamera) {
   dialogAddress.value = cam?.address ?? ''
   dialogName.value = cam?.name ?? ''
-  dialogUsername.value = ''
-  dialogPassword.value = ''
+  dialogUsername.value = cam?.name ? onvifUsername.value : ''
+  dialogPassword.value = cam?.name ? onvifPassword.value : ''
   dialogRtspPort.value = ''
   dialogProbe.value = null
   dialogProbeError.value = ''
@@ -145,7 +156,7 @@ async function deleteCamera(id: string) {
 }
 
 onMounted(async () => {
-  await Promise.all([loadCameras(), loadSettings()])
+  await Promise.all([loadCameras(), loadSettings(), loadOnvifCreds()])
 })
 </script>
 

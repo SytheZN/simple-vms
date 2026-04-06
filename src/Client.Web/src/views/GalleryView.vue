@@ -60,7 +60,7 @@ onMounted(loadCameras)
     </div>
 
     <div v-else class="grid grid-cols-3 gap-4">
-      <router-link v-for="cam in cameras" :key="cam.id" :to="`/camera/${cam.id}`" class="card overflow-hidden cursor-pointer hover:shadow-dropdown transition-shadow">
+      <router-link v-for="cam in cameras" :key="cam.id" :to="`/gallery/${cam.id}`" class="card overflow-hidden cursor-pointer hover:shadow-dropdown transition-shadow">
         <div class="aspect-video bg-surface-sunken flex items-center justify-center">
           <i class="icon-xl" :class="[statusIcon(cam.status), statusIconColor(cam.status)]"></i>
         </div>

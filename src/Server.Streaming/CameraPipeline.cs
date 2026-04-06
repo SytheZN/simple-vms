@@ -64,6 +64,7 @@ public sealed class CameraPipeline : IAsyncDisposable
     _logger = logger;
   }
 
+  [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]
   public async Task<OneOf<Success, Error>> ConstructAsync(CancellationToken ct)
   {
     lock (_lock)

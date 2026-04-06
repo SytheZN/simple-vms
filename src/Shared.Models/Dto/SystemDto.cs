@@ -18,6 +18,16 @@ public sealed class StorageStoreDto
   public required long UsedBytes { get; init; }
   public required long FreeBytes { get; init; }
   public required long RecordingBytes { get; init; }
+  public IReadOnlyList<StorageBreakdownItem>? Breakdown { get; init; }
+}
+
+public sealed class StorageBreakdownItem
+{
+  public required Guid CameraId { get; init; }
+  public required string CameraName { get; init; }
+  public required string StreamProfile { get; init; }
+  public required long SizeBytes { get; init; }
+  public required ulong DurationMicros { get; init; }
 }
 
 public sealed class ServerSettings
@@ -26,5 +36,4 @@ public sealed class ServerSettings
   public string? ExternalEndpoint { get; init; }
   public int? SegmentDuration { get; init; }
   public string[]? DiscoverySubnets { get; init; }
-  public CredentialsDto? DefaultCredentials { get; init; }
 }
