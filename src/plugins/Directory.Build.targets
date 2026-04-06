@@ -1,7 +1,6 @@
 <Project>
   <PropertyGroup>
     <PluginDebugDir>$([MSBuild]::NormalizePath('$(MSBuildThisFileDirectory)', '..', '..', 'debug', 'data', 'plugins', '$(AssemblyName)'))</PluginDebugDir>
-    <PluginReleaseDir>$([MSBuild]::NormalizePath('$(MSBuildThisFileDirectory)', '..', '..', 'debug', 'test', 'plugins', '$(AssemblyName)'))</PluginReleaseDir>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,15 +15,8 @@
     <Exec Command="dotnet publish &quot;$(MSBuildProjectFullPath)&quot; --no-build -c Debug -o &quot;$(PluginDebugDir)&quot;" />
   </Target>
 
-  <Target Name="PublishPluginRelease" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
-    <Exec Command="dotnet publish &quot;$(MSBuildProjectFullPath)&quot; --no-build -c Release -o &quot;$(PluginReleaseDir)&quot;" />
-  </Target>
-
   <Target Name="CleanPluginDebug" AfterTargets="Clean">
     <RemoveDir Directories="$(PluginDebugDir)" />
   </Target>
 
-  <Target Name="CleanPluginRelease" AfterTargets="Clean">
-    <RemoveDir Directories="$(PluginReleaseDir)" />
-  </Target>
 </Project>

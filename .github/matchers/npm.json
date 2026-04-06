@@ -1,0 +1,14 @@
+{
+  "problemMatcher": [
+    {
+      "owner": "npm",
+      "severity": "warning",
+      "pattern": [
+        {
+          "regexp": "^\\s*(\\d+ vulnerabilit.+)$",
+          "message": 1
+        }
+      ]
+    }
+  ]
+}

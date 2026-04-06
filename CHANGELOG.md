@@ -6,21 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+First release of the Simple-VMS Server!
+
 ### Added
 
-- ONVIF camera discovery, device management, events, and analytics
-- RTSP capture source (TCP interleaved)
-- Fragmented MP4 muxer (H.264/H.265)
-- Stream pipeline with typed data/video streams and automatic plugin matching
+- Plugin system with isolated loading, lifecycle management, and per-plugin settings
+- ONVIF plugin for camera discovery, device management, events, and analytics
+- RTSP capture plugin with TCP interleaved transport and session sharing
+- Fragmented MP4 muxer plugin (H.264/H.265)
+- SQLite data provider plugin with schema migration
+- Filesystem storage plugin
+- Streaming pipeline with typed data/video streams and automatic plugin matching
 - Recording with configurable segment duration and keyframe indexing
-- Retention engine (days, bytes, percent modes) with per-stream policies
-- SQLite data provider with schema migration
-- Filesystem storage provider (NFS, local)
-- Plugin system with extension points, isolated loading, and lifecycle management
-- QUIC transport with mutual TLS and multiplexed streams
+- Retention engine with per-stream policies
+- Event-driven camera lifecycle with probe/refresh and per-profile status tracking
+- Transport-agnostic API dispatcher with pattern matching and route constraints
+- Authentication and authorization middleware with plugin-based providers
+- TCP+TLS tunnel transport with stream multiplexing and keepalive
 - Client enrollment via QR code or short token
-- Web UI with camera gallery, events, client management, and settings
-- WebSocket streaming (live and playback) for web clients
-- Event-driven camera lifecycle management
-- Camera probe/refresh API
-- RTSP session sharing with multi-track support
+- Web client with camera gallery, live/playback streaming, events, timeline, and settings
+- WebCodecs video player with MSE fallback
+- Native client core library with camera grid, video player, timeline, and notifications
+- Source-generated JSON serialization
+- Build script with code coverage collection and report merging
+
+<!-- link references -->
+[Unreleased]: https://github.com/SytheZN/simple-vms/compare/v0.0.0...HEAD

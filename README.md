@@ -1,5 +1,11 @@
 # VMS
 
+[![CI](https://github.com/SytheZN/simple-vms/actions/workflows/ci.yml/badge.svg)](https://github.com/SytheZN/simple-vms/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/SytheZN/simple-vms?label=release)](https://github.com/SytheZN/simple-vms/releases/latest)
+[![Pre-release](https://img.shields.io/github/v/release/SytheZN/simple-vms?include_prereleases&label=prerelease)](https://github.com/SytheZN/simple-vms/releases)
+[![Container](https://ghcr-badge.egpl.dev/sythezn/simple-vms/latest_tag?label=container)](https://github.com/SytheZN/simple-vms/pkgs/container/simple-vms)
+[![License](https://img.shields.io/github/license/SytheZN/simple-vms)](LICENSE)
+
 A network video management system for home and power users. Supports up to 32 cameras on a single node with no transcoding, minimal resource usage, and first-class ONVIF support.
 
 > **Note:** This project is under active development. Not all documented features are implemented yet, and APIs may change without notice.

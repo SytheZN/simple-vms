@@ -2,25 +2,333 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, release/**]
+    tags: ['v*']
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  build:
+  gate:
     runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.check.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          fetch-tags: true
+      - name: Check for duplicate run
+        id: check
+        run: |
+          if [ "${{ github.ref_type }}" != "tag" ] && git tag --points-at HEAD | grep -q '^v'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Skipping: commit has a version tag, deferring to tag-triggered run"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: gate
+    if: needs.gate.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
     container:
       image: fedora:latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      hash: ${{ steps.version.outputs.hash }}
+      is_tagged: ${{ steps.version.outputs.is_tagged }}
+      is_main: ${{ steps.version.outputs.is_main }}
     steps:
-      - uses: actions/checkout@v4
-
       - name: Install dependencies
-        run: dnf install -y dotnet-sdk-10.0 nodejs
+        run: dnf install -y dotnet-sdk-10.0 nodejs git
+
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Configure git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Fetch main branch ref
+        if: github.ref_type == 'tag'
+        run: git fetch origin main:refs/remotes/origin/main || true
+
+      - name: Compute version
+        id: version
+        run: |
+          is_tagged=false
+          is_main=false
+
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            version="${GITHUB_REF_NAME#v}"
+            is_tagged=true
+          elif git describe --tags --match 'v*' --abbrev=0 HEAD >/dev/null 2>&1; then
+            base_version="$(git describe --tags --match 'v*' --abbrev=0 HEAD)"
+            base_version="${base_version#v}"
+            short_hash="$(git rev-parse --short=7 HEAD)"
+            version="${base_version}-${short_hash}"
+          else
+            short_hash="$(git rev-parse --short=7 HEAD)"
+            version="0.0.0-${short_hash}"
+          fi
+
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            is_main=true
+          elif [ "${{ github.ref_type }}" = "tag" ] && git merge-base --is-ancestor HEAD origin/main 2>/dev/null; then
+            is_main=true
+          fi
+
+          short_hash="${short_hash:-$(git rev-parse --short=7 HEAD)}"
+
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "hash=${short_hash}" >> "$GITHUB_OUTPUT"
+          echo "is_tagged=${is_tagged}" >> "$GITHUB_OUTPUT"
+          echo "is_main=${is_main}" >> "$GITHUB_OUTPUT"
+          echo "Version: ${version} (${short_hash})"
+
+      - name: Register problem matchers
+        run: |
+          echo "::add-matcher::${GITHUB_WORKSPACE}/.github/matchers/dotnet.json"
+          echo "::add-matcher::${GITHUB_WORKSPACE}/.github/matchers/npm.json"
 
       - name: Build
+        env:
+          BUILD_VERSION: ${{ steps.version.outputs.version }}
+          BUILD_HASH: ${{ steps.version.outputs.hash }}
         run: ./build.sh build
 
       - name: Test
+        id: test
         run: ./build.sh test
+
+      - name: Publish test results
+        uses: dorny/test-reporter@v3
+        if: always() && steps.test.conclusion != 'skipped'
+        with:
+          name: Test Results
+          path: out/test-results/**/*.trx
+          reporter: dotnet-trx
+          fail-on-empty: false
+
+      - name: Publish server
+        if: github.event_name == 'push'
+        env:
+          BUILD_VERSION: ${{ steps.version.outputs.version }}
+          BUILD_HASH: ${{ steps.version.outputs.hash }}
+          BUILD_RID: linux-x64
+        run: ./build.sh publish
+
+      - name: Upload server tarball
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v7
+        with:
+          name: server-linux-x64-tarball
+          path: out/simple-vms-linux-x64.tar.gz
+
+  changes:
+    if: always() && needs.build.result == 'success' && github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+    outputs:
+      server: ${{ steps.detect.outputs.server }}
+      desktop: ${{ steps.detect.outputs.desktop }}
+      android: ${{ steps.detect.outputs.android }}
+      ios: ${{ steps.detect.outputs.ios }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Detect changes
+        id: detect
+        run: |
+          if [ "${{ needs.build.outputs.is_tagged }}" != "true" ]; then
+            echo "server=true" >> "$GITHUB_OUTPUT"
+            echo "desktop=true" >> "$GITHUB_OUTPUT"
+            echo "android=true" >> "$GITHUB_OUTPUT"
+            echo "ios=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          prev=$(git tag -l 'v*' --sort=-v:refname | grep -v "^${GITHUB_REF_NAME}$" | head -1)
+          prev="${prev:-$(git rev-list --max-parents=0 HEAD)}"
+          changed=$(git diff --name-only "$prev" HEAD)
+
+          detect_change() {
+            local label="$1"
+            shift
+            for pattern in "$@"; do
+              if echo "$changed" | grep -q "^${pattern}"; then
+                echo "${label}=true" >> "$GITHUB_OUTPUT"
+                return
+              fi
+            done
+            echo "${label}=false" >> "$GITHUB_OUTPUT"
+          }
+
+          detect_change server \
+            "src/Server" "src/Shared" "src/plugins/" "src/Client.Web/"
+
+          detect_change desktop \
+            "src/Client.Core/" "src/Client.Desktop/" "src/Shared"
+
+          detect_change android \
+            "src/Client.Core/" "src/Client.Android/" "src/Shared"
+
+          detect_change ios \
+            "src/Client.Core/" "src/Client.iOS/" "src/Shared"
+
+  docker:
+    permissions:
+      contents: read
+      packages: write
+    needs: [build, changes]
+    if: needs.changes.outputs.server == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Download server tarball
+        uses: actions/download-artifact@v8
+        with:
+          name: server-linux-x64-tarball
+          path: out/
+
+      - name: Prepare Docker context
+        run: |
+          tar xzf out/simple-vms-linux-x64.tar.gz -C out/
+          cp src/docker/Dockerfile out/Dockerfile
+          chmod +x out/server/Server
+
+      - name: Determine Docker tags
+        id: tags
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          version="${{ needs.build.outputs.version }}"
+          hash="${{ needs.build.outputs.hash }}"
+
+          tags="${image}:${version}"
+
+          if [ "${{ needs.build.outputs.is_tagged }}" = "true" ]; then
+            tags="${tags},${image}:${version}-${hash}"
+
+            highest=$(git tag -l 'v*' --sort=-v:refname | head -1)
+            if [ "${GITHUB_REF_NAME}" = "${highest}" ]; then
+              tags="${tags},${image}:latest"
+            fi
+          fi
+
+          if [ "${{ needs.build.outputs.is_main }}" = "true" ]; then
+            tags="${tags},${image}:prerelease"
+          fi
+
+          echo "tags=${tags}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: out
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+
+  release:
+    permissions:
+      contents: write
+    needs: [build, changes, docker]
+    if: always() && needs.changes.result == 'success' && (needs.docker.result == 'success' || needs.docker.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Download server tarball
+        uses: actions/download-artifact@v8
+        with:
+          name: server-linux-x64-tarball
+          path: out/
+
+      - name: Create tagged release
+        if: needs.build.outputs.is_tagged == 'true'
+        run: |
+          version="${{ needs.build.outputs.version }}"
+          awk -v ver="$version" \
+            'index($0, "## [" ver "]"){found=1; next} /^## \[/{if(found) exit} found{print}' \
+            CHANGELOG.md > release-notes.md
+
+          diff_link=$(awk "/^\[${version}\]:/{print \$2; exit}" CHANGELOG.md)
+          if [ -n "$diff_link" ]; then
+            prev_tag=$(git tag -l 'v*' --sort=-v:refname | grep -v "^${GITHUB_REF_NAME}$" | head -1)
+            prev_ver="${prev_tag#v}"
+            echo "" >> release-notes.md
+            echo "**Diff:** [${prev_ver:-initial}...${version}](${diff_link})" >> release-notes.md
+          fi
+
+          args=(
+            "${{ github.ref_name }}"
+            --title "${version}"
+            --notes-file release-notes.md
+          )
+          if [ -f out/simple-vms-linux-x64.tar.gz ]; then
+            args+=(out/simple-vms-linux-x64.tar.gz)
+          fi
+          gh release create "${args[@]}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create prerelease
+        if: |
+          needs.build.outputs.is_main == 'true' &&
+          needs.build.outputs.is_tagged != 'true'
+        run: |
+          version="${{ needs.build.outputs.version }}"
+          tag="pre/${version}"
+
+          gh release delete "$tag" --yes 2>&1 || echo "No existing release to delete"
+
+          args=(
+            "$tag"
+            --title "$version"
+            --notes "Prerelease build from main ($(git rev-parse --short=7 HEAD))"
+            --prerelease
+          )
+          if [ -f out/simple-vms-linux-x64.tar.gz ]; then
+            args+=(out/simple-vms-linux-x64.tar.gz)
+          fi
+          gh release create "${args[@]}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cleanup old prereleases
+        if: |
+          needs.build.outputs.is_main == 'true' &&
+          needs.build.outputs.is_tagged != 'true'
+        run: |
+          gh release list --json tagName,isPrerelease \
+            --jq '[.[] | select(.isPrerelease) | select(.tagName | startswith("pre/"))] | sort_by(.tagName) | reverse | .[3:][] | .tagName' \
+            | while read -r tag; do
+              gh release delete "$tag" --yes
+              git push origin ":refs/tags/$tag" 2>&1 || true
+            done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

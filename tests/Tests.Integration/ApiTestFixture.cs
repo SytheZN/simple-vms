@@ -111,14 +111,19 @@ public sealed class ApiTestFixture
 
   private static void CopyPluginAssemblies(string targetDir)
   {
-    var debugPluginsDir = Path.GetFullPath(
-      Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..",
-        "debug", "test", "plugins"));
+    var repoRoot = Path.GetFullPath(
+      Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
 
-    if (!Directory.Exists(debugPluginsDir))
+#if DEBUG
+    var pluginsDir = Path.Combine(repoRoot, "debug", "data", "plugins");
+#else
+    var pluginsDir = Path.Combine(repoRoot, "out", "test", "plugins");
+#endif
+
+    if (!Directory.Exists(pluginsDir))
       return;
 
-    CopyDirectory(debugPluginsDir, targetDir);
+    CopyDirectory(pluginsDir, targetDir);
   }
 
   private static void CopyDirectory(string source, string destination)

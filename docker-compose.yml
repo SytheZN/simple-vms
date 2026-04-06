@@ -1,0 +1,9 @@
+services:
+  server:
+    image: ghcr.io/sythezn/simple-vms:latest
+    restart: unless-stopped
+    ports:
+      - "4433:4433"
+      - "8080:8080"
+    volumes:
+      - ./data:/data

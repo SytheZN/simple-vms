@@ -8,7 +8,9 @@ public sealed class SystemHealth
 
   public string Status { get; private set; } = "missing-certs";
   public int Uptime => (int)((Environment.TickCount64 - _startTicks) / 1000);
-  public string Version { get; } = Assembly.GetEntryAssembly()?.GetName().Version?.ToString() ?? "0.0.0";
+  public string Version { get; } = Assembly.GetEntryAssembly()
+    ?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+    ?.InformationalVersion?.Split('+')[0] ?? "0.0.0-unknown";
 
   public void TransitionToStarting()
   {
