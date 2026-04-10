@@ -22,7 +22,11 @@ internal sealed class ConnectionQueue
     var op = new Operation<T>(work);
     if (!_channel.Writer.TryWrite(op))
       throw new InvalidOperationException("Connection queue is closed");
-    ct.Register(() => op.TryCancel());
+    var reg = ct.Register(static s => ((Operation)s!).TryCancel(), op);
+    op.Task.ContinueWith(
+      static (_, s) => ((CancellationTokenRegistration)s!).Dispose(),
+      reg, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously,
+      TaskScheduler.Default);
     return op.Task;
   }
 

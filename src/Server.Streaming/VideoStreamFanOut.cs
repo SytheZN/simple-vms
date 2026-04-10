@@ -9,6 +9,7 @@ public sealed class VideoStreamFanOut<T> : IVideoStream<T>, IVideoStreamFanOut w
   private readonly IVideoStream<T> _source;
   private readonly List<Subscriber> _subscribers = [];
   private readonly Lock _lock = new();
+  private Subscriber[]? _snapshot;
   private CancellationTokenSource? _loopCts;
   private Task? _readLoop;
   private bool _disposed;
@@ -48,6 +49,7 @@ public sealed class VideoStreamFanOut<T> : IVideoStream<T>, IVideoStreamFanOut w
         sub.WaitingForKeyframe = false;
       }
       _subscribers.Add(sub);
+      _snapshot = null;
       if (_subscribers.Count == 1)
         onDemand = OnDemand;
     }
@@ -64,6 +66,7 @@ public sealed class VideoStreamFanOut<T> : IVideoStream<T>, IVideoStreamFanOut w
       lock (_lock)
       {
         _subscribers.Remove(sub);
+        _snapshot = null;
         if (_subscribers.Count == 0)
           onEmpty = OnEmpty;
       }
@@ -110,7 +113,7 @@ public sealed class VideoStreamFanOut<T> : IVideoStream<T>, IVideoStreamFanOut w
             else
               _currentGop.Add(item);
 
-            snapshot = [.. _subscribers];
+            snapshot = _snapshot ??= [.. _subscribers];
           }
 
           foreach (var sub in snapshot)
@@ -211,8 +214,11 @@ internal sealed class ChannelVideoStream<T> : IVideoStream<T> where T : IDataUni
   {
     try
     {
-      await foreach (var item in _reader.ReadAllAsync(ct))
-        yield return item;
+      while (await _reader.WaitToReadAsync(ct))
+      {
+        while (_reader.TryRead(out var item))
+          yield return item;
+      }
     }
     finally
     {

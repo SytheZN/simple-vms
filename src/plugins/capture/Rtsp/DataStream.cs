@@ -26,8 +26,12 @@ public sealed class DataStream<T> : IDataStream<T> where T : IDataUnit
   public async IAsyncEnumerable<T> ReadAsync(
     [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
   {
-    await foreach (var item in _channel.Reader.ReadAllAsync(ct))
-      yield return item;
+    var reader = _channel.Reader;
+    while (await reader.WaitToReadAsync(ct))
+    {
+      while (reader.TryRead(out var item))
+        yield return item;
+    }
   }
 
   public void Complete() => _channel.Writer.TryComplete();

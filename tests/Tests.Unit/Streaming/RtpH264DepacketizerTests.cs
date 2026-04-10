@@ -29,8 +29,8 @@ public class RtpH264DepacketizerTests
 
     Assert.That(result, Is.Not.Null);
     var nal = (H264NalUnit)result!;
-    Assert.That(nal.Data.Span[..4].ToArray(), Is.EqualTo(new byte[] { 0, 0, 0, 1 }));
-    Assert.That(nal.Data.Span[4], Is.EqualTo(0x65));
+    Assert.That(nal.Data.Span[0], Is.EqualTo(0x65));
+    Assert.That(nal.Data.Length, Is.EqualTo(3));
     Assert.That(nal.NalType, Is.EqualTo(H264NalType.Idr));
     Assert.That(nal.IsSyncPoint, Is.True);
     Assert.That(nal.Timestamp, Is.EqualTo(1000));
@@ -59,11 +59,11 @@ public class RtpH264DepacketizerTests
 
     var sps = (H264NalUnit)results[0];
     Assert.That(sps.NalType, Is.EqualTo(H264NalType.Sps));
-    Assert.That(sps.Data.Span[4], Is.EqualTo(0x67));
+    Assert.That(sps.Data.Span[0], Is.EqualTo(0x67));
 
     var pps = (H264NalUnit)results[1];
     Assert.That(pps.NalType, Is.EqualTo(H264NalType.Pps));
-    Assert.That(pps.Data.Span[4], Is.EqualTo(0x68));
+    Assert.That(pps.Data.Span[0], Is.EqualTo(0x68));
   }
 
   /// <summary>
@@ -98,8 +98,8 @@ public class RtpH264DepacketizerTests
     var nal = (H264NalUnit)r3!;
     Assert.That(nal.NalType, Is.EqualTo(H264NalType.Idr));
     Assert.That(nal.IsSyncPoint, Is.True);
-    // Start code (4) + reconstructed header (1) + fragment data (6 bytes: AA BB CC DD EE FF)
-    Assert.That(nal.Data.Length, Is.EqualTo(11));
+    // Reconstructed header (1) + fragment data (6 bytes: AA BB CC DD EE FF)
+    Assert.That(nal.Data.Length, Is.EqualTo(7));
   }
 
   /// <summary>

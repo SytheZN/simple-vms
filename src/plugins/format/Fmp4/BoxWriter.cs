@@ -11,8 +11,17 @@ public sealed class BoxWriter
   public BoxWriter() => _stream = new MemoryStream();
   public BoxWriter(MemoryStream stream) => _stream = stream;
 
-  public long Position => _stream.Position;
+  public int Position => (int)_stream.Position;
   public int Length => (int)_stream.Length;
+
+  public void Reset()
+  {
+    _stream.SetLength(0);
+    _boxStarts.Clear();
+  }
+
+  public Span<byte> WrittenSpan =>
+    _stream.GetBuffer().AsSpan(0, (int)_stream.Length);
 
   public void StartBox(string type)
   {

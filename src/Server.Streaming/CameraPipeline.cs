@@ -19,6 +19,7 @@ public sealed class CameraPipeline : IAsyncDisposable
 
   private IDataStreamFanOut? _dataFanOut;
   private IVideoStreamFanOut? _videoFanOut;
+  private IDisposable? _muxSubscription;
   private IStreamConnection? _connection;
   private CancellationTokenSource? _feedCts;
   private Task? _feedLoop;
@@ -86,6 +87,7 @@ public sealed class CameraPipeline : IAsyncDisposable
 
     var fanOut = CreateDataFanOut(dataStream);
     var muxInput = fanOut.SubscribePassive(256);
+    var muxSub = muxInput as IDisposable;
 
     StartFeeding(connection, fanOut, dataStream);
 
@@ -121,6 +123,7 @@ public sealed class CameraPipeline : IAsyncDisposable
     {
       _dataFanOut = fanOut;
       _videoFanOut = videoFanOut;
+      _muxSubscription = muxSub;
       _constructedFrameType = dataStream.FrameType;
       _constructed = true;
     }
@@ -432,6 +435,7 @@ public sealed class CameraPipeline : IAsyncDisposable
 
     if (_videoFanOut != null)
       await _videoFanOut.DisposeAsync();
+    _muxSubscription?.Dispose();
     if (_dataFanOut != null)
       await _dataFanOut.DisposeAsync();
   }

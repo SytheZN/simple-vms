@@ -39,19 +39,19 @@ public static class NalConverter
     return len > 0 ? annexB[len..] : annexB;
   }
 
-  public static int WriteLengthPrefixed(ReadOnlySpan<byte> annexB, Span<byte> dest)
+  public static int WriteLengthPrefixed(ReadOnlySpan<byte> nal, Span<byte> dest)
   {
-    var startCodeLen = DetectStartCodeLength(annexB);
-    var nalData = annexB[startCodeLen..];
+    var startCodeLen = DetectStartCodeLength(nal);
+    var nalData = nal[startCodeLen..];
     BinaryPrimitives.WriteUInt32BigEndian(dest, (uint)nalData.Length);
     nalData.CopyTo(dest[4..]);
     return 4 + nalData.Length;
   }
 
-  public static int LengthPrefixedSize(ReadOnlySpan<byte> annexB)
+  public static int LengthPrefixedSize(ReadOnlySpan<byte> nal)
   {
-    var startCodeLen = DetectStartCodeLength(annexB);
-    return 4 + annexB.Length - startCodeLen;
+    var startCodeLen = DetectStartCodeLength(nal);
+    return 4 + nal.Length - startCodeLen;
   }
 
   private static int DetectStartCodeLength(ReadOnlySpan<byte> data)

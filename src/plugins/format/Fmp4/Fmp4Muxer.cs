@@ -46,7 +46,7 @@ public sealed class Fmp4Muxer
       var typed = (IDataStream<H264NalUnit>)_input;
       await foreach (var nal in typed.ReadAsync(ct))
       {
-        var rawNal = NalConverter.StripStartCode(nal.Data.Span);
+        var rawNal = nal.Data.Span;
         if (nal.NalType == H264NalType.Sps)
           _currentSps = rawNal.ToArray();
         else if (nal.NalType == H264NalType.Pps)
@@ -61,7 +61,7 @@ public sealed class Fmp4Muxer
       var typed = (IDataStream<H265NalUnit>)_input;
       await foreach (var nal in typed.ReadAsync(ct))
       {
-        var rawNal = NalConverter.StripStartCode(nal.Data.Span);
+        var rawNal = nal.Data.Span;
         if (nal.NalType == H265NalType.Vps)
           _currentVps = rawNal.ToArray();
         else if (nal.NalType == H265NalType.Sps)

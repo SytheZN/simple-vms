@@ -8,6 +8,7 @@ public sealed class DataStreamFanOut<T> : IDataStream<T>, IDataStreamFanOut wher
 {
   private readonly List<Channel<T>> _subscribers = [];
   private readonly Lock _lock = new();
+  private Channel<T>[]? _snapshot;
   private int _demandCount;
 
   public StreamInfo Info { get; }
@@ -26,7 +27,7 @@ public sealed class DataStreamFanOut<T> : IDataStream<T>, IDataStreamFanOut wher
   {
     Channel<T>[] snapshot;
     lock (_lock)
-      snapshot = [.. _subscribers];
+      snapshot = _snapshot ??= [.. _subscribers];
 
     foreach (var channel in snapshot)
       channel.Writer.TryWrite(item);
@@ -40,6 +41,7 @@ public sealed class DataStreamFanOut<T> : IDataStream<T>, IDataStreamFanOut wher
     lock (_lock)
     {
       _subscribers.Add(channel);
+      _snapshot = null;
       _demandCount++;
       if (_demandCount == 1)
         onDemand = OnDemand;
@@ -54,7 +56,10 @@ public sealed class DataStreamFanOut<T> : IDataStream<T>, IDataStreamFanOut wher
     var channel = CreateChannel(capacity);
 
     lock (_lock)
+    {
       _subscribers.Add(channel);
+      _snapshot = null;
+    }
 
     return new ChannelDataStream<T>(Info, channel.Reader, () => Unsubscribe(channel, demand: false));
   }
@@ -73,6 +78,7 @@ public sealed class DataStreamFanOut<T> : IDataStream<T>, IDataStreamFanOut wher
     lock (_lock)
     {
       _subscribers.Remove(channel);
+      _snapshot = null;
       if (demand)
       {
         _demandCount--;
@@ -126,8 +132,11 @@ public sealed class ChannelDataStream<T> : IDataStream<T>, IDisposable where T :
   public async IAsyncEnumerable<T> ReadAsync(
     [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
   {
-    await foreach (var item in _reader.ReadAllAsync(ct))
-      yield return item;
+    while (await _reader.WaitToReadAsync(ct))
+    {
+      while (_reader.TryRead(out var item))
+        yield return item;
+    }
   }
 
   public void Dispose()

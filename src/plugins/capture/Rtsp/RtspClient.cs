@@ -29,6 +29,9 @@ public sealed class RtspClient : IAsyncDisposable
   private Uri _uri = null!;
   private Timer? _keepaliveTimer;
   private readonly Lock _writeLock = new();
+  private readonly byte[] _readBuf = new byte[8192];
+  private int _readBufPos;
+  private int _readBufLen;
 
   public RtspState State { get; private set; } = RtspState.Disconnected;
 
@@ -192,58 +195,87 @@ public sealed class RtspClient : IAsyncDisposable
     if (_stream == null)
       return null;
 
-    var headerBuf = new byte[4];
-
     while (true)
     {
-      var firstByte = await ReadByteAsync(ct);
+      var firstByte = await BufferedReadByteAsync(ct);
       if (firstByte < 0)
         return null;
 
       if (firstByte == '$')
       {
-        await ReadExactAsync(headerBuf.AsMemory(0, 3), ct);
-        var channel = headerBuf[0];
-        var length = (headerBuf[1] << 8) | headerBuf[2];
+        var ch = await BufferedReadByteAsync(ct);
+        var hi = await BufferedReadByteAsync(ct);
+        var lo = await BufferedReadByteAsync(ct);
+        if (ch < 0 || hi < 0 || lo < 0)
+          return null;
 
+        var length = (hi << 8) | lo;
         var payload = new byte[length];
-        await ReadExactAsync(payload, ct);
-        return (channel, payload);
+        await BufferedReadExactAsync(payload, ct);
+        return ((byte)ch, payload);
       }
 
-      // skip RTSP response line that came mid-stream
-      await SkipLineAsync((byte)firstByte, ct);
+      if (firstByte != '\n')
+      {
+        while (true)
+        {
+          var b = await BufferedReadByteAsync(ct);
+          if (b < 0 || b == '\n') break;
+        }
+      }
     }
   }
 
-  private async Task<int> ReadByteAsync(CancellationToken ct)
+  private async ValueTask<int> BufferedReadByteAsync(CancellationToken ct)
   {
-    var buf = new byte[1];
-    var read = await _stream!.ReadAsync(buf, ct);
-    return read == 0 ? -1 : buf[0];
+    if (_readBufPos < _readBufLen)
+      return _readBuf[_readBufPos++];
+
+    _readBufLen = await _stream!.ReadAsync(_readBuf, ct);
+    _readBufPos = 0;
+    if (_readBufLen == 0)
+      return -1;
+    return _readBuf[_readBufPos++];
   }
 
-  private async Task ReadExactAsync(Memory<byte> buffer, CancellationToken ct)
+  private async ValueTask BufferedReadExactAsync(Memory<byte> buffer, CancellationToken ct)
   {
-    var offset = 0;
-    while (offset < buffer.Length)
+    var remaining = buffer;
+    while (remaining.Length > 0)
     {
-      var read = await _stream!.ReadAsync(buffer[offset..], ct);
-      if (read == 0)
-        throw new IOException("Connection closed");
-      offset += read;
+      var buffered = _readBufLen - _readBufPos;
+      if (buffered > 0)
+      {
+        var toCopy = Math.Min(buffered, remaining.Length);
+        _readBuf.AsMemory(_readBufPos, toCopy).CopyTo(remaining);
+        _readBufPos += toCopy;
+        remaining = remaining[toCopy..];
+      }
+      else
+      {
+        if (remaining.Length >= _readBuf.Length)
+        {
+          var read = await _stream!.ReadAsync(remaining, ct);
+          if (read == 0)
+            throw new IOException("Connection closed");
+          remaining = remaining[read..];
+        }
+        else
+        {
+          _readBufLen = await _stream!.ReadAsync(_readBuf, ct);
+          _readBufPos = 0;
+          if (_readBufLen == 0)
+            throw new IOException("Connection closed");
+        }
+      }
     }
   }
 
-  private async Task SkipLineAsync(byte first, CancellationToken ct)
-  {
-    if (first == '\n') return;
-    while (true)
-    {
-      var b = await ReadByteAsync(ct);
-      if (b < 0 || b == '\n') break;
-    }
-  }
+  private async Task<int> ReadByteAsync(CancellationToken ct) =>
+    await BufferedReadByteAsync(ct);
+
+  private async Task ReadExactAsync(Memory<byte> buffer, CancellationToken ct) =>
+    await BufferedReadExactAsync(buffer, ct);
 
   private async Task<RtspResponse> SendRequestAsync(
     string method, string uri, string? extraHeaders, CancellationToken ct)

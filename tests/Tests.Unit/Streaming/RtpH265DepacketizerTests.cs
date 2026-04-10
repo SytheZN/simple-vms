@@ -30,7 +30,8 @@ public class RtpH265DepacketizerTests
 
     Assert.That(result, Is.Not.Null);
     var nal = (H265NalUnit)result!;
-    Assert.That(nal.Data.Span[..4].ToArray(), Is.EqualTo(new byte[] { 0, 0, 0, 1 }));
+    Assert.That(nal.Data.Span[0], Is.EqualTo(0x02));
+    Assert.That(nal.Data.Length, Is.EqualTo(4));
     Assert.That(nal.NalType, Is.EqualTo(H265NalType.TrailR));
     Assert.That(nal.IsSyncPoint, Is.False);
   }

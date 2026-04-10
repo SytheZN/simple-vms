@@ -21,6 +21,18 @@ public static class MoofBuilder
     int mdatHeaderSize = 8)
   {
     var w = new BoxWriter();
+    var len = WriteTo(w, sequenceNumber, baseDecodeTime, samples, wallClockUs, mdatHeaderSize);
+    return w.ToArray();
+  }
+
+  public static int WriteTo(
+    BoxWriter w,
+    uint sequenceNumber,
+    ulong baseDecodeTime,
+    IReadOnlyList<SampleEntry> samples,
+    ulong wallClockUs = 0,
+    int mdatHeaderSize = 8)
+  {
     w.StartBox("moof");
 
     w.StartFullBox("mfhd", 0, 0);
@@ -65,13 +77,14 @@ public static class MoofBuilder
 
     w.EndBox();
 
-    var moofBytes = w.ToArray();
-    var dataOffset = moofBytes.Length + mdatHeaderSize;
-    moofBytes[dataOffsetPos] = (byte)(dataOffset >> 24);
-    moofBytes[dataOffsetPos + 1] = (byte)(dataOffset >> 16);
-    moofBytes[dataOffsetPos + 2] = (byte)(dataOffset >> 8);
-    moofBytes[dataOffsetPos + 3] = (byte)dataOffset;
+    var moofLen = w.Length;
+    var buf = w.WrittenSpan;
+    var dataOffset = moofLen + mdatHeaderSize;
+    buf[dataOffsetPos] = (byte)(dataOffset >> 24);
+    buf[dataOffsetPos + 1] = (byte)(dataOffset >> 16);
+    buf[dataOffsetPos + 2] = (byte)(dataOffset >> 8);
+    buf[dataOffsetPos + 3] = (byte)dataOffset;
 
-    return moofBytes;
+    return moofLen;
   }
 }

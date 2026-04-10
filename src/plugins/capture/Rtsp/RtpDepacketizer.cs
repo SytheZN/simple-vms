@@ -10,8 +10,6 @@ public interface IRtpDepacketizer
 
 public sealed class RtpH264Depacketizer : IRtpDepacketizer
 {
-  private static readonly byte[] StartCode = [0x00, 0x00, 0x00, 0x01];
-
   private MemoryStream? _fuBuffer;
   private ulong _fuTimestamp;
   private byte _fuNri;
@@ -50,9 +48,8 @@ public sealed class RtpH264Depacketizer : IRtpDepacketizer
       if (offset + nalSize > rtpPayload.Length)
         break;
 
-      var nalData = BuildAnnexB(rtpPayload.Slice(offset, nalSize));
-      var nal = CreateH264NalUnit(nalData, timestamp);
-      results.Add(nal);
+      var nalData = rtpPayload.Slice(offset, nalSize).ToArray();
+      results.Add(CreateH264NalUnit(nalData, timestamp));
       offset += nalSize;
     }
 
@@ -61,7 +58,7 @@ public sealed class RtpH264Depacketizer : IRtpDepacketizer
 
   private IDataUnit? ProcessSingleNal(ReadOnlySpan<byte> rtpPayload, ulong timestamp)
   {
-    var nalData = BuildAnnexB(rtpPayload);
+    var nalData = rtpPayload.ToArray();
     return CreateH264NalUnit(nalData, timestamp);
   }
 
@@ -85,8 +82,10 @@ public sealed class RtpH264Depacketizer : IRtpDepacketizer
 
     if (start)
     {
-      _fuBuffer?.Dispose();
-      _fuBuffer = new MemoryStream();
+      if (_fuBuffer == null)
+        _fuBuffer = new MemoryStream();
+      else
+        _fuBuffer.SetLength(0);
       _fuTimestamp = timestamp;
       _fuNri = (byte)nri;
       _fuType = (byte)nalType;
@@ -104,14 +103,12 @@ public sealed class RtpH264Depacketizer : IRtpDepacketizer
     if (end && _fuBuffer != null)
     {
       var reconstructedHeader = (byte)(_fuNri | _fuType);
-      var fragmentData = _fuBuffer.ToArray();
-      _fuBuffer.Dispose();
-      _fuBuffer = null;
+      var fuLen = (int)_fuBuffer.Length;
+      var fuBuf = _fuBuffer.GetBuffer();
 
-      var nalData = new byte[StartCode.Length + 1 + fragmentData.Length];
-      StartCode.CopyTo(nalData, 0);
-      nalData[StartCode.Length] = reconstructedHeader;
-      fragmentData.CopyTo(nalData, StartCode.Length + 1);
+      var nalData = new byte[1 + fuLen];
+      nalData[0] = reconstructedHeader;
+      fuBuf.AsSpan(0, fuLen).CopyTo(nalData.AsSpan(1));
 
       return CreateH264NalUnit(nalData, _fuTimestamp);
     }
@@ -119,20 +116,12 @@ public sealed class RtpH264Depacketizer : IRtpDepacketizer
     return null;
   }
 
-  private static byte[] BuildAnnexB(ReadOnlySpan<byte> nalUnit)
+  internal static H264NalUnit CreateH264NalUnit(byte[] nalData, ulong timestamp)
   {
-    var result = new byte[StartCode.Length + nalUnit.Length];
-    StartCode.CopyTo(result, 0);
-    nalUnit.CopyTo(result.AsSpan(StartCode.Length));
-    return result;
-  }
-
-  internal static H264NalUnit CreateH264NalUnit(byte[] annexBData, ulong timestamp)
-  {
-    var nalType = ClassifyH264(annexBData.AsSpan(4, 1)[0]);
+    var nalType = ClassifyH264(nalData[0]);
     return new H264NalUnit
     {
-      Data = annexBData,
+      Data = nalData,
       Timestamp = timestamp,
       IsSyncPoint = nalType == H264NalType.Idr,
       NalType = nalType
@@ -156,8 +145,6 @@ public sealed class RtpH264Depacketizer : IRtpDepacketizer
 
 public sealed class RtpH265Depacketizer : IRtpDepacketizer
 {
-  private static readonly byte[] StartCode = [0x00, 0x00, 0x00, 0x01];
-
   private MemoryStream? _fuBuffer;
   private ulong _fuTimestamp;
   private byte _fuType;
@@ -195,7 +182,7 @@ public sealed class RtpH265Depacketizer : IRtpDepacketizer
       if (offset + nalSize > rtpPayload.Length)
         break;
 
-      var nalData = BuildAnnexB(rtpPayload.Slice(offset, nalSize));
+      var nalData = rtpPayload.Slice(offset, nalSize).ToArray();
       results.Add(CreateH265NalUnit(nalData, timestamp));
       offset += nalSize;
     }
@@ -205,7 +192,7 @@ public sealed class RtpH265Depacketizer : IRtpDepacketizer
 
   private IDataUnit? ProcessSingleNal(ReadOnlySpan<byte> rtpPayload, ulong timestamp)
   {
-    var nalData = BuildAnnexB(rtpPayload);
+    var nalData = rtpPayload.ToArray();
     return CreateH265NalUnit(nalData, timestamp);
   }
 
@@ -229,8 +216,10 @@ public sealed class RtpH265Depacketizer : IRtpDepacketizer
 
     if (start)
     {
-      _fuBuffer?.Dispose();
-      _fuBuffer = new MemoryStream();
+      if (_fuBuffer == null)
+        _fuBuffer = new MemoryStream();
+      else
+        _fuBuffer.SetLength(0);
       _fuTimestamp = timestamp;
       _fuType = (byte)nalType;
       _fuLayerTid = payloadHeader1;
@@ -248,15 +237,13 @@ public sealed class RtpH265Depacketizer : IRtpDepacketizer
     if (end && _fuBuffer != null)
     {
       var reconstructedHeader0 = (byte)((_fuType << 1) | (payloadHeader0 & 0x81));
-      var fragmentData = _fuBuffer.ToArray();
-      _fuBuffer.Dispose();
-      _fuBuffer = null;
+      var fuLen = (int)_fuBuffer.Length;
+      var fuBuf = _fuBuffer.GetBuffer();
 
-      var nalData = new byte[StartCode.Length + 2 + fragmentData.Length];
-      StartCode.CopyTo(nalData, 0);
-      nalData[StartCode.Length] = reconstructedHeader0;
-      nalData[StartCode.Length + 1] = _fuLayerTid;
-      fragmentData.CopyTo(nalData, StartCode.Length + 2);
+      var nalData = new byte[2 + fuLen];
+      nalData[0] = reconstructedHeader0;
+      nalData[1] = _fuLayerTid;
+      fuBuf.AsSpan(0, fuLen).CopyTo(nalData.AsSpan(2));
 
       return CreateH265NalUnit(nalData, _fuTimestamp);
     }
@@ -264,20 +251,12 @@ public sealed class RtpH265Depacketizer : IRtpDepacketizer
     return null;
   }
 
-  private static byte[] BuildAnnexB(ReadOnlySpan<byte> nalUnit)
+  internal static H265NalUnit CreateH265NalUnit(byte[] nalData, ulong timestamp)
   {
-    var result = new byte[StartCode.Length + nalUnit.Length];
-    StartCode.CopyTo(result, 0);
-    nalUnit.CopyTo(result.AsSpan(StartCode.Length));
-    return result;
-  }
-
-  internal static H265NalUnit CreateH265NalUnit(byte[] annexBData, ulong timestamp)
-  {
-    var nalType = ClassifyH265(annexBData.AsSpan(4, 1)[0]);
+    var nalType = ClassifyH265(nalData[0]);
     return new H265NalUnit
     {
-      Data = annexBData,
+      Data = nalData,
       Timestamp = timestamp,
       IsSyncPoint = nalType is H265NalType.IdrWRadl or H265NalType.IdrNLp,
       NalType = nalType
