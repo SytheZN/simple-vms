@@ -3,6 +3,7 @@ using Client.Core.Api;
 using Client.Core.Platform;
 using Client.Core.Tunnel;
 using Client.Core.ViewModels;
+using Microsoft.Extensions.Logging.Abstractions;
 using Shared.Models;
 using Shared.Models.Dto;
 using Tests.Unit.Client.Mocks;
@@ -39,7 +40,7 @@ public class EnrollmentViewModelTests
     var credStore = new MockCredentialStore();
     var tunnel = new FakeStreamTunnel();
 
-    var vm = new EnrollmentViewModel(enrollClient, credStore, tunnel, EmptyServices());
+    var vm = new EnrollmentViewModel(enrollClient, credStore, tunnel, NullLogger<EnrollmentViewModel>.Instance, EmptyServices());
     vm.ServerAddress = "myserver:8080";
     vm.Token = "ABCD-1234";
 
@@ -72,7 +73,7 @@ public class EnrollmentViewModelTests
     var credStore = new MockCredentialStore();
     var tunnel = new FakeStreamTunnel();
 
-    var vm = new EnrollmentViewModel(enrollClient, credStore, tunnel, EmptyServices());
+    var vm = new EnrollmentViewModel(enrollClient, credStore, tunnel, NullLogger<EnrollmentViewModel>.Instance, EmptyServices());
     vm.ServerAddress = "badserver:8080";
     vm.Token = "ABCD-1234";
 
@@ -105,7 +106,7 @@ public class EnrollmentViewModelTests
       Result = """{"v":1,"addresses":["192.168.1.50:8080"],"token":"X7K2-M9P4"}"""
     };
 
-    var vm = new EnrollmentViewModel(enrollClient, credStore, tunnel, ServicesWithQr(scanner));
+    var vm = new EnrollmentViewModel(enrollClient, credStore, tunnel, NullLogger<EnrollmentViewModel>.Instance, ServicesWithQr(scanner));
 
     vm.ScanQrCommand.Execute(null);
     await Task.Delay(100);
@@ -132,7 +133,7 @@ public class EnrollmentViewModelTests
     var tunnel = new FakeStreamTunnel();
     var scanner = new FakeQrScanner { Result = null };
 
-    var vm = new EnrollmentViewModel(enrollClient, credStore, tunnel, ServicesWithQr(scanner));
+    var vm = new EnrollmentViewModel(enrollClient, credStore, tunnel, NullLogger<EnrollmentViewModel>.Instance, ServicesWithQr(scanner));
 
     vm.ScanQrCommand.Execute(null);
     await Task.Delay(100);
@@ -155,7 +156,8 @@ public class EnrollmentViewModelTests
   public void Properties_Set_FirePropertyChanged()
   {
     var vm = new EnrollmentViewModel(
-      new FakeEnrollmentClient(), new MockCredentialStore(), new FakeStreamTunnel(), EmptyServices());
+      new FakeEnrollmentClient(), new MockCredentialStore(), new FakeStreamTunnel(),
+      NullLogger<EnrollmentViewModel>.Instance, EmptyServices());
 
     var changed = new List<string>();
     vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName!);
@@ -174,12 +176,12 @@ public class EnrollmentViewModelTests
     public EnrollResponse? Response { get; set; }
     public Error? Error { get; set; }
 
-    public Task<OneOf<EnrollResponse, Shared.Models.Error>> EnrollAsync(
+    public Task<OneOf<EnrollResponse, HttpError>> EnrollAsync(
       string serverAddress, string token, CancellationToken ct)
     {
       if (Error != null)
-        return Task.FromResult<OneOf<EnrollResponse, Shared.Models.Error>>(Error.Value);
-      return Task.FromResult<OneOf<EnrollResponse, Shared.Models.Error>>(Response!);
+        return Task.FromResult<OneOf<EnrollResponse, HttpError>>(new HttpError(Error.Value, null));
+      return Task.FromResult<OneOf<EnrollResponse, HttpError>>(Response!);
     }
   }
 

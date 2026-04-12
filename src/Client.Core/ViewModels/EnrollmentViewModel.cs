@@ -5,6 +5,8 @@ using System.Windows.Input;
 using Client.Core.Api;
 using Client.Core.Platform;
 using Client.Core.Tunnel;
+using Microsoft.Extensions.Logging;
+using Shared.Models;
 
 namespace Client.Core.ViewModels;
 
@@ -14,24 +16,32 @@ public sealed partial class EnrollmentViewModel : ViewModelBase
   private readonly ICredentialStore _credentials;
   private readonly ITunnelService _tunnel;
   private readonly IQrScannerService? _qrScanner;
+  private readonly ILogger<EnrollmentViewModel> _logger;
 
   private string _serverAddress = "";
   private string _token = "";
   private bool _isScanning;
   private bool _isBusy;
-  private string? _errorMessage;
   private bool _isEnrolled;
 
   public string ServerAddress
   {
     get => _serverAddress;
-    set => SetProperty(ref _serverAddress, value);
+    set
+    {
+      if (SetProperty(ref _serverAddress, value))
+        RaiseCommandsCanExecuteChanged();
+    }
   }
 
   public string Token
   {
     get => _token;
-    set => SetProperty(ref _token, value);
+    set
+    {
+      if (SetProperty(ref _token, value))
+        RaiseCommandsCanExecuteChanged();
+    }
   }
 
   public bool IsScanning
@@ -44,12 +54,6 @@ public sealed partial class EnrollmentViewModel : ViewModelBase
   {
     get => _isBusy;
     set => SetProperty(ref _isBusy, value);
-  }
-
-  public string? ErrorMessage
-  {
-    get => _errorMessage;
-    set => SetProperty(ref _errorMessage, value);
   }
 
   public bool IsEnrolled
@@ -65,15 +69,30 @@ public sealed partial class EnrollmentViewModel : ViewModelBase
     IEnrollmentClient enrollment,
     ICredentialStore credentials,
     ITunnelService tunnel,
+    ILogger<EnrollmentViewModel> logger,
     IServiceProvider services)
   {
     _enrollment = enrollment;
     _credentials = credentials;
     _tunnel = tunnel;
+    _logger = logger;
     _qrScanner = services.GetService(typeof(IQrScannerService)) as IQrScannerService;
 
-    ScanQrCommand = new AsyncCommand(ScanQrAsync, () => _qrScanner != null && !IsBusy, e => ErrorMessage = e);
-    EnrollCommand = new AsyncCommand(EnrollAsync, () => !IsBusy && ServerAddress.Length > 0 && Token.Length > 0, e => ErrorMessage = e);
+    ScanQrCommand = new AsyncCommand(ScanQrAsync, () => _qrScanner != null && !IsBusy);
+    EnrollCommand = new AsyncCommand(EnrollAsync, () => !IsBusy && ServerAddress.Length > 0 && IsValidToken(Token));
+  }
+
+  private const string TokenChars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+  private static bool IsValidToken(string token) =>
+    token.Length == 9
+    && token[4] == '-'
+    && token[..4].All(c => TokenChars.Contains(c))
+    && token[5..].All(c => TokenChars.Contains(c));
+
+  private void RaiseCommandsCanExecuteChanged()
+  {
+    (EnrollCommand as AsyncCommand)?.RaiseCanExecuteChanged();
   }
 
   private async Task ScanQrAsync()
@@ -81,7 +100,7 @@ public sealed partial class EnrollmentViewModel : ViewModelBase
     if (_qrScanner == null) return;
 
     IsScanning = true;
-    ErrorMessage = null;
+    ClearError();
 
     try
     {
@@ -91,7 +110,8 @@ public sealed partial class EnrollmentViewModel : ViewModelBase
       var payload = JsonSerializer.Deserialize(result, QrJsonContext.Default.QrPayload);
       if (payload == null || payload.V != 1)
       {
-        ErrorMessage = payload?.V > 1 ? "QR code requires a newer client version" : "Invalid QR code";
+        var msg = payload?.V > 1 ? "QR code requires a newer client version" : "Invalid QR code";
+        SetError(Error.Create(ClientModuleIds.Enrollment, 0x0007, Result.BadRequest, msg));
         return;
       }
       if (payload.Addresses is { Length: > 0 } && payload.Token != null)
@@ -102,7 +122,8 @@ public sealed partial class EnrollmentViewModel : ViewModelBase
     }
     catch (Exception ex)
     {
-      ErrorMessage = ex.Message;
+      _logger.LogError(ex, "QR scan failed");
+      SetError(Error.Create(ClientModuleIds.Enrollment, 0x0006, Result.InternalError, ex.Message));
     }
     finally
     {
@@ -113,29 +134,31 @@ public sealed partial class EnrollmentViewModel : ViewModelBase
   private async Task EnrollAsync()
   {
     IsBusy = true;
-    ErrorMessage = null;
+    ClearError();
 
     try
     {
       var result = await _enrollment.EnrollAsync(ServerAddress, Token, CancellationToken.None);
-      if (result.IsT1)
-      {
-        ErrorMessage = result.AsT1.Message;
-        return;
-      }
-
-      var response = result.AsT0;
-      var data = new CredentialData(
-        response.Ca,
-        response.Cert,
-        response.Key,
-        response.Addresses,
-        response.ClientId);
-      await CompleteEnrollmentAsync(data);
+      await result.Match(
+        async response =>
+        {
+          var data = new CredentialData(
+            response.Ca,
+            response.Cert,
+            response.Key,
+            response.Addresses,
+            response.ClientId);
+          await CompleteEnrollmentAsync(data);
+        },
+        httpError =>
+        {
+          SetError(httpError.Error, httpError.Diagnostics);
+          return Task.CompletedTask;
+        });
     }
     catch (Exception ex)
     {
-      ErrorMessage = ex.Message;
+      SetError(Error.Create(ClientModuleIds.Enrollment, 0x0000, Result.InternalError, ex.Message));
     }
     finally
     {
@@ -149,11 +172,13 @@ public sealed partial class EnrollmentViewModel : ViewModelBase
     IsEnrolled = true;
     try
     {
-      await _tunnel.ConnectAsync(CancellationToken.None);
+      await _tunnel.ConnectAsync(new(), CancellationToken.None);
     }
-    catch
+    catch (Exception ex)
     {
-      ErrorMessage = "Enrolled successfully but failed to connect. Retry from settings.";
+      _logger.LogError(ex, "Tunnel connection failed after enrollment");
+      SetError(Error.Create(ClientModuleIds.Enrollment, 0x0005, Result.Unavailable,
+        "Enrolled successfully but failed to connect: " + ex.Message));
     }
   }
 
@@ -173,19 +198,20 @@ public sealed partial class EnrollmentViewModel : ViewModelBase
   {
     private readonly Func<Task> _execute;
     private readonly Func<bool> _canExecute;
-    private readonly Action<string>? _onError;
     private bool _isExecuting;
 
     public event EventHandler? CanExecuteChanged;
 
-    public AsyncCommand(Func<Task> execute, Func<bool> canExecute, Action<string>? onError = null)
+    public AsyncCommand(Func<Task> execute, Func<bool> canExecute)
     {
       _execute = execute;
       _canExecute = canExecute;
-      _onError = onError;
     }
 
     public bool CanExecute(object? parameter) => !_isExecuting && _canExecute();
+
+    public void RaiseCanExecuteChanged() =>
+      CanExecuteChanged?.Invoke(this, EventArgs.Empty);
 
     public async void Execute(object? parameter)
     {
@@ -193,10 +219,6 @@ public sealed partial class EnrollmentViewModel : ViewModelBase
       _isExecuting = true;
       CanExecuteChanged?.Invoke(this, EventArgs.Empty);
       try { await _execute(); }
-      catch (Exception ex)
-      {
-        _onError?.Invoke(ex.Message);
-      }
       finally
       {
         _isExecuting = false;

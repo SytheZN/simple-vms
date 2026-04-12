@@ -3,18 +3,30 @@ using System.Net.Sockets;
 using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
 using Client.Core.Platform;
+using Microsoft.Extensions.Logging;
 
 namespace Client.Core.Tunnel;
 
 public sealed class TlsTransportFactory : ITransportFactory
 {
+  private readonly ILogger<TlsTransportFactory> _logger;
+
+  public TlsTransportFactory(ILogger<TlsTransportFactory> logger)
+  {
+    _logger = logger;
+  }
+
   public async Task<TransportConnection> ConnectAsync(
     string address, CredentialData creds, CancellationToken ct)
   {
     var (host, port) = ParseAddress(address);
+    _logger.LogDebug("Connecting to {Host}:{Port}", host, port);
 
+    _logger.LogDebug("Loading certificates from PEM");
     var caCert = X509Certificate2.CreateFromPem(creds.CaCert);
     var clientCert = X509Certificate2.CreateFromPem(creds.ClientCert, creds.ClientKey);
+    _logger.LogDebug("Certificates loaded, CA subject={CaSubject}, client subject={ClientSubject}",
+      caCert.Subject, clientCert.Subject);
 
     var tcpClient = new TcpClient();
     try
@@ -22,7 +34,15 @@ public sealed class TlsTransportFactory : ITransportFactory
       using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
       connectCts.CancelAfter(TimeSpan.FromSeconds(5));
 
-      await tcpClient.ConnectAsync(host, port, connectCts.Token);
+      try
+      {
+        await tcpClient.ConnectAsync(host, port, connectCts.Token);
+      }
+      catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+      {
+        throw new TimeoutException($"Connection to {host}:{port} timed out");
+      }
+      _logger.LogDebug("TCP connected to {Host}:{Port}", host, port);
 
       var sslStream = new SslStream(tcpClient.GetStream(), false, (_, cert, _, _) =>
       {
@@ -37,6 +57,7 @@ public sealed class TlsTransportFactory : ITransportFactory
 
       try
       {
+        _logger.LogDebug("Starting TLS handshake");
         await sslStream.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
         {
           TargetHost = host,
@@ -44,17 +65,20 @@ public sealed class TlsTransportFactory : ITransportFactory
           EnabledSslProtocols = SslProtocols.Tls13,
           CertificateRevocationCheckMode = X509RevocationMode.NoCheck
         }, ct);
+        _logger.LogDebug("TLS handshake completed, protocol={Protocol}", sslStream.SslProtocol);
       }
-      catch
+      catch (Exception ex)
       {
+        _logger.LogError(ex, "TLS handshake failed");
         await sslStream.DisposeAsync();
         throw;
       }
 
       return new TransportConnection(sslStream, tcpClient, clientCert, caCert);
     }
-    catch
+    catch (Exception ex) when (ex is not AuthenticationException)
     {
+      _logger.LogError(ex, "Connection to {Host}:{Port} failed", host, port);
       tcpClient.Dispose();
       clientCert.Dispose();
       caCert.Dispose();

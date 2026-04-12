@@ -28,10 +28,12 @@ public sealed class MuxStream : IAsyncDisposable
 
     try
     {
-      await _muxer.SendFinAsync(StreamId, CancellationToken.None);
+      using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+      await _muxer.SendFinAsync(StreamId, cts.Token);
     }
     catch (ObjectDisposedException) { }
     catch (IOException) { }
+    catch (OperationCanceledException) { }
 
     _muxer.CloseStream(StreamId);
   }

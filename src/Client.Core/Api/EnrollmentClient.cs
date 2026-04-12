@@ -1,4 +1,6 @@
 using System.Net.Http.Json;
+using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Shared.Models;
 using Shared.Models.Dto;
 
@@ -7,51 +9,36 @@ namespace Client.Core.Api;
 public sealed class EnrollmentClient : IEnrollmentClient
 {
   private readonly IHttpClientFactory _httpFactory;
+  private readonly ILogger<EnrollmentClient> _logger;
 
-  public EnrollmentClient(IHttpClientFactory httpFactory)
+  public EnrollmentClient(IHttpClientFactory httpFactory, ILogger<EnrollmentClient> logger)
   {
     _httpFactory = httpFactory;
+    _logger = logger;
   }
 
-  public async Task<OneOf<EnrollResponse, Error>> EnrollAsync(
+  public async Task<OneOf<EnrollResponse, HttpError>> EnrollAsync(
     string serverAddress, string token, CancellationToken ct)
   {
     var request = new EnrollRequest { Token = token };
-    var host = serverAddress.Contains("://") ? serverAddress : $"http://{serverAddress}";
-    var url = $"{host}/api/v1/enroll";
+    var baseUri = serverAddress.Contains("://")
+      ? new Uri(serverAddress)
+      : new Uri($"http://{serverAddress}");
+    var url = new Uri(baseUri, "/api/v1/enroll").ToString();
+    _logger.LogDebug("Enrolling at {Url}", url);
 
+    HttpResponseMessage response;
     try
     {
       using var http = _httpFactory.CreateClient();
-
-      var response = await http.PostAsJsonAsync(url, request, ClientJsonContext.Default.EnrollRequest, ct);
-
-      if (!response.IsSuccessStatusCode)
-      {
-        var body = await response.Content.ReadAsStringAsync(ct);
-        var errorResult = (int)response.StatusCode switch
-        {
-          400 => Result.BadRequest,
-          401 => Result.Unauthorized,
-          403 => Result.Forbidden,
-          404 => Result.NotFound,
-          409 => Result.Conflict,
-          >= 500 => Result.InternalError,
-          _ => Result.BadRequest
-        };
-        return Error.Create(ClientModuleIds.Enrollment, 0x0002, errorResult,
-          $"Enrollment failed ({response.StatusCode}): {body}");
-      }
-
-      var result = await response.Content.ReadFromJsonAsync(ClientJsonContext.Default.EnrollResponse, ct);
-      if (result == null)
-        return Error.Create(ClientModuleIds.Enrollment, 0x0003, Result.InternalError, "Failed to parse enrollment response");
-
-      return result;
+      response = await http.PostAsJsonAsync(url, request, ClientJsonContext.Default.EnrollRequest, ct);
     }
     catch (HttpRequestException ex)
     {
-      return Error.Create(ClientModuleIds.Enrollment, 0x0001, Result.Unavailable, ex.Message);
+      _logger.LogError(ex, "HTTP request to {Url} failed", url);
+      return new HttpError(
+        Error.Create(ClientModuleIds.Enrollment, 0x0001, Result.Unavailable, ex.Message),
+        new HttpDiagnostics(url, null, null));
     }
     catch (TaskCanceledException) when (ct.IsCancellationRequested)
     {
@@ -59,7 +46,58 @@ public sealed class EnrollmentClient : IEnrollmentClient
     }
     catch (TaskCanceledException)
     {
-      return Error.Create(ClientModuleIds.Enrollment, 0x0004, Result.Unavailable, "Enrollment request timed out");
+      _logger.LogWarning("Enrollment request to {Url} timed out", url);
+      return new HttpError(
+        Error.Create(ClientModuleIds.Enrollment, 0x0004, Result.Unavailable, "Enrollment request timed out"),
+        new HttpDiagnostics(url, null, null));
     }
+
+    var rawBody = await response.Content.ReadAsStringAsync(ct);
+    var diag = new HttpDiagnostics(url, (int)response.StatusCode, rawBody);
+
+    ResponseEnvelope? envelope;
+    try
+    {
+      envelope = JsonSerializer.Deserialize(rawBody, ClientJsonContext.Default.ResponseEnvelope);
+    }
+    catch (Exception ex)
+    {
+      _logger.LogError(ex, "Failed to parse response from {Url}, status={Status}, body={Body}",
+        url, (int)response.StatusCode, rawBody);
+      return new HttpError(
+        Error.Create(ClientModuleIds.Enrollment, 0x0002, Result.InternalError,
+          $"Server returned HTTP {(int)response.StatusCode} ({response.ReasonPhrase})"),
+        diag);
+    }
+
+    if (envelope == null)
+      return new HttpError(
+        Error.Create(ClientModuleIds.Enrollment, 0x0002, Result.InternalError, "Empty response from server"),
+        diag);
+
+    if (envelope.Result != Result.Success && envelope.Result != Result.Created)
+    {
+      _logger.LogWarning("Enrollment failed: {Result} {Tag} {Message}",
+        envelope.Result, envelope.DebugTag, envelope.Message);
+      return new HttpError(
+        new Error(envelope.Result, envelope.DebugTag, envelope.Message ?? "Enrollment failed"),
+        diag);
+    }
+
+    if (envelope.Body == null)
+      return new HttpError(
+        Error.Create(ClientModuleIds.Enrollment, 0x0003, Result.InternalError,
+          "Server returned success but no enrollment data"),
+        diag);
+
+    var enrollResponse = envelope.Body.Value.Deserialize(ClientJsonContext.Default.EnrollResponse);
+    if (enrollResponse == null)
+      return new HttpError(
+        Error.Create(ClientModuleIds.Enrollment, 0x0003, Result.InternalError,
+          "Failed to parse enrollment response"),
+        diag);
+
+    _logger.LogInformation("Enrollment succeeded, clientId={ClientId}", enrollResponse.ClientId);
+    return enrollResponse;
   }
 }

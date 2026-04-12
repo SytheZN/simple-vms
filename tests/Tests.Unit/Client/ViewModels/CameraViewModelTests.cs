@@ -133,7 +133,7 @@ public class CameraViewModelTests
     var api = new FakeApiClient();
     var live = new FakeLive();
     var playback = new FakePlayback();
-    return (new CameraViewModel(api, live, playback), live, playback);
+    return (new CameraViewModel(api, live, playback, NullLogger<CameraViewModel>.Instance), live, playback);
   }
 
   private static VideoFeed MakeFeed(Guid cameraId, string profile)

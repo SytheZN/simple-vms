@@ -6,5 +6,5 @@ public interface IEventService
 {
   event Action<EventChannelMessage, EventChannelFlags>? OnEvent;
   Task StartAsync(CancellationToken ct);
-  Task StopAsync();
+  Task StopAsync(CancellationToken ct = default);
 }

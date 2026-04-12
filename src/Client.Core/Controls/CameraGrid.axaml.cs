@@ -1,8 +1,9 @@
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
+using Avalonia.Media;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using System.Diagnostics.CodeAnalysis;
 
@@ -14,12 +15,11 @@ public partial class CameraGrid : UserControl
   public static readonly StyledProperty<int> ColumnsProperty =
     AvaloniaProperty.Register<CameraGrid, int>(nameof(Columns), 3);
 
+  private const double CondensedThreshold = 200;
+
   private ItemsControl? _gridItems;
   private UniformGrid? _gridPanel;
-  private Control? _dragItem;
-  private Point _dragStart;
-  private int _dragSourceIndex;
-  private bool _isDragging;
+  private bool _isCondensed;
 
   public int Columns
   {
@@ -27,16 +27,20 @@ public partial class CameraGrid : UserControl
     set => SetValue(ColumnsProperty, value);
   }
 
-  public event Action<int, int>? ItemReordered;
+  public event Action<int>? ItemClicked;
 
   public CameraGrid()
   {
     InitializeComponent();
     _gridItems = this.FindControl<ItemsControl>("GridItems");
-    _gridPanel = _gridItems?.GetVisualDescendants().OfType<UniformGrid>().FirstOrDefault();
-    AddHandler(PointerPressedEvent, OnGridPointerPressed, handledEventsToo: true);
-    AddHandler(PointerMovedEvent, OnGridPointerMoved, handledEventsToo: true);
-    AddHandler(PointerReleasedEvent, OnGridPointerReleased, handledEventsToo: true);
+    AddHandler(PointerReleasedEvent, OnPointerReleased, handledEventsToo: true);
+    SizeChanged += OnSizeChanged;
+  }
+
+  protected override void OnLoaded(Avalonia.Interactivity.RoutedEventArgs e)
+  {
+    base.OnLoaded(e);
+    SyncGridPanel();
   }
 
   protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -45,84 +49,73 @@ public partial class CameraGrid : UserControl
 
     if (change.Property == ColumnsProperty)
     {
-      if (_gridPanel != null)
-        _gridPanel.Columns = change.GetNewValue<int>();
+      SyncGridPanel();
+      UpdateCondensedState();
     }
   }
 
-  private void OnGridPointerPressed(object? sender, PointerPressedEventArgs e)
+  private void SyncGridPanel()
   {
-    if (_gridItems == null || _gridPanel == null) return;
+    _gridPanel ??= _gridItems?.GetVisualDescendants().OfType<UniformGrid>().FirstOrDefault();
+    if (_gridPanel != null)
+      _gridPanel.Columns = Columns;
+  }
+
+  private void OnSizeChanged(object? sender, SizeChangedEventArgs e) =>
+    UpdateCondensedState();
+
+  private void UpdateCondensedState()
+  {
+    var columns = _gridPanel?.Columns ?? Columns;
+    if (columns <= 0 || Bounds.Width <= 0) return;
+    var cardWidth = Bounds.Width / columns;
+    var condensed = cardWidth < CondensedThreshold;
+    if (condensed == _isCondensed) return;
+    _isCondensed = condensed;
+    PseudoClasses.Set(":condensed", _isCondensed);
+  }
+
+  public void FlashCamera(int index)
+  {
+    if (_gridPanel == null || index < 0 || index >= _gridPanel.Children.Count) return;
+
+    var container = _gridPanel.Children[index];
+    var card = container.GetVisualDescendants()
+      .OfType<Border>()
+      .FirstOrDefault(b => b.Classes.Contains("card"));
+    if (card == null) return;
+
+    IBrush? flashBrush = null;
+    if (Application.Current?.TryGetResource("WarningBrush",
+          Application.Current.ActualThemeVariant, out var res) == true)
+      flashBrush = res as IBrush;
+    flashBrush ??= Brushes.Orange;
+
+    card.BorderBrush = flashBrush;
+    card.BorderThickness = new Thickness(2);
+
+    DispatcherTimer.RunOnce(() =>
+    {
+      card.ClearValue(Border.BorderBrushProperty);
+      card.ClearValue(Border.BorderThicknessProperty);
+    }, TimeSpan.FromMilliseconds(800));
+  }
+
+  private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
+  {
+    if (_gridPanel == null || _gridItems == null) return;
 
     var pos = e.GetPosition(_gridItems);
-    _dragStart = pos;
-    _dragItem = FindItemAtPoint(_gridPanel, _gridItems, pos);
-
-    if (_dragItem != null)
+    for (var i = 0; i < _gridPanel.Children.Count; i++)
     {
-      _dragSourceIndex = IndexOfContainer(_gridPanel, _dragItem);
-    }
-  }
-
-  private void OnGridPointerMoved(object? sender, PointerEventArgs e)
-  {
-    if (_dragItem == null) return;
-
-    var pos = e.GetPosition(this);
-    var delta = pos - _dragStart;
-    if (!_isDragging && (Math.Abs(delta.X) > 5 || Math.Abs(delta.Y) > 5))
-      _isDragging = true;
-
-    if (_isDragging)
-      _dragItem.Opacity = 0.5;
-  }
-
-  private void OnGridPointerReleased(object? sender, PointerReleasedEventArgs e)
-  {
-    if (_dragItem != null && _isDragging)
-    {
-      _dragItem.Opacity = 1.0;
-
-      if (_gridItems != null && _gridPanel != null)
+      if (_gridPanel.Children[i] is not Control control) continue;
+      var topLeft = control.TranslatePoint(new Point(0, 0), _gridItems);
+      if (topLeft == null) continue;
+      if (new Rect(topLeft.Value, control.Bounds.Size).Contains(pos))
       {
-        var pos = e.GetPosition(_gridItems);
-        var targetItem = FindItemAtPoint(_gridPanel, _gridItems, pos);
-        if (targetItem != null && targetItem != _dragItem)
-        {
-          var targetIndex = IndexOfContainer(_gridPanel, targetItem);
-          if (_dragSourceIndex >= 0 && targetIndex >= 0)
-            ItemReordered?.Invoke(_dragSourceIndex, targetIndex);
-        }
+        ItemClicked?.Invoke(i);
+        return;
       }
     }
-
-    _dragItem = null;
-    _isDragging = false;
-  }
-
-  private static Control? FindItemAtPoint(UniformGrid panel, ItemsControl items, Point point)
-  {
-    foreach (var child in panel.Children)
-    {
-      if (child is not Control control) continue;
-
-      var topLeft = control.TranslatePoint(new Point(0, 0), items);
-      if (topLeft == null) continue;
-
-      var rect = new Rect(topLeft.Value, control.Bounds.Size);
-      if (rect.Contains(point))
-        return control;
-    }
-    return null;
-  }
-
-  private static int IndexOfContainer(UniformGrid panel, Control container)
-  {
-    for (var i = 0; i < panel.Children.Count; i++)
-    {
-      if (panel.Children[i] == container)
-        return i;
-    }
-    return -1;
   }
 }

@@ -141,8 +141,9 @@ public class ApiClientTests
     public ApiRequestMessage? LastRequest { get; private set; }
     public ApiResponseMessage? NextResponse { get; set; }
 
-    public Task ConnectAsync(CancellationToken ct) => Task.CompletedTask;
-    public Task DisconnectAsync() => Task.CompletedTask;
+    public int ConnectedAddressIndex => 0;
+    public Task ConnectAsync(ConnectionOptions options, CancellationToken ct) => Task.CompletedTask;
+    public Task DisconnectAsync(CancellationToken ct = default) => Task.CompletedTask;
 
     public Task<MuxStream> OpenStreamAsync(
       ushort streamType, ReadOnlyMemory<byte> payload, CancellationToken ct)

@@ -56,7 +56,7 @@ public class TunnelServiceTests
     var states = new List<ConnectionState>();
     service.StateChanged += s => states.Add(s);
 
-    await service.ConnectAsync(CancellationToken.None);
+    await service.ConnectAsync(new(), CancellationToken.None);
 
     Assert.That(service.State, Is.EqualTo(ConnectionState.Connected));
     Assert.That(service.Generation, Is.EqualTo(1u));
@@ -84,7 +84,7 @@ public class TunnelServiceTests
     var service = new TunnelService(creds, transport, NullLogger<TunnelService>.Instance);
 
     Assert.ThrowsAsync<InvalidOperationException>(
-      () => service.ConnectAsync(CancellationToken.None));
+      () => service.ConnectAsync(new(), CancellationToken.None));
   }
 
   /// <summary>
@@ -105,7 +105,7 @@ public class TunnelServiceTests
     transport.FailAddresses.Add("127.0.0.1:9999");
     var service = new TunnelService(creds, transport, NullLogger<TunnelService>.Instance);
 
-    await service.ConnectAsync(CancellationToken.None);
+    await service.ConnectAsync(new(), CancellationToken.None);
 
     Assert.That(service.State, Is.EqualTo(ConnectionState.Connected));
     Assert.That(transport.ConnectedAddress, Is.EqualTo("10.0.0.1:9999"));
@@ -131,7 +131,7 @@ public class TunnelServiceTests
     var service = new TunnelService(creds, transport, NullLogger<TunnelService>.Instance);
 
     Assert.ThrowsAsync<InvalidOperationException>(
-      () => service.ConnectAsync(CancellationToken.None));
+      () => service.ConnectAsync(new(), CancellationToken.None));
   }
 
   /// <summary>
@@ -151,7 +151,7 @@ public class TunnelServiceTests
     var transport = new MockTransportFactory();
     var service = new TunnelService(creds, transport, NullLogger<TunnelService>.Instance);
 
-    await service.ConnectAsync(CancellationToken.None);
+    await service.ConnectAsync(new(), CancellationToken.None);
 
     var written = transport.LastPipe!.WrittenBytes;
     Assert.That(written.Length, Is.GreaterThanOrEqualTo(MessageEnvelope.MuxHeaderSize + 4));

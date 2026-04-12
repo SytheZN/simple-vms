@@ -8,8 +8,12 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" />
-    <PackageReference Include="Avalonia.Themes.Fluent" />
-    <PackageReference Include="LibVLCSharp.Avalonia" />
+    <PackageReference Include="IconPacks.Avalonia.PhosphorIcons" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <AvaloniaResource Include="Assets/*.ttf" />
+    <AvaloniaResource Include="Assets/*.png" />
   </ItemGroup>
 </Project>

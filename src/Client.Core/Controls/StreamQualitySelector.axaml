@@ -1,19 +1,8 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="Client.Core.Controls.StreamQualitySelector">
-  <ComboBox x:Name="ProfileCombo"
-            ItemsSource="{Binding Streams}"
-            SelectedItem="{Binding SelectedStream}"
-            MinWidth="160">
-    <ComboBox.ItemTemplate>
-      <DataTemplate>
-        <TextBlock>
-          <Run Text="{Binding Resolution}" />
-          <Run Text=" " />
-          <Run Text="{Binding Fps}" /><Run Text="fps" />
-          <Run Text=" (" /><Run Text="{Binding Codec}" /><Run Text=")" />
-        </TextBlock>
-      </DataTemplate>
-    </ComboBox.ItemTemplate>
-  </ComboBox>
+  <Button x:Name="CycleButton"
+          Classes="btn btn-ghost btn-sm">
+    <TextBlock x:Name="ProfileLabel" />
+  </Button>
 </UserControl>

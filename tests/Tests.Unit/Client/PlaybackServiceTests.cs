@@ -1,5 +1,6 @@
 using Client.Core.Streaming;
 using MessagePack;
+using Microsoft.Extensions.Logging.Abstractions;
 using Shared.Protocol;
 using Tests.Unit.Client.Mocks;
 
@@ -22,7 +23,7 @@ public class PlaybackServiceTests
   public async Task Start_SendsCorrectRequest()
   {
     var tunnel = new FakeStreamTunnel();
-    var service = new PlaybackService(tunnel);
+    var service = new PlaybackService(tunnel, NullLogger<PlaybackService>.Instance);
     var cameraId = Guid.NewGuid();
 
     var feed = await service.StartAsync(cameraId, "main", 1_000_000, 2_000_000, CancellationToken.None);
@@ -52,7 +53,7 @@ public class PlaybackServiceTests
   public async Task Seek_ClosesOldAndOpensNew()
   {
     var tunnel = new FakeStreamTunnel();
-    var service = new PlaybackService(tunnel);
+    var service = new PlaybackService(tunnel, NullLogger<PlaybackService>.Instance);
     var cameraId = Guid.NewGuid();
 
     var feed1 = await service.StartAsync(cameraId, "main", 1_000_000, null, CancellationToken.None);
@@ -83,7 +84,7 @@ public class PlaybackServiceTests
   public async Task Playback_GapMessage_FiresOnGap()
   {
     var tunnel = new FakeStreamTunnel();
-    var service = new PlaybackService(tunnel);
+    var service = new PlaybackService(tunnel, NullLogger<PlaybackService>.Instance);
 
     var feed = await service.StartAsync(Guid.NewGuid(), "main", 1_000_000, null, CancellationToken.None);
 

@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using Client.Core.Api;
+using Microsoft.Extensions.Logging;
 using Shared.Models.Dto;
 
 namespace Client.Core.ViewModels;
@@ -7,6 +8,7 @@ namespace Client.Core.ViewModels;
 public sealed class TimelineViewModel : ViewModelBase, IDisposable
 {
   private readonly IApiClient _api;
+  private readonly ILogger<TimelineViewModel> _logger;
 
   private Guid _cameraId;
   private string _profile = "main";
@@ -47,9 +49,10 @@ public sealed class TimelineViewModel : ViewModelBase, IDisposable
     set => SetProperty(ref _visibleTo, value);
   }
 
-  public TimelineViewModel(IApiClient api)
+  public TimelineViewModel(IApiClient api, ILogger<TimelineViewModel> logger)
   {
     _api = api;
+    _logger = logger;
   }
 
   public void Configure(Guid cameraId, string profile)
@@ -67,6 +70,7 @@ public sealed class TimelineViewModel : ViewModelBase, IDisposable
     result.Switch(
       timeline => RunOnUiThread(() =>
       {
+        ClearError();
         Spans.Clear();
         foreach (var span in timeline.Spans)
           Spans.Add(span);
@@ -74,8 +78,14 @@ public sealed class TimelineViewModel : ViewModelBase, IDisposable
         Events.Clear();
         foreach (var evt in timeline.Events)
           Events.Add(evt);
+
+        OnPropertyChanged(nameof(Spans));
       }),
-      _ => { });
+      error =>
+      {
+        _logger.LogWarning("Failed to load timeline: {Message}", error.Message);
+        RunOnUiThread(() => SetError(error));
+      });
   }
 
   public void SetVisibleRange(ulong from, ulong to)

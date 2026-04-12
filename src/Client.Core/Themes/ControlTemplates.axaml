@@ -1,0 +1,354 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!-- Window -->
+  <Style Selector="Window">
+    <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+    <Setter Property="FontFamily" Value="{DynamicResource SansFont}" />
+    <Setter Property="FontSize" Value="{DynamicResource TextBase}" />
+  </Style>
+
+  <!-- Button -->
+  <Style Selector="Button">
+    <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="{DynamicResource PaddingBtn}" />
+    <Setter Property="CornerRadius" Value="{DynamicResource RadiusMd}" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="{TemplateBinding Background}"
+                BorderBrush="{TemplateBinding BorderBrush}"
+                BorderThickness="{TemplateBinding BorderThickness}"
+                CornerRadius="{TemplateBinding CornerRadius}"
+                Padding="{TemplateBinding Padding}">
+          <ContentPresenter Content="{TemplateBinding Content}"
+                            ContentTemplate="{TemplateBinding ContentTemplate}"
+                            Foreground="{TemplateBinding Foreground}"
+                            HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                            VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="Button:disabled">
+    <Setter Property="Opacity" Value="0.4" />
+  </Style>
+
+  <!-- TextBox -->
+  <Style Selector="TextBox">
+    <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+    <Setter Property="BorderThickness" Value="{DynamicResource BorderWidth}" />
+    <Setter Property="CornerRadius" Value="{DynamicResource RadiusMd}" />
+    <Setter Property="Padding" Value="{DynamicResource PaddingInput}" />
+    <Setter Property="FontSize" Value="{DynamicResource TextSm}" />
+    <Setter Property="CaretBrush" Value="{DynamicResource TextBrush}" />
+    <Setter Property="SelectionBrush" Value="{DynamicResource PrimaryMutedBrush}" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="{TemplateBinding Background}"
+                BorderBrush="{TemplateBinding BorderBrush}"
+                BorderThickness="{TemplateBinding BorderThickness}"
+                CornerRadius="{TemplateBinding CornerRadius}"
+                Padding="{TemplateBinding Padding}">
+          <DockPanel>
+            <TextBlock x:Name="PART_FloatingWatermark"
+                       DockPanel.Dock="Top"
+                       IsVisible="False" />
+            <ScrollViewer HorizontalScrollBarVisibility="Hidden"
+                          VerticalScrollBarVisibility="Hidden">
+              <Panel>
+                <TextBlock x:Name="PART_Watermark"
+                           Text="{TemplateBinding Watermark}"
+                           Foreground="{DynamicResource TextMutedBrush}"
+                           IsVisible="{TemplateBinding Text, Converter={x:Static StringConverters.IsNullOrEmpty}}"
+                           IsHitTestVisible="False" />
+                <TextPresenter x:Name="PART_TextPresenter"
+                               Text="{TemplateBinding Text, Mode=TwoWay}"
+                               CaretBrush="{TemplateBinding CaretBrush}"
+                               SelectionBrush="{TemplateBinding SelectionBrush}"
+                               CaretIndex="{TemplateBinding CaretIndex}"
+                               SelectionStart="{TemplateBinding SelectionStart}"
+                               SelectionEnd="{TemplateBinding SelectionEnd}"
+                               TextWrapping="{TemplateBinding TextWrapping}"
+                               LineHeight="{TemplateBinding LineHeight}"
+                               LetterSpacing="{TemplateBinding LetterSpacing}" />
+              </Panel>
+            </ScrollViewer>
+          </DockPanel>
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="TextBox:focus">
+    <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}" />
+  </Style>
+  <Style Selector="TextBox:disabled">
+    <Setter Property="Opacity" Value="0.5" />
+    <Setter Property="Background" Value="{DynamicResource SurfaceSunkenBrush}" />
+  </Style>
+
+  <!-- TextBlock: inherit foreground from parent, don't override -->
+
+  <!-- ScrollViewer -->
+  <Style Selector="ScrollViewer">
+    <Setter Property="Template">
+      <ControlTemplate>
+        <DockPanel>
+          <ScrollBar x:Name="PART_VerticalScrollBar"
+                     DockPanel.Dock="Right"
+                     Orientation="Vertical" />
+          <ScrollBar x:Name="PART_HorizontalScrollBar"
+                     DockPanel.Dock="Bottom"
+                     Orientation="Horizontal" />
+          <ScrollContentPresenter x:Name="PART_ContentPresenter"
+                                   Background="{TemplateBinding Background}"
+                                   Content="{TemplateBinding Content}"
+                                   Padding="{TemplateBinding Padding}" />
+        </DockPanel>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+
+  <!-- ScrollBar (vertical) -->
+  <Style Selector="ScrollBar:vertical">
+    <Setter Property="Width" Value="14" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Track x:Name="PART_Track"
+               IsDirectionReversed="True"
+               Orientation="Vertical"
+               Minimum="{TemplateBinding Minimum}"
+               Maximum="{TemplateBinding Maximum}"
+               Value="{TemplateBinding Value, Mode=TwoWay}"
+               ViewportSize="{TemplateBinding ViewportSize}">
+          <Track.Thumb>
+            <Thumb x:Name="ScrollThumb">
+              <Thumb.Template>
+                <ControlTemplate>
+                  <Border Background="{DynamicResource BorderBrush}"
+                          CornerRadius="{DynamicResource RadiusFull}"
+                          Width="4"
+                          HorizontalAlignment="Center"
+                          MinHeight="16">
+                    <Border.Transitions>
+                      <Transitions>
+                        <DoubleTransition Property="Width" Duration="0:0:0.15" />
+                      </Transitions>
+                    </Border.Transitions>
+                  </Border>
+                </ControlTemplate>
+              </Thumb.Template>
+            </Thumb>
+          </Track.Thumb>
+        </Track>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="ScrollBar:vertical:pointerover /template/ Thumb#ScrollThumb /template/ Border">
+    <Setter Property="Width" Value="10" />
+  </Style>
+  <Style Selector="ScrollBar:vertical Thumb#ScrollThumb:pressed /template/ Border">
+    <Setter Property="Width" Value="10" />
+  </Style>
+  <!-- ScrollBar (horizontal) -->
+  <Style Selector="ScrollBar:horizontal">
+    <Setter Property="Height" Value="14" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Track x:Name="PART_Track"
+               Orientation="Horizontal"
+               Minimum="{TemplateBinding Minimum}"
+               Maximum="{TemplateBinding Maximum}"
+               Value="{TemplateBinding Value, Mode=TwoWay}"
+               ViewportSize="{TemplateBinding ViewportSize}">
+          <Track.Thumb>
+            <Thumb x:Name="ScrollThumb">
+              <Thumb.Template>
+                <ControlTemplate>
+                  <Border Background="{DynamicResource BorderBrush}"
+                          CornerRadius="{DynamicResource RadiusFull}"
+                          Height="4"
+                          VerticalAlignment="Center"
+                          MinWidth="16">
+                    <Border.Transitions>
+                      <Transitions>
+                        <DoubleTransition Property="Height" Duration="0:0:0.15" />
+                      </Transitions>
+                    </Border.Transitions>
+                  </Border>
+                </ControlTemplate>
+              </Thumb.Template>
+            </Thumb>
+          </Track.Thumb>
+        </Track>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="ScrollBar:horizontal:pointerover /template/ Thumb#ScrollThumb /template/ Border">
+    <Setter Property="Height" Value="10" />
+  </Style>
+  <Style Selector="ScrollBar:horizontal Thumb#ScrollThumb:pressed /template/ Border">
+    <Setter Property="Height" Value="10" />
+  </Style>
+
+  <!-- ContentControl -->
+  <Style Selector="ContentControl">
+    <Setter Property="Template">
+      <ControlTemplate>
+        <ContentPresenter Content="{TemplateBinding Content}"
+                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                          Padding="{TemplateBinding Padding}" />
+      </ControlTemplate>
+    </Setter>
+  </Style>
+
+  <!-- ItemsControl -->
+  <Style Selector="ItemsControl">
+    <Setter Property="Template">
+      <ControlTemplate>
+        <ItemsPresenter ItemsPanel="{TemplateBinding ItemsPanel}" />
+      </ControlTemplate>
+    </Setter>
+  </Style>
+
+  <!-- ListBox -->
+  <Style Selector="ListBox">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <ScrollViewer>
+          <ItemsPresenter ItemsPanel="{TemplateBinding ItemsPanel}" />
+        </ScrollViewer>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+
+  <!-- ListBoxItem -->
+  <Style Selector="ListBoxItem">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <ContentPresenter Content="{TemplateBinding Content}"
+                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                          Padding="{TemplateBinding Padding}" />
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="ListBoxItem:selected">
+    <Setter Property="Background" Value="{DynamicResource PrimaryMutedBrush}" />
+  </Style>
+
+  <!-- Popup transparency for rounded corners -->
+  <Style Selector="PopupRoot">
+    <Setter Property="TransparencyLevelHint" Value="Transparent" />
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+
+  <!-- ToolTip -->
+  <Style Selector="ToolTip">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+    <Setter Property="FontSize" Value="{DynamicResource TextXs}" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="{DynamicResource SurfaceRaisedBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="{DynamicResource BorderWidth}"
+                CornerRadius="{DynamicResource RadiusSm}"
+                Padding="{DynamicResource PaddingBtnSm}"
+                BoxShadow="0 2 8 0 #40000000">
+          <ContentPresenter Content="{TemplateBinding Content}"
+                            ContentTemplate="{TemplateBinding ContentTemplate}" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+
+  <!-- Toggle (ToggleButton styled as toggle-track / toggle-knob from theme.css) -->
+  <Style Selector="ToggleButton.toggle">
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border x:Name="Track"
+                Background="{DynamicResource BorderBrush}"
+                CornerRadius="{DynamicResource RadiusLg}"
+                Width="44" Height="24"
+                VerticalAlignment="Center">
+          <Border x:Name="Knob"
+                  Width="16" Height="16"
+                  CornerRadius="{DynamicResource RadiusMd}"
+                  Background="White"
+                  HorizontalAlignment="Left"
+                  Margin="4 0"
+                  BoxShadow="0 1 3 0 #20000000">
+            <Border.Transitions>
+              <Transitions>
+                <ThicknessTransition Property="Margin" Duration="0:0:0.15" />
+              </Transitions>
+            </Border.Transitions>
+          </Border>
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="ToggleButton.toggle:checked /template/ Border#Track">
+    <Setter Property="Background" Value="{DynamicResource PrimaryBrush}" />
+  </Style>
+  <Style Selector="ToggleButton.toggle:checked /template/ Border#Knob">
+    <Setter Property="Margin" Value="24 0 4 0" />
+  </Style>
+
+  <!-- Slider (matches .rate-slider in theme.css) -->
+  <Style Selector="Slider">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Padding="{TemplateBinding Padding}">
+          <Panel>
+            <Border Height="4"
+                    Background="{DynamicResource BorderBrush}"
+                    CornerRadius="{DynamicResource RadiusFull}"
+                    VerticalAlignment="Center" />
+            <Track x:Name="PART_Track"
+                   Minimum="{TemplateBinding Minimum}"
+                   Maximum="{TemplateBinding Maximum}"
+                   Value="{TemplateBinding Value}"
+                   IsDirectionReversed="{TemplateBinding IsDirectionReversed}"
+                   Orientation="Horizontal">
+              <Track.Thumb>
+                <Thumb Width="6" Height="18"
+                       Background="{DynamicResource PrimaryBrush}"
+                       CornerRadius="{DynamicResource RadiusSm}"
+                       Cursor="Hand">
+                  <Thumb.Template>
+                    <ControlTemplate>
+                      <Border Background="{TemplateBinding Background}"
+                              CornerRadius="{TemplateBinding CornerRadius}"
+                              Width="{TemplateBinding Width}"
+                              Height="{TemplateBinding Height}" />
+                    </ControlTemplate>
+                  </Thumb.Template>
+                </Thumb>
+              </Track.Thumb>
+            </Track>
+          </Panel>
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+
+</Styles>

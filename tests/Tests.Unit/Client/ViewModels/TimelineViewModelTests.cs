@@ -1,4 +1,5 @@
 using Client.Core.ViewModels;
+using Microsoft.Extensions.Logging.Abstractions;
 using Shared.Models;
 using Shared.Models.Dto;
 using Tests.Unit.Client.Mocks;
@@ -35,7 +36,7 @@ public class TimelineViewModelTests
       }
     };
 
-    var vm = new TimelineViewModel(api);
+    var vm = new TimelineViewModel(api, NullLogger<TimelineViewModel>.Instance);
     vm.Configure(Guid.NewGuid(), "main");
     vm.SetVisibleRange(1_000_000, 5_000_000);
 
@@ -60,7 +61,7 @@ public class TimelineViewModelTests
   [Test]
   public void CurrentPosition_Set_FiresPropertyChanged()
   {
-    var vm = new TimelineViewModel(new TimelineApi());
+    var vm = new TimelineViewModel(new TimelineApi(), NullLogger<TimelineViewModel>.Instance);
 
     var changed = new List<string>();
     vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName!);
@@ -89,7 +90,7 @@ public class TimelineViewModelTests
       Response = new TimelineResponse { Spans = [], Events = [] }
     };
 
-    var vm = new TimelineViewModel(api);
+    var vm = new TimelineViewModel(api, NullLogger<TimelineViewModel>.Instance);
     vm.Configure(Guid.NewGuid(), "main");
     vm.SetVisibleRange(1_000_000, 5_000_000);
 
@@ -115,7 +116,7 @@ public class TimelineViewModelTests
   [Test]
   public void ZoomLevel_BelowMinimum_Clamped()
   {
-    var vm = new TimelineViewModel(new TimelineApi());
+    var vm = new TimelineViewModel(new TimelineApi(), NullLogger<TimelineViewModel>.Instance);
 
     vm.ZoomLevel = 0.01;
 

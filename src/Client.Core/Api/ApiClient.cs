@@ -240,31 +240,43 @@ public sealed class ApiClient : IApiClient
     };
 
     var requestPayload = MessagePackSerializer.Serialize(request, ProtocolSerializer.Options);
-    await using var stream = await _tunnel.OpenStreamAsync(StreamTypes.ApiRequest, requestPayload, ct);
-
-    MuxMessage msg;
+    MuxStream stream;
     try
     {
-      msg = await stream.Reader.ReadAsync(ct);
+      stream = await _tunnel.OpenStreamAsync(StreamTypes.ApiRequest, requestPayload, ct);
     }
-    catch (OperationCanceledException) when (_tunnel.Generation != generationBefore)
+    catch (InvalidOperationException ex)
     {
-      _logger.LogWarning("{Method} {Path} discarded - connection lost during request", method, path);
-      return Error.Create(ClientModuleIds.Api, 0x0003, Result.Unavailable, "Connection was lost during request");
-    }
-    catch (System.Threading.Channels.ChannelClosedException)
-    {
-      _logger.LogWarning("{Method} {Path} discarded - stream closed during request", method, path);
-      return Error.Create(ClientModuleIds.Api, 0x0004, Result.Unavailable, "Stream closed during request");
+      _logger.LogWarning("{Method} {Path} failed: {Message}", method, path, ex.Message);
+      return Error.Create(ClientModuleIds.Api, 0x0006, Result.Unavailable, ex.Message);
     }
 
-    if (_tunnel.Generation != generationBefore)
+    await using (stream)
     {
-      _logger.LogWarning("{Method} {Path} discarded - connection generation changed", method, path);
-      return Error.Create(ClientModuleIds.Api, 0x0005, Result.Unavailable, "Connection generation changed during request");
-    }
+      MuxMessage msg;
+      try
+      {
+        msg = await stream.Reader.ReadAsync(ct);
+      }
+      catch (OperationCanceledException) when (_tunnel.Generation != generationBefore)
+      {
+        _logger.LogWarning("{Method} {Path} discarded - connection lost during request", method, path);
+        return Error.Create(ClientModuleIds.Api, 0x0003, Result.Unavailable, "Connection was lost during request");
+      }
+      catch (System.Threading.Channels.ChannelClosedException)
+      {
+        _logger.LogWarning("{Method} {Path} discarded - stream closed during request", method, path);
+        return Error.Create(ClientModuleIds.Api, 0x0004, Result.Unavailable, "Stream closed during request");
+      }
 
-    return MessagePackSerializer.Deserialize<ApiResponseMessage>(msg.Payload, ProtocolSerializer.Options);
+      if (_tunnel.Generation != generationBefore)
+      {
+        _logger.LogWarning("{Method} {Path} discarded - connection generation changed", method, path);
+        return Error.Create(ClientModuleIds.Api, 0x0005, Result.Unavailable, "Connection generation changed during request");
+      }
+
+      return MessagePackSerializer.Deserialize<ApiResponseMessage>(msg.Payload, ProtocolSerializer.Options);
+    }
   }
 
   private static byte[] Serialize<T>(T value, JsonTypeInfo<T> typeInfo) =>

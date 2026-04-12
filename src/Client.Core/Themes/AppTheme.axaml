@@ -1,0 +1,192 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <ResourceDictionary.ThemeDictionaries>
+
+    <!-- Light theme (matches :root in theme.css) -->
+    <ResourceDictionary x:Key="Light">
+      <Color x:Key="PrimaryColor">#244ECC</Color>
+      <Color x:Key="PrimaryHoverColor">#153BB7</Color>
+      <Color x:Key="PrimaryMutedColor">#1E244ECC</Color>
+      <Color x:Key="AccentColor">#AE53E6</Color>
+
+      <Color x:Key="SurfaceColor">#EEEEEE</Color>
+      <Color x:Key="SurfaceRaisedColor">#F8F8F8</Color>
+      <Color x:Key="SurfaceSunkenColor">#E4E4E4</Color>
+
+      <Color x:Key="TextColor">#151B24</Color>
+      <Color x:Key="TextMutedColor">#5D646F</Color>
+      <Color x:Key="TextInvertedColor">#F8F8F8</Color>
+
+      <Color x:Key="BorderColor">#C8CED8</Color>
+      <Color x:Key="BorderMutedColor">#DEE1E7</Color>
+
+      <Color x:Key="SuccessColor">#0083C4</Color>
+      <Color x:Key="WarningColor">#DD7B2B</Color>
+      <Color x:Key="DangerColor">#D14E95</Color>
+
+      <Color x:Key="SuccessMutedColor">#230083C4</Color>
+      <Color x:Key="WarningMutedColor">#23DD7B2B</Color>
+      <Color x:Key="DangerMutedColor">#23D14E95</Color>
+
+      <Color x:Key="MotionColor">#59DD7B2B</Color>
+      <Color x:Key="MotionActiveColor">#8CDD7B2B</Color>
+
+      <Color x:Key="SpanRecordingColor">#4C244ECC</Color>
+      <Color x:Key="SpanMotionColor">#66DD7B2B</Color>
+
+      <SolidColorBrush x:Key="PrimaryBrush" Color="{DynamicResource PrimaryColor}" />
+      <SolidColorBrush x:Key="PrimaryHoverBrush" Color="{DynamicResource PrimaryHoverColor}" />
+      <SolidColorBrush x:Key="PrimaryMutedBrush" Color="{DynamicResource PrimaryMutedColor}" />
+      <SolidColorBrush x:Key="AccentBrush" Color="{DynamicResource AccentColor}" />
+
+      <SolidColorBrush x:Key="SurfaceBrush" Color="{DynamicResource SurfaceColor}" />
+      <SolidColorBrush x:Key="SurfaceRaisedBrush" Color="{DynamicResource SurfaceRaisedColor}" />
+      <SolidColorBrush x:Key="SurfaceSunkenBrush" Color="{DynamicResource SurfaceSunkenColor}" />
+
+      <SolidColorBrush x:Key="TextBrush" Color="{DynamicResource TextColor}" />
+      <SolidColorBrush x:Key="TextMutedBrush" Color="{DynamicResource TextMutedColor}" />
+      <SolidColorBrush x:Key="TextInvertedBrush" Color="{DynamicResource TextInvertedColor}" />
+
+      <SolidColorBrush x:Key="BorderBrush" Color="{DynamicResource BorderColor}" />
+      <SolidColorBrush x:Key="BorderMutedBrush" Color="{DynamicResource BorderMutedColor}" />
+
+      <SolidColorBrush x:Key="SuccessBrush" Color="{DynamicResource SuccessColor}" />
+      <SolidColorBrush x:Key="WarningBrush" Color="{DynamicResource WarningColor}" />
+      <SolidColorBrush x:Key="DangerBrush" Color="{DynamicResource DangerColor}" />
+
+      <SolidColorBrush x:Key="SuccessMutedBrush" Color="{DynamicResource SuccessMutedColor}" />
+      <SolidColorBrush x:Key="WarningMutedBrush" Color="{DynamicResource WarningMutedColor}" />
+      <SolidColorBrush x:Key="DangerMutedBrush" Color="{DynamicResource DangerMutedColor}" />
+
+      <SolidColorBrush x:Key="MotionBrush" Color="{DynamicResource MotionColor}" />
+      <SolidColorBrush x:Key="MotionActiveBrush" Color="{DynamicResource MotionActiveColor}" />
+
+      <SolidColorBrush x:Key="SpanRecordingBrush" Color="{DynamicResource SpanRecordingColor}" />
+      <SolidColorBrush x:Key="SpanMotionBrush" Color="{DynamicResource SpanMotionColor}" />
+    </ResourceDictionary>
+
+    <!-- Dark theme (matches .dark in theme.css) -->
+    <ResourceDictionary x:Key="Dark">
+      <Color x:Key="PrimaryColor">#6B8DD8</Color>
+      <Color x:Key="PrimaryHoverColor">#80A3F0</Color>
+      <Color x:Key="PrimaryMutedColor">#266B8DD8</Color>
+      <Color x:Key="AccentColor">#BF8AE6</Color>
+
+      <Color x:Key="SurfaceColor">#0F0F0F</Color>
+      <Color x:Key="SurfaceRaisedColor">#161616</Color>
+      <Color x:Key="SurfaceSunkenColor">#090909</Color>
+
+      <Color x:Key="TextColor">#D4D8DE</Color>
+      <Color x:Key="TextMutedColor">#757B83</Color>
+      <Color x:Key="TextInvertedColor">#060606</Color>
+
+      <Color x:Key="BorderColor">#2B2E36</Color>
+      <Color x:Key="BorderMutedColor">#1D1F24</Color>
+
+      <Color x:Key="SuccessColor">#62A0CA</Color>
+      <Color x:Key="WarningColor">#DC9A6C</Color>
+      <Color x:Key="DangerColor">#D67EA9</Color>
+
+      <Color x:Key="SuccessMutedColor">#2662A0CA</Color>
+      <Color x:Key="WarningMutedColor">#26DC9A6C</Color>
+      <Color x:Key="DangerMutedColor">#26D67EA9</Color>
+
+      <Color x:Key="MotionColor">#4CDC9A6C</Color>
+      <Color x:Key="MotionActiveColor">#7FDC9A6C</Color>
+
+      <Color x:Key="SpanRecordingColor">#4C6B8DD8</Color>
+      <Color x:Key="SpanMotionColor">#66DC9A6C</Color>
+
+      <SolidColorBrush x:Key="PrimaryBrush" Color="{DynamicResource PrimaryColor}" />
+      <SolidColorBrush x:Key="PrimaryHoverBrush" Color="{DynamicResource PrimaryHoverColor}" />
+      <SolidColorBrush x:Key="PrimaryMutedBrush" Color="{DynamicResource PrimaryMutedColor}" />
+      <SolidColorBrush x:Key="AccentBrush" Color="{DynamicResource AccentColor}" />
+
+      <SolidColorBrush x:Key="SurfaceBrush" Color="{DynamicResource SurfaceColor}" />
+      <SolidColorBrush x:Key="SurfaceRaisedBrush" Color="{DynamicResource SurfaceRaisedColor}" />
+      <SolidColorBrush x:Key="SurfaceSunkenBrush" Color="{DynamicResource SurfaceSunkenColor}" />
+
+      <SolidColorBrush x:Key="TextBrush" Color="{DynamicResource TextColor}" />
+      <SolidColorBrush x:Key="TextMutedBrush" Color="{DynamicResource TextMutedColor}" />
+      <SolidColorBrush x:Key="TextInvertedBrush" Color="{DynamicResource TextInvertedColor}" />
+
+      <SolidColorBrush x:Key="BorderBrush" Color="{DynamicResource BorderColor}" />
+      <SolidColorBrush x:Key="BorderMutedBrush" Color="{DynamicResource BorderMutedColor}" />
+
+      <SolidColorBrush x:Key="SuccessBrush" Color="{DynamicResource SuccessColor}" />
+      <SolidColorBrush x:Key="WarningBrush" Color="{DynamicResource WarningColor}" />
+      <SolidColorBrush x:Key="DangerBrush" Color="{DynamicResource DangerColor}" />
+
+      <SolidColorBrush x:Key="SuccessMutedBrush" Color="{DynamicResource SuccessMutedColor}" />
+      <SolidColorBrush x:Key="WarningMutedBrush" Color="{DynamicResource WarningMutedColor}" />
+      <SolidColorBrush x:Key="DangerMutedBrush" Color="{DynamicResource DangerMutedColor}" />
+
+      <SolidColorBrush x:Key="MotionBrush" Color="{DynamicResource MotionColor}" />
+      <SolidColorBrush x:Key="MotionActiveBrush" Color="{DynamicResource MotionActiveColor}" />
+
+      <SolidColorBrush x:Key="SpanRecordingBrush" Color="{DynamicResource SpanRecordingColor}" />
+      <SolidColorBrush x:Key="SpanMotionBrush" Color="{DynamicResource SpanMotionColor}" />
+    </ResourceDictionary>
+
+  </ResourceDictionary.ThemeDictionaries>
+
+  <!-- Theme-invariant tokens -->
+  <FontFamily x:Key="SansFont">avares://Client.Core/Assets/Rubik-Regular.ttf#Rubik</FontFamily>
+  <FontFamily x:Key="SansMediumFont">avares://Client.Core/Assets/Rubik-Medium.ttf#Rubik</FontFamily>
+  <FontFamily x:Key="SansSemiBoldFont">avares://Client.Core/Assets/Rubik-SemiBold.ttf#Rubik</FontFamily>
+  <FontFamily x:Key="SansBoldFont">avares://Client.Core/Assets/Rubik-Bold.ttf#Rubik</FontFamily>
+
+  <x:Double x:Key="TextXs">12</x:Double>
+  <x:Double x:Key="TextSm">14</x:Double>
+  <x:Double x:Key="TextBase">16</x:Double>
+  <x:Double x:Key="TextLg">18</x:Double>
+  <x:Double x:Key="TextXl">20</x:Double>
+  <x:Double x:Key="Text2xl">24</x:Double>
+  <x:Double x:Key="Text3xl">30</x:Double>
+
+  <x:Double x:Key="IconSm">16</x:Double>
+  <x:Double x:Key="IconMd">20</x:Double>
+  <x:Double x:Key="IconLg">24</x:Double>
+  <x:Double x:Key="IconXl">32</x:Double>
+
+  <x:Double x:Key="Space0_5">2</x:Double>
+  <x:Double x:Key="Space1">4</x:Double>
+  <x:Double x:Key="Space2">8</x:Double>
+  <x:Double x:Key="Space3">12</x:Double>
+  <x:Double x:Key="Space4">16</x:Double>
+  <x:Double x:Key="Space6">24</x:Double>
+  <x:Double x:Key="Space8">32</x:Double>
+  <x:Double x:Key="Space12">48</x:Double>
+
+  <Thickness x:Key="MarginSpace0_5">2</Thickness>
+  <Thickness x:Key="MarginSpace1">4</Thickness>
+  <Thickness x:Key="MarginSpace2">8</Thickness>
+  <Thickness x:Key="MarginSpace3">12</Thickness>
+  <Thickness x:Key="MarginSpace4">16</Thickness>
+  <Thickness x:Key="MarginSpace6">24</Thickness>
+  <Thickness x:Key="MarginSpace8">32</Thickness>
+
+  <CornerRadius x:Key="RadiusSm">4</CornerRadius>
+  <CornerRadius x:Key="RadiusMd">8</CornerRadius>
+  <CornerRadius x:Key="RadiusLg">12</CornerRadius>
+  <CornerRadius x:Key="RadiusLgInner">11</CornerRadius>
+  <CornerRadius x:Key="RadiusLgInnerTop">11 11 0 0</CornerRadius>
+  <CornerRadius x:Key="RadiusFull">9999</CornerRadius>
+
+  <Thickness x:Key="BorderWidth">1</Thickness>
+  <x:Double x:Key="FocusRingWidth">2</x:Double>
+
+  <!-- Padding presets (horizontal vertical) -->
+  <Thickness x:Key="PaddingBtn">16 8</Thickness>
+  <Thickness x:Key="PaddingBtnSm">12 5.5</Thickness>
+  <Thickness x:Key="PaddingBtnLg">24 12</Thickness>
+  <Thickness x:Key="PaddingBadge">8 2</Thickness>
+  <Thickness x:Key="PaddingInput">12 8</Thickness>
+  <Thickness x:Key="PaddingNavLink">12 8</Thickness>
+  <Thickness x:Key="PaddingCard">16</Thickness>
+
+  <x:Double x:Key="NavSidebarWidth">192</x:Double>
+  <x:Double x:Key="NavRailWidth">56</x:Double>
+
+</ResourceDictionary>

@@ -1,5 +1,6 @@
 using Client.Core.Tunnel;
 using Client.Core.ViewModels;
+using Microsoft.Extensions.Logging.Abstractions;
 using Shared.Models;
 using Shared.Models.Dto;
 using Tests.Unit.Client.Mocks;
@@ -30,7 +31,7 @@ public class GalleryViewModelTests
 
     var api = new GalleryApi { CameraList = cameras };
     var tunnel = new FakeStreamTunnel();
-    var vm = new GalleryViewModel(api, tunnel);
+    var vm = new GalleryViewModel(api, tunnel, new FakeEventService(), NullLogger<GalleryViewModel>.Instance);
 
     await vm.LoadAsync(CancellationToken.None);
 
@@ -52,7 +53,7 @@ public class GalleryViewModelTests
   [Test]
   public void Columns_Set_FiresPropertyChanged()
   {
-    var vm = new GalleryViewModel(new GalleryApi(), new FakeStreamTunnel());
+    var vm = new GalleryViewModel(new GalleryApi(), new FakeStreamTunnel(), new FakeEventService(), NullLogger<GalleryViewModel>.Instance);
 
     var changed = new List<string>();
     vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName!);
@@ -79,7 +80,7 @@ public class GalleryViewModelTests
     var cameras = new List<CameraListItem> { MakeCamera("Cam1", "192.168.1.1", "online") };
     var api = new GalleryApi { CameraList = cameras };
     var tunnel = new FakeStreamTunnel();
-    var vm = new GalleryViewModel(api, tunnel);
+    var vm = new GalleryViewModel(api, tunnel, new FakeEventService(), NullLogger<GalleryViewModel>.Instance);
 
     tunnel.FireStateChanged(ConnectionState.Connected);
     await Task.Delay(100);

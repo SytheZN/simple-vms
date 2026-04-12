@@ -1,6 +1,33 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:icon="using:IconPacks.Avalonia.PhosphorIcons"
+             xmlns:controls="using:Client.Core.Controls"
              x:Class="Client.Core.Controls.CameraGrid">
+
+  <UserControl.Resources>
+    <controls:StatusToIconKindConverter x:Key="StatusToIconKind" />
+    <controls:StatusToBadgeBackgroundConverter x:Key="StatusToBadgeBg" />
+    <controls:StatusToBadgeForegroundConverter x:Key="StatusToBadgeFg" />
+  </UserControl.Resources>
+
+  <UserControl.Styles>
+    <!-- Default: dot hidden -->
+    <Style Selector="Ellipse.status-dot-card">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <!-- Condensed mode: hide badge and stream info, show dot -->
+    <Style Selector="controls|CameraGrid:condensed Border.status-badge">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector="controls|CameraGrid:condensed Ellipse.status-dot-card">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+    <Style Selector="controls|CameraGrid:condensed ItemsControl.stream-info">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+  </UserControl.Styles>
+
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
   <ItemsControl x:Name="GridItems"
                 ItemsSource="{Binding Cameras}">
     <ItemsControl.ItemsPanel>
@@ -10,23 +37,77 @@
     </ItemsControl.ItemsPanel>
     <ItemsControl.ItemTemplate>
       <DataTemplate>
-        <Border Margin="4"
-                CornerRadius="8"
-                Background="#20808080"
-                BorderBrush="#40808080"
-                BorderThickness="1"
-                Padding="8"
-                Cursor="Hand">
-          <StackPanel Spacing="4">
-            <TextBlock Text="{Binding Name}"
-                       FontWeight="Medium"
-                       FontSize="14" />
-            <TextBlock Text="{Binding Status}"
-                       FontSize="12"
-                       Opacity="0.7" />
+        <Border Margin="{DynamicResource MarginSpace1}"
+                Classes="card"
+                Padding="0"
+                Cursor="Hand"
+                ClipToBounds="True"
+                VerticalAlignment="Top">
+          <StackPanel>
+            <!-- Thumbnail area (16:9) with top corner radius to match card -->
+            <Border CornerRadius="{DynamicResource RadiusLgInnerTop}" ClipToBounds="True">
+              <controls:AspectRatioPanel Background="{DynamicResource SurfaceSunkenBrush}">
+                <icon:PackIconPhosphorIcons Kind="{Binding Status, Converter={StaticResource StatusToIconKind}}"
+                                            Width="{DynamicResource IconXl}"
+                                            Height="{DynamicResource IconXl}"
+                                            Foreground="{DynamicResource TextMutedBrush}"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center" />
+              </controls:AspectRatioPanel>
+            </Border>
+            <!-- Info -->
+            <StackPanel Margin="{DynamicResource MarginSpace3}" Spacing="{DynamicResource Space2}">
+              <DockPanel>
+                <!-- Full badge (hidden when condensed) -->
+                <Border DockPanel.Dock="Right"
+                        Classes="status-badge"
+                        Padding="{DynamicResource PaddingBadge}"
+                        CornerRadius="{DynamicResource RadiusFull}"
+                        Background="{Binding Status, Converter={StaticResource StatusToBadgeBg}}"
+                        VerticalAlignment="Center">
+                  <TextBlock Text="{Binding Status}"
+                             FontSize="{DynamicResource TextXs}"
+                             FontFamily="{DynamicResource SansMediumFont}"
+                             Foreground="{Binding Status, Converter={StaticResource StatusToBadgeFg}}" />
+                </Border>
+                <!-- Status dot (shown when condensed) -->
+                <Ellipse DockPanel.Dock="Right"
+                         Classes="status-dot-card"
+                         Width="8" Height="8"
+                         VerticalAlignment="Center"
+                         Margin="4 0 0 0"
+                         Fill="{Binding Status, Converter={StaticResource StatusToBadgeFg}}" />
+                <TextBlock Text="{Binding Name}"
+                           Classes="label"
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" />
+              </DockPanel>
+              <!-- Stream info (hidden when condensed) -->
+              <ItemsControl Classes="stream-info" ItemsSource="{Binding Streams}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <StackPanel Orientation="Horizontal" Spacing="{DynamicResource Space2}" />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Classes="text-muted"
+                               FontSize="{DynamicResource TextXs}">
+                      <TextBlock.Text>
+                        <MultiBinding StringFormat="{}{0} {1}">
+                          <Binding Path="Resolution" />
+                          <Binding Path="Codec" />
+                        </MultiBinding>
+                      </TextBlock.Text>
+                    </TextBlock>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
           </StackPanel>
         </Border>
       </DataTemplate>
     </ItemsControl.ItemTemplate>
   </ItemsControl>
+  </ScrollViewer>
 </UserControl>

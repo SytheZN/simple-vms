@@ -175,10 +175,10 @@ public sealed class TunnelIntegrationTests
   public async Task TunnelService_Connect_Succeeds()
   {
     var store = new InMemoryCredentialStore(_creds);
-    var transport = new TlsTransportFactory();
+    var transport = new TlsTransportFactory(NullLogger<TlsTransportFactory>.Instance);
 
     await using var tunnel = new TunnelService(store, transport, NullLogger<TunnelService>.Instance);
-    await tunnel.ConnectAsync(CancellationToken.None);
+    await tunnel.ConnectAsync(new(), CancellationToken.None);
 
     Assert.That(tunnel.State, Is.EqualTo(ConnectionState.Connected));
     Assert.That(tunnel.Generation, Is.EqualTo(1u));
@@ -200,10 +200,10 @@ public sealed class TunnelIntegrationTests
   public async Task TunnelApi_GetHealth_ReturnsSuccess()
   {
     var store = new InMemoryCredentialStore(_creds);
-    var transport = new TlsTransportFactory();
+    var transport = new TlsTransportFactory(NullLogger<TlsTransportFactory>.Instance);
 
     await using var tunnel = new TunnelService(store, transport, NullLogger<TunnelService>.Instance);
-    await tunnel.ConnectAsync(CancellationToken.None);
+    await tunnel.ConnectAsync(new(), CancellationToken.None);
 
     var api = new ApiClient(tunnel, NullLogger<ApiClient>.Instance);
     var result = await api.GetHealthAsync(CancellationToken.None);
@@ -229,10 +229,10 @@ public sealed class TunnelIntegrationTests
   public async Task TunnelApi_GetCameras_ReturnsEmptyList()
   {
     var store = new InMemoryCredentialStore(_creds);
-    var transport = new TlsTransportFactory();
+    var transport = new TlsTransportFactory(NullLogger<TlsTransportFactory>.Instance);
 
     await using var tunnel = new TunnelService(store, transport, NullLogger<TunnelService>.Instance);
-    await tunnel.ConnectAsync(CancellationToken.None);
+    await tunnel.ConnectAsync(new(), CancellationToken.None);
 
     var api = new ApiClient(tunnel, NullLogger<ApiClient>.Instance);
     var result = await api.GetCamerasAsync(null, CancellationToken.None);
@@ -256,15 +256,15 @@ public sealed class TunnelIntegrationTests
   [Test, Order(9)]
   public async Task TwoConnections_SameClient_BothWork()
   {
-    var transport = new TlsTransportFactory();
+    var transport = new TlsTransportFactory(NullLogger<TlsTransportFactory>.Instance);
 
     await using var tunnel1 = new TunnelService(
       new InMemoryCredentialStore(_creds), transport, NullLogger<TunnelService>.Instance);
     await using var tunnel2 = new TunnelService(
       new InMemoryCredentialStore(_creds), transport, NullLogger<TunnelService>.Instance);
 
-    await tunnel1.ConnectAsync(CancellationToken.None);
-    await tunnel2.ConnectAsync(CancellationToken.None);
+    await tunnel1.ConnectAsync(new(), CancellationToken.None);
+    await tunnel2.ConnectAsync(new(), CancellationToken.None);
 
     var api1 = new ApiClient(tunnel1, NullLogger<ApiClient>.Instance);
     var api2 = new ApiClient(tunnel2, NullLogger<ApiClient>.Instance);

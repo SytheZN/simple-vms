@@ -12,18 +12,19 @@ public sealed class FakeStreamTunnel : ITunnelService
   public event Action<ConnectionState>? StateChanged;
 #pragma warning restore CS0067
   public uint Generation => 1;
+  public int ConnectedAddressIndex => 0;
   public int OpenCount { get; private set; }
   public byte[]? LastPayload { get; private set; }
   public Channel<MuxMessage>? LastChannel { get; private set; }
 
-  public Task ConnectAsync(CancellationToken ct)
+  public Task ConnectAsync(ConnectionOptions options, CancellationToken ct)
   {
     State = ConnectionState.Connected;
     StateChanged?.Invoke(State);
     return Task.CompletedTask;
   }
 
-  public Task DisconnectAsync()
+  public Task DisconnectAsync(CancellationToken ct = default)
   {
     State = ConnectionState.Disconnected;
     StateChanged?.Invoke(State);

@@ -24,6 +24,7 @@ public sealed class LiveStreamService : ILiveStreamService, IDisposable
 
   public async Task<VideoFeed> SubscribeAsync(Guid cameraId, string profile, CancellationToken ct)
   {
+    _logger.LogDebug("Subscribing to live stream camera={CameraId} profile={Profile}", cameraId, profile);
     var subscribe = new LiveSubscribeMessage { CameraId = cameraId, Profile = profile };
     var payload = MessagePackSerializer.Serialize(subscribe, ProtocolSerializer.Options);
     var stream = await _tunnel.OpenStreamAsync(StreamTypes.LiveSubscribe, payload, ct);
@@ -39,6 +40,8 @@ public sealed class LiveStreamService : ILiveStreamService, IDisposable
 
   public async Task UnsubscribeAsync(VideoFeed feed, CancellationToken ct)
   {
+    _logger.LogDebug("Unsubscribing from live stream camera={CameraId} profile={Profile}",
+      feed.CameraId, feed.Profile);
     lock (_lock)
       _subscriptions.RemoveAll(s => s.Feed == feed);
 

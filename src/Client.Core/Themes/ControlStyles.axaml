@@ -1,0 +1,228 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!-- Base font -->
+  <Style Selector=":is(TemplatedControl)">
+    <Setter Property="FontFamily" Value="{DynamicResource SansFont}" />
+  </Style>
+  <Style Selector="TextBlock">
+    <Setter Property="FontFamily" Value="{DynamicResource SansFont}" />
+  </Style>
+
+  <!-- Button base -->
+  <Style Selector="Button.btn">
+    <Setter Property="Padding" Value="{DynamicResource PaddingBtn}" />
+    <Setter Property="CornerRadius" Value="{DynamicResource RadiusMd}" />
+    <Setter Property="FontFamily" Value="{DynamicResource SansSemiBoldFont}" />
+    <Setter Property="FontSize" Value="{DynamicResource TextSm}" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+  <Style Selector="Button.btn:disabled">
+    <Setter Property="Opacity" Value="0.4" />
+  </Style>
+  <Style Selector="Button.btn TextBlock">
+    <Setter Property="FontFamily" Value="{DynamicResource SansSemiBoldFont}" />
+  </Style>
+
+  <Style Selector="Button.btn-primary">
+    <Setter Property="Background" Value="{DynamicResource PrimaryBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource TextInvertedBrush}" />
+  </Style>
+  <Style Selector="Button.btn-primary:pointerover">
+    <Setter Property="Background" Value="{DynamicResource PrimaryHoverBrush}" />
+  </Style>
+
+  <Style Selector="Button.btn-secondary">
+    <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+    <Setter Property="BorderThickness" Value="{DynamicResource BorderWidth}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+  </Style>
+  <Style Selector="Button.btn-secondary:pointerover">
+    <Setter Property="Background" Value="{DynamicResource SurfaceSunkenBrush}" />
+  </Style>
+
+  <Style Selector="Button.btn-danger">
+    <Setter Property="Background" Value="{DynamicResource DangerBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource TextInvertedBrush}" />
+  </Style>
+  <Style Selector="Button.btn-danger:pointerover">
+    <Setter Property="Opacity" Value="0.85" />
+  </Style>
+
+  <Style Selector="Button.btn-ghost">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+  </Style>
+  <Style Selector="Button.btn-ghost:pointerover">
+    <Setter Property="Background" Value="{DynamicResource SurfaceSunkenBrush}" />
+  </Style>
+
+  <Style Selector="Button.btn-sm">
+    <Setter Property="Padding" Value="{DynamicResource PaddingBtnSm}" />
+    <Setter Property="FontSize" Value="{DynamicResource TextXs}" />
+  </Style>
+  <Style Selector="Button.btn-lg">
+    <Setter Property="Padding" Value="{DynamicResource PaddingBtnLg}" />
+    <Setter Property="FontSize" Value="{DynamicResource TextBase}" />
+  </Style>
+
+  <!-- Badge -->
+  <Style Selector="Border.badge">
+    <Setter Property="Padding" Value="{DynamicResource PaddingBadge}" />
+    <Setter Property="CornerRadius" Value="{DynamicResource RadiusFull}" />
+  </Style>
+  <Style Selector="Border.badge > TextBlock">
+    <Setter Property="FontSize" Value="{DynamicResource TextXs}" />
+    <Setter Property="FontFamily" Value="{DynamicResource SansMediumFont}" />
+  </Style>
+  <Style Selector="Border.badge-success">
+    <Setter Property="Background" Value="{DynamicResource SuccessMutedBrush}" />
+  </Style>
+  <Style Selector="Border.badge-success > TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
+  </Style>
+  <Style Selector="Border.badge-warning">
+    <Setter Property="Background" Value="{DynamicResource WarningMutedBrush}" />
+  </Style>
+  <Style Selector="Border.badge-warning > TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
+  </Style>
+  <Style Selector="Border.badge-danger">
+    <Setter Property="Background" Value="{DynamicResource DangerMutedBrush}" />
+  </Style>
+  <Style Selector="Border.badge-danger > TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource DangerBrush}" />
+  </Style>
+  <Style Selector="Border.badge-neutral">
+    <Setter Property="Background" Value="{DynamicResource SurfaceSunkenBrush}" />
+  </Style>
+  <Style Selector="Border.badge-neutral > TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+  </Style>
+
+  <!-- Input -->
+  <Style Selector="TextBox.input">
+    <Setter Property="Padding" Value="{DynamicResource PaddingInput}" />
+    <Setter Property="CornerRadius" Value="{DynamicResource RadiusMd}" />
+    <Setter Property="BorderThickness" Value="{DynamicResource BorderWidth}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+    <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+    <Setter Property="FontSize" Value="{DynamicResource TextSm}" />
+  </Style>
+  <Style Selector="TextBox.input:focus">
+    <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}" />
+  </Style>
+  <Style Selector="TextBox.input-error">
+    <Setter Property="BorderBrush" Value="{DynamicResource DangerBrush}" />
+  </Style>
+
+  <!-- Card -->
+  <Style Selector="Border.card">
+    <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}" />
+    <Setter Property="BorderThickness" Value="{DynamicResource BorderWidth}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+    <Setter Property="CornerRadius" Value="{DynamicResource RadiusLg}" />
+    <Setter Property="Padding" Value="{DynamicResource PaddingCard}" />
+  </Style>
+
+  <!-- Nav link -->
+  <Style Selector="Button.nav-link">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+    <Setter Property="Padding" Value="{DynamicResource PaddingNavLink}" />
+    <Setter Property="CornerRadius" Value="{DynamicResource RadiusMd}" />
+    <Setter Property="FontSize" Value="{DynamicResource TextSm}" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Left" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Cursor" Value="Hand" />
+  </Style>
+  <Style Selector="Button.nav-link:pointerover">
+    <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+  </Style>
+  <Style Selector="Button.nav-link-active">
+    <Setter Property="FontFamily" Value="{DynamicResource SansMediumFont}" />
+    <Setter Property="Background" Value="{DynamicResource PrimaryMutedBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource PrimaryBrush}" />
+  </Style>
+
+  <!-- Typography -->
+  <Style Selector="TextBlock.section-heading">
+    <Setter Property="FontSize" Value="{DynamicResource TextXl}" />
+    <Setter Property="FontFamily" Value="{DynamicResource SansSemiBoldFont}" />
+    <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+  </Style>
+
+  <Style Selector="TextBlock.section-subheading">
+    <Setter Property="FontSize" Value="{DynamicResource TextXs}" />
+    <Setter Property="FontFamily" Value="{DynamicResource SansMediumFont}" />
+    <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+    <Setter Property="LetterSpacing" Value="1" />
+  </Style>
+
+  <Style Selector="TextBlock.label">
+    <Setter Property="FontSize" Value="{DynamicResource TextSm}" />
+    <Setter Property="FontFamily" Value="{DynamicResource SansMediumFont}" />
+    <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+  </Style>
+
+  <Style Selector="TextBlock.text-muted">
+    <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+  </Style>
+
+  <Style Selector="TextBlock.text-danger">
+    <Setter Property="Foreground" Value="{DynamicResource DangerBrush}" />
+  </Style>
+
+  <Style Selector="TextBlock.text-success">
+    <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}" />
+  </Style>
+
+  <Style Selector="TextBlock.text-warning">
+    <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
+  </Style>
+
+  <!-- Key glyph (for keyboard shortcut display) -->
+  <Style Selector="Border.key-glyph">
+    <Setter Property="Background" Value="{DynamicResource SurfaceSunkenBrush}" />
+    <Setter Property="BorderThickness" Value="{DynamicResource BorderWidth}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+    <Setter Property="CornerRadius" Value="{DynamicResource RadiusSm}" />
+    <Setter Property="Padding" Value="6 2" />
+    <Setter Property="MinWidth" Value="24" />
+  </Style>
+  <Style Selector="Border.key-glyph > TextBlock">
+    <Setter Property="FontSize" Value="{DynamicResource TextXs}" />
+    <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+  </Style>
+
+  <!-- Status dot -->
+  <Style Selector="Ellipse.status-dot">
+    <Setter Property="Width" Value="8" />
+    <Setter Property="Height" Value="8" />
+  </Style>
+  <Style Selector="Ellipse.status-connected">
+    <Setter Property="Fill" Value="{DynamicResource SuccessBrush}" />
+  </Style>
+  <Style Selector="Ellipse.status-connecting">
+    <Setter Property="Fill" Value="{DynamicResource WarningBrush}" />
+  </Style>
+  <Style Selector="Ellipse.status-disconnected">
+    <Setter Property="Fill" Value="{DynamicResource TextMutedBrush}" />
+  </Style>
+
+  <!-- Separator -->
+  <Style Selector="Separator.divider">
+    <Setter Property="Background" Value="{DynamicResource BorderBrush}" />
+    <Setter Property="Height" Value="1" />
+    <Setter Property="Margin" Value="0 8" />
+  </Style>
+
+</Styles>

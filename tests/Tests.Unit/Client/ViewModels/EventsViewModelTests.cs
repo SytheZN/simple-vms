@@ -1,4 +1,5 @@
 using Client.Core.ViewModels;
+using Microsoft.Extensions.Logging.Abstractions;
 using Shared.Models;
 using Shared.Models.Dto;
 using Shared.Protocol;
@@ -30,7 +31,7 @@ public class EventsViewModelTests
 
     var api = new EventsApi { EventList = events };
     var eventService = new FakeEventService();
-    var vm = new EventsViewModel(api, eventService);
+    var vm = new EventsViewModel(api, eventService, NullLogger<EventsViewModel>.Instance);
 
     await vm.LoadAsync(CancellationToken.None);
 
@@ -52,7 +53,7 @@ public class EventsViewModelTests
   {
     var api = new EventsApi();
     var eventService = new FakeEventService();
-    var vm = new EventsViewModel(api, eventService);
+    var vm = new EventsViewModel(api, eventService, NullLogger<EventsViewModel>.Instance);
 
     var cameraId = Guid.NewGuid();
     var msg = new EventChannelMessage
@@ -83,7 +84,7 @@ public class EventsViewModelTests
   {
     var api = new EventsApi();
     var eventService = new FakeEventService();
-    var vm = new EventsViewModel(api, eventService);
+    var vm = new EventsViewModel(api, eventService, NullLogger<EventsViewModel>.Instance);
 
     eventService.Fire(
       new EventChannelMessage
@@ -111,7 +112,7 @@ public class EventsViewModelTests
   {
     var api = new EventsApi();
     var eventService = new FakeEventService();
-    var vm = new EventsViewModel(api, eventService);
+    var vm = new EventsViewModel(api, eventService, NullLogger<EventsViewModel>.Instance);
     vm.FilterCameraId = Guid.NewGuid();
 
     eventService.Fire(
@@ -127,10 +128,10 @@ public class EventsViewModelTests
 
   /// <summary>
   /// SCENARIO:
-  /// LoadMoreAsync is called after initial load
+  /// NextPageAsync is called after initial load
   ///
   /// ACTION:
-  /// Call LoadAsync then LoadMoreAsync
+  /// Call LoadAsync then NextPageAsync
   ///
   /// EXPECTED RESULT:
   /// Events from both pages are in the collection
@@ -149,12 +150,13 @@ public class EventsViewModelTests
 
     var api = new EventsApi { EventPages = [page1, page2] };
     var eventService = new FakeEventService();
-    var vm = new EventsViewModel(api, eventService);
+    var vm = new EventsViewModel(api, eventService, NullLogger<EventsViewModel>.Instance);
 
     await vm.LoadAsync(CancellationToken.None);
-    await vm.LoadMoreAsync(CancellationToken.None);
+    Assert.That(vm.Events, Has.Count.EqualTo(1));
 
-    Assert.That(vm.Events, Has.Count.EqualTo(2));
+    await vm.NextPageAsync(CancellationToken.None);
+    Assert.That(vm.Events, Has.Count.EqualTo(1));
   }
 
   private sealed class EventsApi : FakeApiClient

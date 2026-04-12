@@ -54,5 +54,6 @@ namespace Client.Core.Api;
 [JsonSerializable(typeof(TimelineSpan))]
 [JsonSerializable(typeof(TimelineEvent))]
 [JsonSerializable(typeof(SettingField))]
+[JsonSerializable(typeof(ResponseEnvelope))]
 [ExcludeFromCodeCoverage]
 internal partial class ClientJsonContext : JsonSerializerContext;

@@ -1,19 +1,52 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             x:Class="Client.Core.Controls.Timeline"
-             Height="32">
-  <Panel>
-    <Border x:Name="TrackBar"
-            Background="#20808080"
-            CornerRadius="4" />
-    <Canvas x:Name="SpanCanvas"
-            ClipToBounds="True" />
-    <Canvas x:Name="MarkerCanvas" />
-    <Border x:Name="Playhead"
-            Width="2"
-            Background="#FFFFFF"
-            HorizontalAlignment="Left"
-            IsHitTestVisible="True"
-            Cursor="Hand" />
-  </Panel>
+             x:Class="Client.Core.Controls.Timeline">
+  <StackPanel Spacing="4">
+    <!-- Track bar -->
+    <Panel Height="{DynamicResource Space4}">
+      <Border x:Name="TrackBar"
+              Background="{DynamicResource SurfaceSunkenBrush}"
+              CornerRadius="{DynamicResource RadiusSm}" />
+      <Canvas x:Name="SpanCanvas"
+              ClipToBounds="True" />
+      <Canvas x:Name="MarkerCanvas" />
+      <Border x:Name="Playhead"
+              Width="2"
+              Background="{DynamicResource TextBrush}"
+              HorizontalAlignment="Left"
+              IsHitTestVisible="True"
+              Cursor="Hand" />
+    </Panel>
+
+    <!-- Tick labels -->
+    <Canvas x:Name="TickCanvas" Height="16" ClipToBounds="True" />
+
+    <!-- Legend -->
+    <StackPanel x:Name="Legend" Orientation="Horizontal" Spacing="16">
+      <StackPanel Orientation="Horizontal" Spacing="4">
+        <Border Width="12" Height="12"
+                CornerRadius="{DynamicResource RadiusSm}"
+                Background="{DynamicResource SpanRecordingBrush}" />
+        <TextBlock Text="Recording" Classes="text-muted"
+                   FontSize="{DynamicResource TextXs}"
+                   VerticalAlignment="Center" />
+      </StackPanel>
+      <StackPanel Orientation="Horizontal" Spacing="4">
+        <Border Width="12" Height="12"
+                CornerRadius="{DynamicResource RadiusSm}"
+                Background="{DynamicResource SpanMotionBrush}" />
+        <TextBlock Text="Motion" Classes="text-muted"
+                   FontSize="{DynamicResource TextXs}"
+                   VerticalAlignment="Center" />
+      </StackPanel>
+      <StackPanel Orientation="Horizontal" Spacing="4">
+        <Border Width="12" Height="2"
+                Background="{DynamicResource DangerBrush}"
+                VerticalAlignment="Center" />
+        <TextBlock Text="Alert" Classes="text-muted"
+                   FontSize="{DynamicResource TextXs}"
+                   VerticalAlignment="Center" />
+      </StackPanel>
+    </StackPanel>
+  </StackPanel>
 </UserControl>
