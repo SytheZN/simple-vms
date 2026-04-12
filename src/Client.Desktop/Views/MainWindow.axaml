@@ -1,0 +1,114 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Client.Desktop.ViewModels"
+        xmlns:corevm="using:Client.Core.ViewModels"
+        xmlns:views="using:Client.Desktop.Views"
+        xmlns:icon="using:IconPacks.Avalonia.PhosphorIcons"
+        x:Class="Client.Desktop.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="VMS"
+        Icon="avares://Client.Core/Assets/tray-icon.png"
+        Width="1280" Height="720"
+        MinWidth="800" MinHeight="500"
+        Background="{DynamicResource SurfaceBrush}">
+
+  <Window.DataTemplates>
+    <DataTemplate DataType="corevm:GalleryViewModel">
+      <views:GalleryView />
+    </DataTemplate>
+    <DataTemplate DataType="corevm:CameraViewModel">
+      <views:CameraView />
+    </DataTemplate>
+    <DataTemplate DataType="corevm:SettingsViewModel">
+      <views:SettingsView />
+    </DataTemplate>
+    <DataTemplate DataType="corevm:EnrollmentViewModel">
+      <views:EnrollmentView />
+    </DataTemplate>
+  </Window.DataTemplates>
+
+  <Window.KeyBindings>
+    <KeyBinding Gesture="F11" Command="{Binding ToggleFullscreenCommand}" />
+    <KeyBinding Gesture="Escape" Command="{Binding GoBackCommand}" />
+    <KeyBinding Gesture="Ctrl+Right" Command="{Binding NextCameraCommand}" />
+    <KeyBinding Gesture="Ctrl+Left" Command="{Binding PrevCameraCommand}" />
+    <KeyBinding Gesture="D1" Command="{Binding NavGalleryCommand}" />
+    <KeyBinding Gesture="D2" Command="{Binding NavCameraCommand}" />
+    <KeyBinding Gesture="D3" Command="{Binding NavSettingsCommand}" />
+  </Window.KeyBindings>
+
+  <DockPanel>
+    <!-- Nav sidebar -->
+    <Border DockPanel.Dock="Left"
+            Width="{DynamicResource NavSidebarWidth}"
+            Background="{DynamicResource SurfaceSunkenBrush}"
+            BorderBrush="{DynamicResource BorderBrush}"
+            BorderThickness="0 0 1 0"
+            Padding="12"
+            IsVisible="{Binding IsEnrolled}">
+      <DockPanel>
+        <!-- Connection status at bottom -->
+        <StackPanel DockPanel.Dock="Bottom"
+                    Orientation="Horizontal"
+                    Spacing="8"
+                    Margin="0 8 0 0">
+          <Ellipse x:Name="StatusDot" Classes="status-dot"
+                   VerticalAlignment="Center" />
+          <TextBlock x:Name="StatusLabel" Classes="text-muted"
+                     FontSize="{DynamicResource TextXs}"
+                     VerticalAlignment="Center" />
+        </StackPanel>
+
+        <!-- Nav links -->
+        <StackPanel Spacing="4">
+          <!-- Brand -->
+          <StackPanel Orientation="Horizontal" Spacing="8" Margin="12 4 0 12">
+            <icon:PackIconPhosphorIcons Kind="ShieldCheck"
+                                        Width="{DynamicResource IconMd}"
+                                        Height="{DynamicResource IconMd}"
+                                        Foreground="{DynamicResource PrimaryBrush}" />
+            <TextBlock Text="VMS" FontSize="{DynamicResource TextLg}"
+                       FontFamily="{DynamicResource SansBoldFont}"
+                       Foreground="{DynamicResource PrimaryBrush}"
+                       VerticalAlignment="Center" />
+          </StackPanel>
+
+          <Button Classes="nav-link"
+                  Classes.nav-link-active="{Binding IsGallery}"
+                  Command="{Binding NavGalleryCommand}">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <icon:PackIconPhosphorIcons Kind="SquaresFour"
+                                          Width="{DynamicResource IconSm}"
+                                          Height="{DynamicResource IconSm}" />
+              <TextBlock Text="Gallery" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button Classes="nav-link"
+                  Classes.nav-link-active="{Binding IsCamera}"
+                  Command="{Binding NavCameraCommand}">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <icon:PackIconPhosphorIcons Kind="VideoCamera"
+                                          Width="{DynamicResource IconSm}"
+                                          Height="{DynamicResource IconSm}" />
+              <TextBlock Text="Camera" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button Classes="nav-link"
+                  Classes.nav-link-active="{Binding IsSettings}"
+                  Command="{Binding NavSettingsCommand}">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <icon:PackIconPhosphorIcons Kind="Gear"
+                                          Width="{DynamicResource IconSm}"
+                                          Height="{DynamicResource IconSm}" />
+              <TextBlock Text="Settings" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <!-- Content area -->
+    <ContentControl Content="{Binding CurrentViewModel}"
+                    Margin="{DynamicResource PaddingCard}" />
+  </DockPanel>
+</Window>

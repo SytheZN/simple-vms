@@ -1,0 +1,35 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Client.Core.ViewModels"
+             xmlns:controls="using:Client.Core.Controls"
+             x:Class="Client.Desktop.Views.EnrollmentView"
+             x:DataType="vm:EnrollmentViewModel">
+  <Border Classes="card" Width="480" HorizontalAlignment="Center" VerticalAlignment="Center"
+          Padding="32">
+    <StackPanel Spacing="20">
+      <TextBlock Text="Add Server" Classes="section-heading" />
+
+      <StackPanel Spacing="4">
+        <TextBlock Text="Server address" Classes="label" />
+        <TextBox Classes="input" Text="{Binding ServerAddress, Mode=TwoWay}"
+                 Watermark="192.168.1.50:8080" />
+      </StackPanel>
+
+      <StackPanel Spacing="4">
+        <TextBlock Text="Enrollment token" Classes="label" />
+        <TextBox Classes="input" Text="{Binding Token, Mode=TwoWay}"
+                 Watermark="XXXX-XXXX" />
+      </StackPanel>
+
+      <controls:ErrorCard Message="{Binding ErrorMessage}"
+                          DebugTag="{Binding ErrorTag}"
+                          CopyData="{Binding ErrorJson}" />
+
+      <Button Classes="btn btn-primary"
+              Command="{Binding EnrollCommand}"
+              HorizontalAlignment="Stretch">
+        Enroll
+      </Button>
+    </StackPanel>
+  </Border>
+</UserControl>

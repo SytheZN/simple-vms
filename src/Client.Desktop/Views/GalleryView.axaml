@@ -1,0 +1,65 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Client.Core.ViewModels"
+             xmlns:controls="using:Client.Core.Controls"
+             xmlns:icon="using:IconPacks.Avalonia.PhosphorIcons"
+             x:Class="Client.Desktop.Views.GalleryView"
+             x:DataType="vm:GalleryViewModel">
+  <DockPanel>
+    <!-- Header -->
+    <DockPanel DockPanel.Dock="Top" Margin="0 0 0 16">
+      <TextBlock Text="Gallery" Classes="section-heading" VerticalAlignment="Center" />
+      <StackPanel DockPanel.Dock="Right"
+                  Orientation="Horizontal"
+                  Spacing="4"
+                  HorizontalAlignment="Right"
+                  VerticalAlignment="Center">
+        <Button Classes="btn btn-ghost btn-sm" x:Name="DecColumns">
+          <icon:PackIconPhosphorIcons Kind="Minus" Width="{DynamicResource IconSm}" Height="{DynamicResource IconSm}" />
+        </Button>
+        <TextBlock x:Name="ColumnLabel"
+                   VerticalAlignment="Center"
+                   Classes="text-muted"
+                   FontSize="{DynamicResource TextSm}" />
+        <Button Classes="btn btn-ghost btn-sm" x:Name="IncColumns">
+          <icon:PackIconPhosphorIcons Kind="Plus" Width="{DynamicResource IconSm}" Height="{DynamicResource IconSm}" />
+        </Button>
+      </StackPanel>
+    </DockPanel>
+
+    <!-- Error -->
+    <controls:ErrorCard DockPanel.Dock="Top"
+                        Message="{Binding ErrorMessage}"
+                        DebugTag="{Binding ErrorTag}"
+                        CopyData="{Binding ErrorJson}"
+                        Margin="0 0 0 12" />
+
+    <!-- Loading spinner -->
+    <Panel IsVisible="{Binding IsLoading}"
+           DockPanel.Dock="Top"
+           Margin="0 48">
+      <controls:Spinner Size="32" HorizontalAlignment="Center" />
+    </Panel>
+
+    <!-- Empty state -->
+    <StackPanel x:Name="EmptyState"
+                IsVisible="False"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Spacing="{DynamicResource Space3}"
+                Margin="0 48">
+      <icon:PackIconPhosphorIcons Kind="VideoCameraSlash"
+                                  Width="{DynamicResource IconXl}"
+                                  Height="{DynamicResource IconXl}"
+                                  Foreground="{DynamicResource TextMutedBrush}"
+                                  HorizontalAlignment="Center" />
+      <TextBlock Text="No cameras found."
+                 Classes="text-muted"
+                 HorizontalAlignment="Center" />
+    </StackPanel>
+
+    <!-- Camera grid -->
+    <controls:CameraGrid x:Name="Grid"
+                          Columns="{Binding Columns}" />
+  </DockPanel>
+</UserControl>

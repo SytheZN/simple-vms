@@ -1,0 +1,98 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Client.Core.ViewModels"
+             xmlns:icon="using:IconPacks.Avalonia.PhosphorIcons"
+             x:Class="Client.Desktop.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+  <ScrollViewer Background="Transparent">
+    <StackPanel Spacing="16" MaxWidth="640">
+
+      <!-- Server -->
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <DockPanel>
+            <TextBlock Text="Server" Classes="section-heading" VerticalAlignment="Center" />
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8"
+                        HorizontalAlignment="Right" VerticalAlignment="Center">
+              <Ellipse Classes="status-dot" x:Name="StatusDot" />
+              <TextBlock x:Name="StatusLabel" Classes="text-muted"
+                         FontSize="{DynamicResource TextSm}" VerticalAlignment="Center" />
+            </StackPanel>
+          </DockPanel>
+
+          <TextBlock Text="CLIENT ID" Classes="section-subheading" Margin="0 8 0 0" />
+          <TextBlock Text="{Binding ClientId}" Classes="text-muted"
+                     FontSize="{DynamicResource TextSm}" />
+
+          <TextBlock Text="ADDRESSES" Classes="section-subheading" Margin="0 8 0 0" />
+          <ItemsControl x:Name="AddressList" ItemsSource="{Binding Addresses}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <TextBlock Text="{Binding}" Classes="text-muted"
+                           FontSize="{DynamicResource TextSm}" Margin="0 2" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <Button Classes="btn btn-danger btn-sm" x:Name="DisconnectButton"
+                  Margin="0 8 0 0">
+            <StackPanel Orientation="Horizontal" Spacing="4">
+              <icon:PackIconPhosphorIcons Kind="SignOut" Width="14" Height="14" />
+              <TextBlock Text="Disconnect" />
+            </StackPanel>
+          </Button>
+        </StackPanel>
+      </Border>
+
+      <!-- Preferences -->
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <TextBlock Text="Preferences" Classes="section-heading" />
+
+          <DockPanel>
+            <ToggleButton Classes="toggle" x:Name="ReprobeToggle" DockPanel.Dock="Right"
+                      VerticalAlignment="Center" />
+            <StackPanel Spacing="2">
+              <TextBlock Text="Address reprobe" Classes="label" />
+              <TextBlock Text="Periodically check if an earlier address becomes reachable"
+                         Classes="text-muted" FontSize="{DynamicResource TextXs}" />
+            </StackPanel>
+          </DockPanel>
+
+          <DockPanel>
+            <ToggleButton Classes="toggle" x:Name="MinimizeOnCloseToggle" DockPanel.Dock="Right"
+                      VerticalAlignment="Center" />
+            <StackPanel Spacing="2">
+              <TextBlock Text="Minimize to tray on close" Classes="label" />
+              <TextBlock Text="Keep running in the background when the window is closed"
+                         Classes="text-muted" FontSize="{DynamicResource TextXs}" />
+            </StackPanel>
+          </DockPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- Notifications -->
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <DockPanel>
+            <TextBlock Text="Notifications" Classes="section-heading" />
+            <Button DockPanel.Dock="Right" Classes="btn btn-ghost btn-sm"
+                    HorizontalAlignment="Right" x:Name="AddRuleButton">
+              <icon:PackIconPhosphorIcons Kind="Plus" Width="14" Height="14" />
+            </Button>
+          </DockPanel>
+          <ItemsControl x:Name="RulesList" />
+        </StackPanel>
+      </Border>
+
+      <!-- Keyboard shortcuts -->
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <TextBlock Text="Keyboard Shortcuts" Classes="section-heading" />
+          <StackPanel Spacing="8" x:Name="ShortcutsList" />
+        </StackPanel>
+      </Border>
+
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>
