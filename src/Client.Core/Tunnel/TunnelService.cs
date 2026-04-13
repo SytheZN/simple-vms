@@ -262,6 +262,8 @@ public sealed class TunnelService : ITunnelService, IAsyncDisposable
   {
     _logger.LogDebug("ConnectToServerAsync trying {Count} addresses", creds.Addresses.Length);
 
+    var failures = new List<Exception>();
+
     var hint = _options.LastSuccessfulIndex;
     if (hint >= 0 && hint < creds.Addresses.Length)
     {
@@ -276,11 +278,13 @@ public sealed class TunnelService : ITunnelService, IAsyncDisposable
       {
         _logger.LogDebug(ex, "Preferred address {Address} failed, trying all",
           creds.Addresses[hint]);
+        failures.Add(ex);
       }
     }
 
     for (var i = 0; i < creds.Addresses.Length; i++)
     {
+      if (i == hint) continue;
       ct.ThrowIfCancellationRequested();
 
       try
@@ -292,11 +296,14 @@ public sealed class TunnelService : ITunnelService, IAsyncDisposable
       catch (Exception ex) when (ex is not OperationCanceledException)
       {
         _logger.LogDebug(ex, "Failed to connect to {Address}", creds.Addresses[i]);
+        failures.Add(ex);
       }
     }
 
     _logger.LogError("All {Count} server addresses exhausted", creds.Addresses.Length);
-    throw new InvalidOperationException("Could not connect to any server address");
+    throw new InvalidOperationException(
+      $"Could not connect to any of {creds.Addresses.Length} server address(es)",
+      new AggregateException(failures));
   }
 
   private static async Task<bool> ExchangeVersionAsync(Stream transport, CancellationToken ct)

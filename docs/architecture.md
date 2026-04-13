@@ -247,6 +247,12 @@ Plugins receive these services from the plugin host via `PluginContext` (see [pl
 - Web UI accessible on local network only (HTTP, unauthenticated by default - pluggable via `IAuthProvider`)
 - Enrollment via QR code (mobile) or short token over LAN (desktop)
 
+### Threat Model
+
+In scope: tunnel traffic confidentiality (LAN and WAN) and client authentication at the tunnel port.
+
+Out of scope: LAN-resident attackers and compromised cameras pivoting into the server. Administrative surfaces (web UI, enrollment, setup wizard) trust LAN position; maintaining that boundary is an operator concern (see [security.md](security.md)).
+
 ## Resource Budget (32 cameras)
 
 Target resource usage for 32 cameras, dual stream each (main 1080p + sub 360p):

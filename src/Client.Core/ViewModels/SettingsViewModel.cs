@@ -10,6 +10,7 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
   private readonly ITunnelService _tunnel;
   private readonly ICredentialStore _credentials;
   private readonly NotificationRouter _router;
+  private readonly DiagnosticsInfo _diagnostics;
 
   private ConnectionState _connectionState;
   private string[]? _addresses;
@@ -35,14 +36,18 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
     private set => SetProperty(ref _clientId, value);
   }
 
+  public string? LogFilePath => _diagnostics.LogFilePath;
+
   public SettingsViewModel(
     ITunnelService tunnel,
     ICredentialStore credentials,
-    NotificationRouter router)
+    NotificationRouter router,
+    DiagnosticsInfo diagnostics)
   {
     _tunnel = tunnel;
     _credentials = credentials;
     _router = router;
+    _diagnostics = diagnostics;
     _tunnel.StateChanged += OnTunnelStateChanged;
     ConnectionState = _tunnel.State;
   }

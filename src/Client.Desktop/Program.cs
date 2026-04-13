@@ -31,6 +31,7 @@ public static class Program
       b.AddDebug();
       b.AddSerilog();
     });
+    services.AddSingleton(new DiagnosticsInfo(logPath));
     services.AddSingleton<ICredentialStore>(CredentialStoreFactory.Create());
     services.AddSingleton<INotificationService, DesktopNotificationService>();
     services.AddSingleton<DesktopSettings>();
@@ -48,12 +49,17 @@ public static class Program
       Environment.Exit(1);
     };
 
+    // Crash-fast: unobserved task exceptions indicate a missing await and leave the
+    // app in an unknown state — fail loudly rather than silently degrade.
     TaskScheduler.UnobservedTaskException += (_, e) =>
     {
       e.SetObserved();
-      logger.LogWarning(e.Exception, "Unobserved task exception");
+      logger.LogCritical(e.Exception, "Unobserved task exception");
+      Log.CloseAndFlush();
+      Environment.Exit(1);
     };
 
+    var crashed = false;
     try
     {
       var app = BuildAvaloniaApp();
@@ -66,14 +72,12 @@ public static class Program
     }
     catch (Exception ex)
     {
+      crashed = true;
       logger.LogCritical(ex, "Application crashed");
-      throw;
     }
-    finally
-    {
-      await Log.CloseAndFlushAsync();
-      Environment.Exit(0);
-    }
+
+    await Log.CloseAndFlushAsync();
+    if (crashed) Environment.Exit(1);
   }
 
   public static AppBuilder BuildAvaloniaApp() =>

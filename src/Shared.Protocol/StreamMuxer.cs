@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
@@ -195,19 +196,29 @@ public sealed class StreamMuxer : IAsyncDisposable
   public async Task SendAsync(
     uint streamId, ushort flags, ReadOnlyMemory<byte> payload, CancellationToken ct)
   {
-    var header = new byte[MessageEnvelope.MuxHeaderSize];
-    MessageEnvelope.WriteMuxHeader(header, streamId, flags, payload.Length);
-
-    await _writeLock.WaitAsync(ct);
+    var total = MessageEnvelope.MuxHeaderSize + payload.Length;
+    var frame = ArrayPool<byte>.Shared.Rent(total);
     try
     {
-      await _transport.WriteAsync(header, ct);
+      MessageEnvelope.WriteMuxHeader(frame, streamId, flags, payload.Length);
       if (payload.Length > 0)
-        await _transport.WriteAsync(payload, ct);
+        payload.Span.CopyTo(frame.AsSpan(MessageEnvelope.MuxHeaderSize));
+
+      // Single write so header and payload land in the same TLS record
+      // (frames above the TLS plaintext max will still fan out).
+      await _writeLock.WaitAsync(ct);
+      try
+      {
+        await _transport.WriteAsync(frame.AsMemory(0, total), ct);
+      }
+      finally
+      {
+        _writeLock.Release();
+      }
     }
     finally
     {
-      _writeLock.Release();
+      ArrayPool<byte>.Shared.Return(frame);
     }
   }
 

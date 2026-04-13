@@ -1,4 +1,5 @@
 using Client.Core.Events;
+using Client.Core.Platform;
 using Client.Core.Tunnel;
 using Client.Core.ViewModels;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -25,7 +26,7 @@ public class SettingsViewModelTests
     var clientId = Guid.NewGuid();
     var credStore = new MockCredentialStore
     {
-      Data = new global::Client.Core.Platform.CredentialData(
+      Data = new CredentialData(
         "ca", "cert", "key",
         ["192.168.1.50:4433", "10.0.0.1:4433"],
         clientId)
@@ -33,7 +34,7 @@ public class SettingsViewModelTests
     var tunnel = new FakeStreamTunnel();
     var router = new NotificationRouter(new FakeEventService(), new MockNotificationService(), NullLogger<NotificationRouter>.Instance);
 
-    var vm = new SettingsViewModel(tunnel, credStore, router);
+    var vm = new SettingsViewModel(tunnel, credStore, router, new DiagnosticsInfo(null));
     await vm.LoadAsync();
 
     Assert.That(vm.Addresses, Is.Not.Null);
@@ -58,7 +59,7 @@ public class SettingsViewModelTests
     var tunnel = new FakeStreamTunnel();
     var router = new NotificationRouter(new FakeEventService(), new MockNotificationService(), NullLogger<NotificationRouter>.Instance);
 
-    var vm = new SettingsViewModel(tunnel, credStore, router);
+    var vm = new SettingsViewModel(tunnel, credStore, router, new DiagnosticsInfo(null));
     await vm.LoadAsync();
 
     Assert.That(vm.Addresses, Is.Null);
@@ -82,7 +83,7 @@ public class SettingsViewModelTests
     var tunnel = new FakeStreamTunnel();
     var router = new NotificationRouter(new FakeEventService(), new MockNotificationService(), NullLogger<NotificationRouter>.Instance);
 
-    var vm = new SettingsViewModel(tunnel, credStore, router);
+    var vm = new SettingsViewModel(tunnel, credStore, router, new DiagnosticsInfo(null));
 
     var changed = new List<string>();
     vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName!);
@@ -108,13 +109,13 @@ public class SettingsViewModelTests
   {
     var credStore = new MockCredentialStore
     {
-      Data = new global::Client.Core.Platform.CredentialData(
+      Data = new CredentialData(
         "ca", "cert", "key", ["addr:4433"], Guid.NewGuid())
     };
     var tunnel = new FakeStreamTunnel();
     var router = new NotificationRouter(new FakeEventService(), new MockNotificationService(), NullLogger<NotificationRouter>.Instance);
 
-    var vm = new SettingsViewModel(tunnel, credStore, router);
+    var vm = new SettingsViewModel(tunnel, credStore, router, new DiagnosticsInfo(null));
     await vm.LoadAsync();
     Assert.That(vm.Addresses, Is.Not.Null);
 
@@ -145,7 +146,7 @@ public class SettingsViewModelTests
     var eventService = new FakeEventService();
     var router = new NotificationRouter(eventService, notifications, NullLogger<NotificationRouter>.Instance);
 
-    var vm = new SettingsViewModel(tunnel, credStore, router);
+    var vm = new SettingsViewModel(tunnel, credStore, router, new DiagnosticsInfo(null));
     var cameraId = Guid.NewGuid();
     vm.NotificationRules.Add(new NotificationRule(cameraId, "motion", true));
     vm.SaveNotificationRules();
@@ -160,5 +161,28 @@ public class SettingsViewModelTests
     eventService.Fire(msg, Shared.Protocol.EventChannelFlags.Start);
 
     Assert.That(notifications.Calls, Has.Count.EqualTo(1));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A log path is injected via DiagnosticsInfo
+  ///
+  /// ACTION:
+  /// Construct the view model and read LogFilePath
+  ///
+  /// EXPECTED RESULT:
+  /// The property returns the value supplied via DiagnosticsInfo
+  /// </summary>
+  [Test]
+  public void LogFilePath_PassesThroughFromDiagnosticsInfo()
+  {
+    var credStore = new MockCredentialStore();
+    var tunnel = new FakeStreamTunnel();
+    var router = new NotificationRouter(
+      new FakeEventService(), new MockNotificationService(), NullLogger<NotificationRouter>.Instance);
+
+    var vm = new SettingsViewModel(tunnel, credStore, router, new DiagnosticsInfo("/tmp/client.log"));
+
+    Assert.That(vm.LogFilePath, Is.EqualTo("/tmp/client.log"));
   }
 }

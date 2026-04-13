@@ -93,6 +93,16 @@
         </StackPanel>
       </Border>
 
+      <!-- Diagnostics -->
+      <Border Classes="card" IsVisible="{Binding LogFilePath, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <StackPanel Spacing="12">
+          <TextBlock Text="Diagnostics" Classes="section-heading" />
+          <TextBlock Text="LOG FILE" Classes="section-subheading" Margin="0 8 0 0" />
+          <SelectableTextBlock Text="{Binding LogFilePath}" Classes="text-muted"
+                     FontSize="{DynamicResource TextSm}" TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+
     </StackPanel>
   </ScrollViewer>
 </UserControl>

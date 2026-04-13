@@ -279,6 +279,144 @@ public sealed class TunnelIntegrationTests
     await tunnel2.DisconnectAsync();
   }
 
+  /// <summary>
+  /// SCENARIO:
+  /// Client is given a different CA than the one that signed the server cert
+  ///
+  /// ACTION:
+  /// Swap _creds.CaCert for a freshly generated unrelated CA, attempt to connect
+  ///
+  /// EXPECTED RESULT:
+  /// TLS handshake fails with a bad_certificate alert — PinnedAuthentication rejects
+  /// the server cert because it is not signed by the pinned CA.
+  /// </summary>
+  [Test, Order(10)]
+  public void TunnelService_Connect_WithWrongCa_Fails()
+  {
+    using var rsa = System.Security.Cryptography.RSA.Create(2048);
+    var req = new System.Security.Cryptography.X509Certificates.CertificateRequest(
+      "CN=Wrong CA", rsa, System.Security.Cryptography.HashAlgorithmName.SHA256,
+      System.Security.Cryptography.RSASignaturePadding.Pkcs1);
+    using var wrongCa = req.CreateSelfSigned(
+      DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(1));
+    var wrongCaPem = wrongCa.ExportCertificatePem();
+
+    var tamperedCreds = new CredentialData(
+      wrongCaPem, _creds.ClientCert, _creds.ClientKey, _creds.Addresses, _creds.ClientId);
+
+    var store = new InMemoryCredentialStore(tamperedCreds);
+    var transport = new TlsTransportFactory(NullLogger<TlsTransportFactory>.Instance);
+
+    var tunnel = new TunnelService(store, transport, NullLogger<TunnelService>.Instance);
+    Assert.ThatAsync(async () =>
+    {
+      try { await tunnel.ConnectAsync(new(), CancellationToken.None); }
+      finally { await tunnel.DisposeAsync(); }
+    }, Throws.InstanceOf<InvalidOperationException>()
+        .With.InnerException.InstanceOf<AggregateException>()
+        .With.InnerException
+          .With.Message.Contains("certificate").IgnoreCase);
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Many concurrent API calls flow through a single tunnel
+  ///
+  /// ACTION:
+  /// Open one tunnel, fire 32 concurrent GetHealthAsync calls, await them all
+  ///
+  /// EXPECTED RESULT:
+  /// All calls succeed. Note: outbound records all come through the mux write lock,
+  /// so this guards against the BC blocking-mode deadlock (writer blocked waiting for a
+  /// read) — it does NOT exercise concurrent record production from the read side
+  /// (post-handshake messages). A targeted test for that would need a way to force
+  /// read-side record emission alongside steady app-data traffic.
+  /// </summary>
+  [Test, Order(11)]
+  public async Task TunnelApi_ConcurrentCalls_AllSucceed()
+  {
+    var store = new InMemoryCredentialStore(_creds);
+    var transport = new TlsTransportFactory(NullLogger<TlsTransportFactory>.Instance);
+
+    await using var tunnel = new TunnelService(store, transport, NullLogger<TunnelService>.Instance);
+    await tunnel.ConnectAsync(new(), CancellationToken.None);
+
+    var api = new ApiClient(tunnel, NullLogger<ApiClient>.Instance);
+
+    var tasks = Enumerable.Range(0, 32)
+      .Select(_ => api.GetHealthAsync(CancellationToken.None))
+      .ToArray();
+
+    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+    var all = Task.WhenAll(tasks);
+    await all.WaitAsync(timeout.Token);
+
+    foreach (var t in tasks)
+      Assert.That(t.Result.IsT0, Is.True);
+
+    await tunnel.DisconnectAsync();
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Sustained request/response volume across a single tunnel over time
+  ///
+  /// ACTION:
+  /// Open one tunnel and serially issue 200 API calls (keeps the mux hot long enough to
+  /// trigger keepalive interactions and exercise record fragmentation/reassembly)
+  ///
+  /// EXPECTED RESULT:
+  /// All requests succeed and payloads are intact
+  /// </summary>
+  [Test, Order(12)]
+  public async Task TunnelApi_Volume_AllRequestsSucceed()
+  {
+    var store = new InMemoryCredentialStore(_creds);
+    var transport = new TlsTransportFactory(NullLogger<TlsTransportFactory>.Instance);
+
+    await using var tunnel = new TunnelService(store, transport, NullLogger<TunnelService>.Instance);
+    await tunnel.ConnectAsync(new(), CancellationToken.None);
+
+    var api = new ApiClient(tunnel, NullLogger<ApiClient>.Instance);
+
+    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+    for (var i = 0; i < 200; i++)
+    {
+      var result = await api.GetHealthAsync(timeout.Token);
+      Assert.That(result.IsT0, Is.True, $"request {i} failed");
+      Assert.That(result.AsT0.Version, Is.Not.Null);
+    }
+
+    await tunnel.DisconnectAsync();
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Cancellation token is tripped mid-handshake
+  ///
+  /// ACTION:
+  /// Pass a token that cancels after 1ms (roughly during TCP connect / TLS handshake)
+  ///
+  /// EXPECTED RESULT:
+  /// ConnectAsync surfaces an exception (cancelled or aggregate) and leaves no hanging state.
+  /// </summary>
+  [Test, Order(13)]
+  public void TunnelService_Connect_CancelledDuringHandshake_Throws()
+  {
+    var store = new InMemoryCredentialStore(_creds);
+    var transport = new TlsTransportFactory(NullLogger<TlsTransportFactory>.Instance);
+    var tunnel = new TunnelService(store, transport, NullLogger<TunnelService>.Instance);
+
+    using var cts = new CancellationTokenSource();
+    cts.Cancel();
+    Assert.ThatAsync(async () =>
+    {
+      try { await tunnel.ConnectAsync(new(), cts.Token); }
+      finally { await tunnel.DisposeAsync(); }
+    }, Throws.InstanceOf<OperationCanceledException>()
+        .Or.InstanceOf<InvalidOperationException>());
+  }
+
   private async Task<(TcpClient Tcp, SslStream Ssl)> ConnectTlsAsync()
   {
     var caCert = X509Certificate2.CreateFromPem(

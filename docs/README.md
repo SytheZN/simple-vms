@@ -11,4 +11,5 @@
 | [Client](client.md)                 | Client architecture, platform shells, video playback                           |
 | [Enrollment](enrollment.md)         | Client provisioning, QR flow, credential storage                               |
 | [Response Model](response-model.md) | Response envelope, result codes, debug tags                                    |
+| [Security](security.md)             | Threat model, trust boundaries, operator responsibilities                      |
 | [Versioning](versioning.md)         | Version scheme, release process, Docker tags, branch conventions               |

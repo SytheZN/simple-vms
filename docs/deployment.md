@@ -152,6 +152,8 @@ The server's I/O patterns are designed to be network-storage-safe:
 
 ## Networking
 
+See [security.md](security.md) for trust boundaries and operator responsibilities around port exposure.
+
 ### Ports
 
 | Port | Protocol | Purpose | Exposure |
