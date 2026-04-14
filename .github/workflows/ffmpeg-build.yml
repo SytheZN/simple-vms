@@ -1,0 +1,14 @@
+name: FFmpeg Native Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      ffmpeg_ref:
+        description: 'FFmpeg git ref (tag or commit SHA, e.g. n8.1)'
+        required: true
+
+jobs:
+  stub:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Stub — real workflow lives on feature branches until merged."
