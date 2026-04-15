@@ -7,8 +7,791 @@ on:
         description: 'FFmpeg git ref (tag or commit SHA, e.g. n8.1)'
         required: true
 
+permissions:
+  contents: read
+  packages: write
+
+env:
+  FFMPEG_REPO: https://github.com/FFmpeg/FFmpeg.git
+  NDK_VERSION: r27c
+  ANDROID_API: '24'
+  CCACHE_DIR: ${{ github.workspace }}/.ccache
+  DOTNET_NOLOGO: 'true'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+
 jobs:
-  stub:
+  source:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.clone.outputs.sha }}
+      short_sha: ${{ steps.clone.outputs.short_sha }}
+      package_version: ${{ steps.version.outputs.package_version }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Clone FFmpeg
+        id: clone
+        run: |
+          git clone --depth=1 --branch="${{ inputs.ffmpeg_ref }}" "$FFMPEG_REPO" ffmpeg \
+            || (git clone "$FFMPEG_REPO" ffmpeg && cd ffmpeg && git checkout "${{ inputs.ffmpeg_ref }}")
+          cd ffmpeg
+          sha=$(git rev-parse HEAD)
+          short_sha=$(git rev-parse --short=7 HEAD)
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
+          echo "FFmpeg source at ${sha}"
+
+      - name: Derive package version
+        id: version
+        run: |
+          ref="${{ inputs.ffmpeg_ref }}"
+          short_sha="${{ steps.clone.outputs.short_sha }}"
+          run_number="${{ github.run_number }}"
+          if [[ "$ref" =~ ^n([0-9]+)\.([0-9]+)(\.([0-9]+))?$ ]]; then
+            major="${BASH_REMATCH[1]}"
+            minor="${BASH_REMATCH[2]}"
+            patch="${BASH_REMATCH[4]:-0}"
+            base="${major}.${minor}.${patch}"
+          else
+            base="0.0.0"
+          fi
+          version="${base}-${short_sha}.${run_number}"
+          echo "package_version=${version}" >> "$GITHUB_OUTPUT"
+          echo "Package version: ${version}"
+
+      - name: Tar source
+        run: tar -cf ffmpeg-source.tar -C ffmpeg .
+
+      - name: Upload source artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ffmpeg-source
+          path: ffmpeg-source.tar
+          retention-days: 1
+
+      - name: Upload scripts
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-scripts
+          path: native/ffmpeg/
+          retention-days: 1
+
+  build-linux-x64:
+    needs: source
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    steps:
+      - name: Cache dnf packages
+        uses: actions/cache@v5
+        with:
+          path: |
+            /var/cache/dnf
+            /var/cache/libdnf5
+          key: dnf-fedora-linux-x64-${{ hashFiles('.github/workflows/ffmpeg-build.yml') }}
+          restore-keys: |
+            dnf-fedora-linux-x64-
+
+      - name: Install toolchain
+        run: |
+          dnf install -y --setopt=keepcache=True \
+            gcc gcc-c++ make yasm nasm pkgconf-pkg-config ccache git tar which \
+            libva-devel libvdpau-devel vulkan-headers vulkan-loader-devel
+
+      - name: Cache ccache
+        uses: actions/cache@v5
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-linux-x64-${{ needs.source.outputs.sha }}
+          restore-keys: |
+            ccache-linux-x64-
+
+      - uses: actions/download-artifact@v8
+        with: { name: ffmpeg-source, path: . }
+      - uses: actions/download-artifact@v8
+        with: { name: build-scripts, path: scripts }
+
+      - name: Extract source
+        run: mkdir ffmpeg && tar -xf ffmpeg-source.tar -C ffmpeg
+
+      - name: Configure
+        working-directory: ffmpeg
+        run: |
+          chmod +x ../scripts/configure-common.sh
+          common_flags=$(../scripts/configure-common.sh | tr '\n' ' ')
+          ./configure \
+            $common_flags \
+            --cc="ccache gcc" \
+            --prefix=$GITHUB_WORKSPACE/install \
+            --enable-shared --disable-static \
+            --enable-vaapi --enable-vdpau --enable-vulkan \
+            --enable-hwaccel=h264_vaapi,hevc_vaapi,h264_vdpau,hevc_vdpau,h264_vulkan,hevc_vulkan
+
+      - name: Dump config.log on failure
+        if: failure()
+        working-directory: ffmpeg
+        run: tail -200 ffbuild/config.log || true
+
+      - name: Build
+        working-directory: ffmpeg
+        run: make -j$(nproc) && make install
+
+      - name: ccache stats
+        run: ccache -s
+
+      - name: Stage artifact
+        run: |
+          mkdir -p staging/runtimes/linux-x64/native
+          cp -a install/lib/libav*.so* install/lib/libswscale.so* \
+            staging/runtimes/linux-x64/native/
+          ls staging/runtimes/linux-x64/native/
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-linux-x64
+          path: staging/
+          retention-days: 1
+
+      - name: Upload headers
+        run: |
+          mkdir -p headers/build/native
+          cp -r install/include headers/build/native/include
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ffmpeg-headers
+          path: headers/
+          retention-days: 1
+
+  build-linux-arm64:
+    needs: source
+    runs-on: ubuntu-latest
+    container: debian:trixie
+    steps:
+      - name: Enable arm64 multiarch + install toolchain
+        run: |
+          dpkg --add-architecture arm64
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential yasm nasm pkg-config ccache git curl ca-certificates \
+            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+            libvulkan-dev:arm64
+
+      - name: Cache ccache
+        uses: actions/cache@v5
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-linux-arm64-${{ needs.source.outputs.sha }}
+          restore-keys: |
+            ccache-linux-arm64-
+
+      - uses: actions/download-artifact@v8
+        with: { name: ffmpeg-source, path: . }
+      - uses: actions/download-artifact@v8
+        with: { name: build-scripts, path: scripts }
+
+      - name: Extract source
+        run: mkdir ffmpeg && tar -xf ffmpeg-source.tar -C ffmpeg
+
+      - name: Configure
+        working-directory: ffmpeg
+        env:
+          PKG_CONFIG_LIBDIR: /usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig
+          PKG_CONFIG_PATH: ''
+        run: |
+          chmod +x ../scripts/configure-common.sh
+          common_flags=$(../scripts/configure-common.sh | tr '\n' ' ')
+          ./configure \
+            $common_flags \
+            --enable-cross-compile \
+            --arch=aarch64 \
+            --target-os=linux \
+            --cross-prefix=aarch64-linux-gnu- \
+            --cc="ccache aarch64-linux-gnu-gcc" \
+            --prefix=$GITHUB_WORKSPACE/install \
+            --enable-shared --disable-static \
+            --enable-vulkan --enable-hwaccel=h264_vulkan,hevc_vulkan
+
+      - name: Dump config.log on failure
+        if: failure()
+        working-directory: ffmpeg
+        run: tail -200 ffbuild/config.log || true
+
+      - name: Build
+        working-directory: ffmpeg
+        run: make -j$(nproc) && make install
+
+      - name: ccache stats
+        run: ccache -s
+
+      - name: Stage artifact
+        run: |
+          mkdir -p staging/runtimes/linux-arm64/native
+          cp -a install/lib/libav*.so* install/lib/libswscale.so* \
+            staging/runtimes/linux-arm64/native/
+          ls staging/runtimes/linux-arm64/native/
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-linux-arm64
+          path: staging/
+          retention-days: 1
+
+  build-win-x64:
+    needs: source
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    steps:
+      - name: Cache dnf packages
+        uses: actions/cache@v5
+        with:
+          path: |
+            /var/cache/dnf
+            /var/cache/libdnf5
+          key: dnf-fedora-win-x64-${{ hashFiles('.github/workflows/ffmpeg-build.yml') }}
+          restore-keys: |
+            dnf-fedora-win-x64-
+
+      - name: Install toolchain
+        run: |
+          dnf install -y --setopt=keepcache=True \
+            gcc gcc-c++ make yasm nasm pkgconf-pkg-config ccache git tar which \
+            mingw64-gcc mingw64-gcc-c++ mingw64-winpthreads \
+            mingw64-vulkan-headers mingw64-vulkan-loader
+
+      - name: Cache ccache
+        uses: actions/cache@v5
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-win-x64-${{ needs.source.outputs.sha }}
+          restore-keys: |
+            ccache-win-x64-
+
+      - uses: actions/download-artifact@v8
+        with: { name: ffmpeg-source, path: . }
+      - uses: actions/download-artifact@v8
+        with: { name: build-scripts, path: scripts }
+
+      - name: Extract source
+        run: mkdir ffmpeg && tar -xf ffmpeg-source.tar -C ffmpeg
+
+      - name: Configure
+        working-directory: ffmpeg
+        env:
+          PKG_CONFIG_PATH: /usr/x86_64-w64-mingw32/sys-root/mingw/lib/pkgconfig
+        run: |
+          chmod +x ../scripts/configure-common.sh
+          common_flags=$(../scripts/configure-common.sh | tr '\n' ' ')
+          ./configure \
+            $common_flags \
+            --enable-cross-compile \
+            --arch=x86_64 \
+            --target-os=mingw32 \
+            --cross-prefix=x86_64-w64-mingw32- \
+            --cc="ccache x86_64-w64-mingw32-gcc" \
+            --prefix=$GITHUB_WORKSPACE/install \
+            --enable-shared --disable-static \
+            --enable-d3d11va --enable-dxva2 --enable-vulkan \
+            --enable-hwaccel=h264_d3d11va,h264_d3d11va2,hevc_d3d11va,hevc_d3d11va2,h264_dxva2,hevc_dxva2,h264_vulkan,hevc_vulkan
+
+      - name: Dump config.log on failure
+        if: failure()
+        working-directory: ffmpeg
+        run: tail -200 ffbuild/config.log || true
+
+      - name: Build
+        working-directory: ffmpeg
+        run: make -j$(nproc) && make install
+
+      - name: ccache stats
+        run: ccache -s
+
+      - name: Stage artifact
+        run: |
+          mkdir -p staging/runtimes/win-x64/native
+          cp install/bin/avcodec-*.dll install/bin/avutil-*.dll install/bin/swscale-*.dll \
+            staging/runtimes/win-x64/native/
+          ls staging/runtimes/win-x64/native/
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-win-x64
+          path: staging/
+          retention-days: 1
+
+  build-win-arm64:
+    needs: source
+    runs-on: ubuntu-latest
+    container: mstorsjo/llvm-mingw:latest
+    steps:
+      - name: Install toolchain
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends yasm nasm pkg-config make curl ca-certificates ccache
+
+      - name: Install Vulkan headers
+        run: |
+          tag=$(curl -sSL https://api.github.com/repos/KhronosGroup/Vulkan-Headers/tags | sed -n 's/.*"name": *"\(v[0-9][^"]*\)".*/\1/p' | head -1)
+          echo "Using Vulkan-Headers $tag"
+          curl -sSL "https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/${tag}.tar.gz" | tar xz
+          mkdir -p /usr/local/include
+          cp -r Vulkan-Headers-*/include/vulkan /usr/local/include/
+          cp -r Vulkan-Headers-*/include/vk_video /usr/local/include/
+
+      - name: Cache ccache
+        uses: actions/cache@v5
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-win-arm64-${{ needs.source.outputs.sha }}
+          restore-keys: |
+            ccache-win-arm64-
+
+      - uses: actions/download-artifact@v8
+        with: { name: ffmpeg-source, path: . }
+      - uses: actions/download-artifact@v8
+        with: { name: build-scripts, path: scripts }
+
+      - name: Extract source
+        run: mkdir ffmpeg && tar -xf ffmpeg-source.tar -C ffmpeg
+
+      - name: Configure
+        working-directory: ffmpeg
+        run: |
+          chmod +x ../scripts/configure-common.sh
+          common_flags=$(../scripts/configure-common.sh | tr '\n' ' ')
+          ./configure \
+            $common_flags \
+            --enable-cross-compile \
+            --arch=aarch64 \
+            --target-os=mingw32 \
+            --cross-prefix=aarch64-w64-mingw32- \
+            --cc="ccache aarch64-w64-mingw32-gcc" \
+            --prefix=$GITHUB_WORKSPACE/install \
+            --enable-shared --disable-static \
+            --enable-d3d11va --enable-dxva2 --enable-vulkan \
+            --enable-hwaccel=h264_d3d11va,h264_d3d11va2,hevc_d3d11va,hevc_d3d11va2,h264_dxva2,hevc_dxva2,h264_vulkan,hevc_vulkan \
+            --extra-cflags="-I/usr/local/include"
+
+      - name: Dump config.log on failure
+        if: failure()
+        working-directory: ffmpeg
+        run: tail -200 ffbuild/config.log || true
+
+      - name: Build
+        working-directory: ffmpeg
+        run: make -j$(nproc) && make install
+
+      - name: ccache stats
+        run: ccache -s
+
+      - name: Stage artifact
+        run: |
+          mkdir -p staging/runtimes/win-arm64/native
+          cp install/bin/avcodec-*.dll install/bin/avutil-*.dll install/bin/swscale-*.dll \
+            staging/runtimes/win-arm64/native/
+          ls staging/runtimes/win-arm64/native/
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-win-arm64
+          path: staging/
+          retention-days: 1
+
+  build-android:
+    needs: source
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: android-arm64
+            arch: aarch64
+            abi: arm64-v8a
+            triple: aarch64-linux-android
+            cpu: armv8-a
+          - rid: android-x64
+            arch: x86_64
+            abi: x86_64
+            triple: x86_64-linux-android
+            cpu: x86-64
+    steps:
+      - name: Cache dnf packages
+        uses: actions/cache@v5
+        with:
+          path: |
+            /var/cache/dnf
+            /var/cache/libdnf5
+          key: dnf-fedora-android-${{ hashFiles('.github/workflows/ffmpeg-build.yml') }}
+          restore-keys: |
+            dnf-fedora-android-
+
+      - name: Install tools
+        run: |
+          dnf install -y --setopt=keepcache=True \
+            gcc make yasm nasm pkgconf-pkg-config ccache git tar which unzip curl \
+            vulkan-headers
+          mkdir -p /opt/vulkan-include
+          cp -r /usr/include/vulkan /usr/include/vk_video /opt/vulkan-include/
+
+      - name: Cache ccache
+        uses: actions/cache@v5
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-${{ matrix.rid }}-${{ needs.source.outputs.sha }}
+          restore-keys: |
+            ccache-${{ matrix.rid }}-
+
+      - name: Cache NDK
+        id: ndk-cache
+        uses: actions/cache@v5
+        with:
+          path: android-ndk-${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}-${{ runner.os }}
+
+      - name: Download NDK
+        if: steps.ndk-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -sSLo ndk.zip "https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip"
+          unzip -q ndk.zip
+
+      - name: Register NDK path
+        run: echo "NDK=$GITHUB_WORKSPACE/android-ndk-${NDK_VERSION}" >> $GITHUB_ENV
+
+      - uses: actions/download-artifact@v8
+        with: { name: ffmpeg-source, path: . }
+      - uses: actions/download-artifact@v8
+        with: { name: build-scripts, path: scripts }
+
+      - name: Extract source
+        run: mkdir ffmpeg && tar -xf ffmpeg-source.tar -C ffmpeg
+
+      - name: Configure
+        working-directory: ffmpeg
+        run: |
+          chmod +x ../scripts/configure-common.sh
+          common_flags=$(../scripts/configure-common.sh | tr '\n' ' ')
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
+          SYSROOT="$TOOLCHAIN/sysroot"
+          ./configure \
+            $common_flags \
+            --enable-cross-compile \
+            --target-os=android \
+            --arch=${{ matrix.arch }} \
+            --cpu=${{ matrix.cpu }} \
+            --sysroot="$SYSROOT" \
+            --cc="ccache $TOOLCHAIN/bin/${{ matrix.triple }}${ANDROID_API}-clang" \
+            --cxx="ccache $TOOLCHAIN/bin/${{ matrix.triple }}${ANDROID_API}-clang++" \
+            --ar="$TOOLCHAIN/bin/llvm-ar" \
+            --ranlib="$TOOLCHAIN/bin/llvm-ranlib" \
+            --strip="$TOOLCHAIN/bin/llvm-strip" \
+            --nm="$TOOLCHAIN/bin/llvm-nm" \
+            --prefix=$GITHUB_WORKSPACE/install \
+            --enable-shared --disable-static \
+            --enable-jni --enable-mediacodec --enable-vulkan \
+            --enable-decoder=h264_mediacodec,hevc_mediacodec,mjpeg_mediacodec \
+            --enable-hwaccel=h264_vulkan,hevc_vulkan \
+            --extra-cflags="-I/opt/vulkan-include" \
+            --extra-ldflags="-lvulkan"
+
+      - name: Dump config.log on failure
+        if: failure()
+        working-directory: ffmpeg
+        run: tail -200 ffbuild/config.log || true
+
+      - name: Build
+        working-directory: ffmpeg
+        run: make -j$(nproc) && make install
+
+      - name: ccache stats
+        run: ccache -s
+
+      - name: Stage artifact
+        run: |
+          mkdir -p staging/runtimes/${{ matrix.rid }}/native
+          cp -a install/lib/libav*.so install/lib/libswscale.so \
+            staging/runtimes/${{ matrix.rid }}/native/
+          ls staging/runtimes/${{ matrix.rid }}/native/
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-${{ matrix.rid }}
+          path: staging/
+          retention-days: 1
+
+  build-macos:
+    needs: source
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: osx-x64
+            arch: x86_64
+            min_os: '10.15'
+          - rid: osx-arm64
+            arch: arm64
+            min_os: '11.0'
+    steps:
+      - name: Install tools
+        run: brew install yasm nasm pkg-config ccache
+
+      - name: Cache ccache
+        uses: actions/cache@v5
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-${{ matrix.rid }}-${{ needs.source.outputs.sha }}
+          restore-keys: |
+            ccache-${{ matrix.rid }}-
+
+      - uses: actions/download-artifact@v8
+        with: { name: ffmpeg-source, path: . }
+      - uses: actions/download-artifact@v8
+        with: { name: build-scripts, path: scripts }
+
+      - name: Extract source
+        run: mkdir ffmpeg && tar -xf ffmpeg-source.tar -C ffmpeg
+
+      - name: Configure
+        working-directory: ffmpeg
+        run: |
+          chmod +x ../scripts/configure-common.sh
+          common_flags=$(../scripts/configure-common.sh | tr '\n' ' ')
+          ./configure \
+            $common_flags \
+            --enable-cross-compile \
+            --arch=${{ matrix.arch }} \
+            --target-os=darwin \
+            --cc="ccache clang" \
+            --prefix=$GITHUB_WORKSPACE/install \
+            --enable-shared --disable-static \
+            --enable-videotoolbox \
+            --enable-hwaccel=h264_videotoolbox,hevc_videotoolbox \
+            --extra-cflags="-arch ${{ matrix.arch }} -mmacosx-version-min=${{ matrix.min_os }}" \
+            --extra-ldflags="-arch ${{ matrix.arch }} -mmacosx-version-min=${{ matrix.min_os }}"
+
+      - name: Build
+        working-directory: ffmpeg
+        run: make -j$(sysctl -n hw.ncpu) && make install
+
+      - name: ccache stats
+        run: ccache -s
+
+      - name: Stage artifact
+        run: |
+          mkdir -p staging/runtimes/${{ matrix.rid }}/native
+          cp -a install/lib/libav*.dylib install/lib/libswscale*.dylib \
+            staging/runtimes/${{ matrix.rid }}/native/
+          ls staging/runtimes/${{ matrix.rid }}/native/
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-${{ matrix.rid }}
+          path: staging/
+          retention-days: 1
+
+  build-ios:
+    needs: source
+    runs-on: macos-latest
+    steps:
+      - name: Install tools
+        run: brew install yasm nasm pkg-config ccache
+
+      - name: Cache ccache
+        uses: actions/cache@v5
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-ios-${{ needs.source.outputs.sha }}
+          restore-keys: |
+            ccache-ios-
+
+      - uses: actions/download-artifact@v8
+        with: { name: ffmpeg-source, path: . }
+      - uses: actions/download-artifact@v8
+        with: { name: build-scripts, path: scripts }
+
+      - name: Build iOS slices
+        run: |
+          chmod +x scripts/configure-common.sh
+          common_flags=$(scripts/configure-common.sh | tr '\n' ' ')
+
+          build_slice() {
+            local slice="$1" sdk="$2" min_flag="$3"
+            local sysroot
+            sysroot=$(xcrun --sdk "$sdk" --show-sdk-path)
+            rm -rf ffmpeg && mkdir ffmpeg && tar -xf ffmpeg-source.tar -C ffmpeg
+            pushd ffmpeg
+            ./configure \
+              $common_flags \
+              --enable-cross-compile \
+              --arch=arm64 \
+              --target-os=darwin \
+              --sysroot="$sysroot" \
+              --prefix="$GITHUB_WORKSPACE/install-$slice" \
+              --enable-static --disable-shared \
+              --enable-videotoolbox \
+              --enable-hwaccel=h264_videotoolbox,hevc_videotoolbox \
+              --extra-cflags="-arch arm64 -isysroot $sysroot $min_flag" \
+              --extra-ldflags="-arch arm64 -isysroot $sysroot $min_flag" \
+              --cc="ccache $(xcrun -sdk $sdk -find clang)"
+            make -j$(sysctl -n hw.ncpu)
+            make install
+            popd
+          }
+
+          build_slice device        iphoneos        "-miphoneos-version-min=14.0"
+          build_slice simulator     iphonesimulator "-mios-simulator-version-min=14.0"
+          ccache -s
+
+      - name: Combine slices into xcframework
+        run: |
+          combine_slice() {
+            local slice="$1"
+            local prefix="$GITHUB_WORKSPACE/install-$slice"
+            libtool -static -o "$prefix/libffmpeg.a" \
+              "$prefix/lib/libavcodec.a" \
+              "$prefix/lib/libavutil.a" \
+              "$prefix/lib/libswscale.a"
+          }
+          combine_slice device
+          combine_slice simulator
+
+          mkdir -p staging/runtimes/ios/native
+          xcodebuild -create-xcframework \
+            -library "$GITHUB_WORKSPACE/install-device/libffmpeg.a" \
+              -headers "$GITHUB_WORKSPACE/install-device/include" \
+            -library "$GITHUB_WORKSPACE/install-simulator/libffmpeg.a" \
+              -headers "$GITHUB_WORKSPACE/install-simulator/include" \
+            -output staging/runtimes/ios/native/ffmpeg.xcframework
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-ios
+          path: staging/
+          retention-days: 1
+
+  pack:
+    needs:
+      - source
+      - build-linux-x64
+      - build-linux-arm64
+      - build-win-x64
+      - build-win-arm64
+      - build-android
+      - build-macos
+      - build-ios
+    runs-on: ubuntu-latest
+    outputs:
+      nupkg: ${{ steps.pack.outputs.nupkg }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: native-*
+          path: staging-in
+          merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: ffmpeg-headers
+          path: staging-in
+
+      - name: Cache apt packages
+        uses: actions/cache@v5
+        with:
+          path: ~/apt-cache
+          key: apt-pack-${{ hashFiles('.github/workflows/ffmpeg-build.yml') }}
+          restore-keys: |
+            apt-pack-
+
+      - name: Configure apt cache
+        run: |
+          mkdir -p ~/apt-cache
+          sudo cp -r ~/apt-cache/*.deb /var/cache/apt/archives/ 2>/dev/null || true
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-pack-${{ hashFiles('.github/workflows/ffmpeg-build.yml') }}
+          restore-keys: |
+            nuget-pack-
+
+      - name: Install ClangSharp and clang
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang libclang-dev
+          cp /var/cache/apt/archives/*.deb ~/apt-cache/ 2>/dev/null || true
+          dotnet tool install --global ClangSharpPInvokeGenerator 2>/dev/null || true
+          CLANG_SO=$(find /usr/lib -name "libclang-*.so.*" -o -name "libclang.so.*" | head -1)
+          if [ -n "$CLANG_SO" ] && [ ! -e /usr/lib/libclang.so ]; then
+            sudo ln -s "$CLANG_SO" /usr/lib/libclang.so
+          fi
+
+      - name: Generate C# bindings
+        run: |
+          CLANGSHARP_LIB=$(dirname "$(find ~/.dotnet/tools/.store -name libClangSharp.so | head -1)")
+          export LD_LIBRARY_PATH="$CLANGSHARP_LIB"
+          chmod +x native/ffmpeg/generate-bindings.sh
+          native/ffmpeg/generate-bindings.sh \
+            staging-in/build/native/include \
+            staging-in/contentFiles/cs/any
+
+      - name: Arrange package contents
+        run: |
+          mkdir -p pkg
+          cp -r staging-in/runtimes pkg/
+          cp -r staging-in/build pkg/
+          cp -r staging-in/contentFiles pkg/
+          cp native/ffmpeg/SimpleVms.FFmpeg.Native.nuspec pkg/
+          cp native/ffmpeg/README.md pkg/
+          cp native/ffmpeg/THIRD-PARTY-NOTICES pkg/
+          ls -la pkg/runtimes
+          find pkg -maxdepth 5 -type f | head -50
+
+      - name: Write pack shim csproj
+        run: |
+          cat > pkg/pack.csproj <<'EOF'
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <TargetFramework>net9.0</TargetFramework>
+              <IsPackable>true</IsPackable>
+              <NoBuild>true</NoBuild>
+              <IncludeBuildOutput>false</IncludeBuildOutput>
+              <NuspecFile>SimpleVms.FFmpeg.Native.nuspec</NuspecFile>
+              <NuspecBasePath>.</NuspecBasePath>
+            </PropertyGroup>
+          </Project>
+          EOF
+
+      - name: Pack
+        id: pack
+        working-directory: pkg
+        run: |
+          dotnet restore pack.csproj
+          dotnet pack pack.csproj \
+            --no-restore \
+            --output "$GITHUB_WORKSPACE/out" \
+            -p:NuspecProperties="version=${{ needs.source.outputs.package_version }};ffmpegref=${{ inputs.ffmpeg_ref }}"
+          nupkg=$(ls "$GITHUB_WORKSPACE/out"/*.nupkg | head -1)
+          echo "nupkg=$nupkg" >> "$GITHUB_OUTPUT"
+          echo "Packed: $nupkg"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: nupkg
+          path: out/*.nupkg
+          retention-days: 30
+
+  publish:
+    needs: pack
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Stub — real workflow lives on feature branches until merged."
+      - uses: actions/download-artifact@v8
+        with: { name: nupkg, path: out }
+
+      - name: Push to GitHub Packages
+        run: |
+          dotnet nuget push "out/*.nupkg" \
+            --source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" \
+            --api-key "${{ secrets.GITHUB_TOKEN }}" \
+            --skip-duplicate

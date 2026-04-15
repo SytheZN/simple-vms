@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
+  <metadata>
+    <id>SimpleVms.FFmpeg.Native</id>
+    <version>$version$</version>
+    <authors>SytheZN</authors>
+    <description>Native FFmpeg decode libraries (H.264, HEVC, MJPEG) for SimpleVMS clients. Built from FFmpeg $ffmpegref$.</description>
+    <projectUrl>https://github.com/SytheZN/simple-vms</projectUrl>
+    <license type="expression">LGPL-2.1-or-later</license>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <tags>ffmpeg native video decode</tags>
+    <repository type="git" url="https://github.com/SytheZN/simple-vms" />
+    <readme>README.md</readme>
+    <contentFiles>
+      <files include="cs/any/**/*.cs" buildAction="Compile" />
+    </contentFiles>
+  </metadata>
+  <files>
+    <file src="runtimes/**" target="runtimes" />
+    <file src="build/native/include/**" target="build/native/include" />
+    <file src="contentFiles/cs/any/**" target="contentFiles/cs/any/SimpleVms.FFmpeg.Native" />
+    <file src="README.md" target="" />
+    <file src="THIRD-PARTY-NOTICES" target="THIRD-PARTY-NOTICES" />
+  </files>
+</package>

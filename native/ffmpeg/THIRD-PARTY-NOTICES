@@ -1,0 +1,22 @@
+This package contains binary distributions of FFmpeg, which is licensed
+under the GNU Lesser General Public License version 2.1 or later
+(LGPL-2.1-or-later).
+
+FFmpeg - https://ffmpeg.org/
+Copyright (c) 2000-2025 the FFmpeg developers
+
+The complete source code for the FFmpeg version used to build this
+package can be obtained from:
+
+  https://github.com/FFmpeg/FFmpeg
+
+The specific commit used is recorded in the package description.
+
+The full text of the LGPL-2.1 license is available at:
+
+  https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
+
+In compliance with LGPL-2.1 Section 6, the shared libraries included
+in this package are dynamically linked (except on iOS where static
+linking is required by the platform). Users may replace the included
+FFmpeg libraries with their own compatible builds.

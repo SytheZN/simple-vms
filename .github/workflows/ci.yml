@@ -11,6 +11,11 @@ on:
 permissions:
   contents: read
 
+env:
+  DOTNET_NOLOGO: 'true'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+
 jobs:
   gate:
     runs-on: ubuntu-latest
@@ -46,8 +51,16 @@ jobs:
       is_tagged: ${{ steps.version.outputs.is_tagged }}
       is_main: ${{ steps.version.outputs.is_main }}
     steps:
+      - name: Cache dnf packages
+        uses: actions/cache@v5
+        with:
+          path: /var/cache/dnf
+          key: dnf-fedora-dotnet10-node-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: |
+            dnf-fedora-dotnet10-node-
+
       - name: Install dependencies
-        run: dnf install -y dotnet-sdk-10.0 nodejs git
+        run: dnf install -y --setopt=keepcache=True dotnet-sdk-10.0 nodejs git
 
       - uses: actions/checkout@v6
         with:
@@ -56,6 +69,22 @@ jobs:
 
       - name: Configure git
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Packages.props', 'Directory.Build.props') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Cache npm downloads
+        uses: actions/cache@v5
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('src/Client.Web/package-lock.json') }}
+          restore-keys: |
+            npm-${{ runner.os }}-
 
       - name: Fetch main branch ref
         if: github.ref_type == 'tag'
