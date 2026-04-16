@@ -1,4 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Tests.Unit" />
   </ItemGroup>
@@ -8,13 +11,16 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Skia" />
     <PackageReference Include="BouncyCastle.Cryptography" />
-    <PackageReference Include="IconPacks.Avalonia.PhosphorIcons" />
+    <PackageReference Include="SkiaSharp" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="SimpleVms.FFmpeg.Native" />
   </ItemGroup>
   <ItemGroup>
     <AvaloniaResource Include="Assets/*.ttf" />
     <AvaloniaResource Include="Assets/*.png" />
+    <AvaloniaResource Include="Assets/Phosphor/*.svg" />
   </ItemGroup>
 </Project>

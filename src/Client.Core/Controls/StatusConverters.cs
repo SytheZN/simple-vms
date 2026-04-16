@@ -1,7 +1,6 @@
 using System.Globalization;
 using Avalonia;
 using Avalonia.Data.Converters;
-using IconPacks.Avalonia.PhosphorIcons;
 using System.Diagnostics.CodeAnalysis;
 
 namespace Client.Core.Controls;
@@ -14,9 +13,9 @@ public sealed class StatusToIconKindConverter : IValueConverter
   public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
     value?.ToString() switch
     {
-      "online" => PackIconPhosphorIconsKind.VideoCamera,
-      "error" => PackIconPhosphorIconsKind.Warning,
-      _ => PackIconPhosphorIconsKind.VideoCameraSlash
+      "online" => PhosphorIconKind.VideoCamera,
+      "error" => PhosphorIconKind.Warning,
+      _ => PhosphorIconKind.VideoCameraSlash
     };
 
   public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>

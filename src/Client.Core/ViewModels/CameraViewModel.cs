@@ -1,5 +1,7 @@
 using Client.Core.Api;
+using Client.Core.Decoding;
 using Client.Core.Streaming;
+using Client.Core.Tunnel;
 using Microsoft.Extensions.Logging;
 using Shared.Models.Dto;
 
@@ -10,15 +12,18 @@ public sealed class CameraViewModel : ViewModelBase, IAsyncDisposable
   private readonly IApiClient _api;
   private readonly ILiveStreamService _live;
   private readonly IPlaybackService _playback;
+  private readonly ITunnelService _tunnel;
   private readonly ILogger<CameraViewModel> _logger;
+  private readonly ILoggerFactory _loggerFactory;
 
   private CameraListItem? _camera;
-  private VideoFeed? _videoFeed;
-  private VideoFeed? _motionFeed;
+  private IVideoFeed? _motionFeed;
+  private Player? _player;
   private string _selectedProfile = "main";
-  private CancellationTokenSource? _switchCts;
-  private bool _isPlayback;
   private bool _motionOverlay;
+  private long _currentPositionUs;
+  private bool _isBuffering;
+  private bool _isPaused;
 
   public CameraListItem? Camera
   {
@@ -26,13 +31,13 @@ public sealed class CameraViewModel : ViewModelBase, IAsyncDisposable
     set => SetProperty(ref _camera, value);
   }
 
-  public VideoFeed? VideoFeed
+  public Player? Player
   {
-    get => _videoFeed;
-    private set => SetProperty(ref _videoFeed, value);
+    get => _player;
+    private set => SetProperty(ref _player, value);
   }
 
-  public VideoFeed? MotionFeed
+  public IVideoFeed? MotionFeed
   {
     get => _motionFeed;
     private set => SetProperty(ref _motionFeed, value);
@@ -48,10 +53,24 @@ public sealed class CameraViewModel : ViewModelBase, IAsyncDisposable
     }
   }
 
-  public bool IsPlayback
+  public bool IsPlayback => _player?.Mode == Decoding.Player.PlayerMode.Playback;
+
+  public long CurrentPositionUs
   {
-    get => _isPlayback;
-    private set => SetProperty(ref _isPlayback, value);
+    get => _currentPositionUs;
+    private set => SetProperty(ref _currentPositionUs, value);
+  }
+
+  public bool IsBuffering
+  {
+    get => _isBuffering;
+    private set => SetProperty(ref _isBuffering, value);
+  }
+
+  public bool IsPaused
+  {
+    get => _isPaused;
+    private set => SetProperty(ref _isPaused, value);
   }
 
   public bool MotionOverlay
@@ -64,14 +83,45 @@ public sealed class CameraViewModel : ViewModelBase, IAsyncDisposable
     }
   }
 
+  public bool IsTunnelConnected => _tunnel.State == ConnectionState.Connected;
+
   public CameraViewModel(IApiClient api, ILiveStreamService live, IPlaybackService playback,
-    ILogger<CameraViewModel> logger)
+    ITunnelService tunnel, ILogger<CameraViewModel> logger, ILoggerFactory loggerFactory)
   {
     _api = api;
     _live = live;
     _playback = playback;
+    _tunnel = tunnel;
     _logger = logger;
-    _live.FeedReplaced += OnFeedReplaced;
+    _loggerFactory = loggerFactory;
+  }
+
+  /// <summary>
+  /// Wait for the tunnel to report Connected. Returns true once connected,
+  /// false if the timeout elapses or the token is cancelled.
+  /// </summary>
+  public async Task<bool> WaitForTunnelConnectedAsync(TimeSpan timeout, CancellationToken ct)
+  {
+    if (_tunnel.State == ConnectionState.Connected) return true;
+
+    var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+    void OnState(ConnectionState s)
+    {
+      if (s == ConnectionState.Connected) tcs.TrySetResult(true);
+    }
+    _tunnel.StateChanged += OnState;
+    try
+    {
+      if (_tunnel.State == ConnectionState.Connected) return true;
+      using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+      cts.CancelAfter(timeout);
+      using (cts.Token.Register(() => tcs.TrySetResult(false)))
+        return await tcs.Task;
+    }
+    finally
+    {
+      _tunnel.StateChanged -= OnState;
+    }
   }
 
   public async Task LoadAsync(Guid cameraId, CancellationToken ct)
@@ -90,49 +140,44 @@ public sealed class CameraViewModel : ViewModelBase, IAsyncDisposable
         _logger.LogWarning("Failed to load camera {CameraId}: {Message}", cameraId, error.Message);
         SetError(error);
       });
+
+    if (_camera != null && _player == null)
+    {
+      _player = new Player(_loggerFactory, _live, _playback);
+      _player.CurrentPositionChanged += OnPlayerPosition;
+      _player.BufferingChanged += OnPlayerBuffering;
+      _player.ModeChanged += OnPlayerMode;
+      _player.PausedChanged += OnPlayerPaused;
+      _player.Configure(_camera.Id, _selectedProfile);
+      Player = _player;
+    }
   }
 
-  public async Task GoLiveAsync(CancellationToken ct)
+  public Task GoLiveAsync(CancellationToken ct) =>
+    _player?.GoLiveAsync(ct) ?? Task.CompletedTask;
+
+  public Task StartPlaybackAsync(ulong from, ulong? to, CancellationToken ct) =>
+    _player?.SeekAsync((long)from, ct) ?? Task.CompletedTask;
+
+  public Task SeekAsync(ulong timestamp, CancellationToken ct) =>
+    _player?.SeekAsync((long)timestamp, ct) ?? Task.CompletedTask;
+
+  public void SetRate(double rate) => _player?.SetRate(rate);
+
+  public void TogglePause() => _player?.TogglePause();
+
+  public void ScrubStart() => _player?.ScrubStart();
+
+  public void ScrubMove(long ts) => _player?.ScrubMove(ts);
+
+  public Task ScrubEndAsync(long ts, CancellationToken ct) =>
+    _player?.ScrubEndAsync(ts, ct) ?? Task.CompletedTask;
+
+  private Task SwitchProfileAsync()
   {
-    _logger.LogDebug("Going live on {Profile}", SelectedProfile);
-    await StopCurrentFeedAsync();
-    IsPlayback = false;
-
-    if (Camera == null) return;
-    VideoFeed = await _live.SubscribeAsync(Camera.Id, SelectedProfile, ct);
-  }
-
-  public async Task StartPlaybackAsync(ulong from, ulong? to, CancellationToken ct)
-  {
-    _logger.LogDebug("Starting playback from={From} to={To}", from, to);
-    await StopCurrentFeedAsync();
-    IsPlayback = true;
-
-    if (Camera == null) return;
-    VideoFeed = await _playback.StartAsync(Camera.Id, SelectedProfile, from, to, ct);
-  }
-
-  public async Task SeekAsync(ulong timestamp, CancellationToken ct)
-  {
-    if (VideoFeed == null || !IsPlayback) return;
-    _logger.LogDebug("Seeking to {Timestamp}", timestamp);
-    VideoFeed = await _playback.SeekAsync(VideoFeed, timestamp, ct);
-  }
-
-  private async Task SwitchProfileAsync()
-  {
-    if (Camera == null) return;
-    if (IsPlayback) return;
-
-    _logger.LogDebug("Switching profile to {Profile}", SelectedProfile);
-    _switchCts?.Cancel();
-    _switchCts?.Dispose();
-    _switchCts = new CancellationTokenSource();
-    var ct = _switchCts.Token;
-
-    await StopCurrentFeedAsync();
-    ct.ThrowIfCancellationRequested();
-    VideoFeed = await _live.SubscribeAsync(Camera.Id, SelectedProfile, ct);
+    if (_player == null || _camera == null) return Task.CompletedTask;
+    _logger.LogDebug("Switching profile to {Profile}", _selectedProfile);
+    return _player.SetProfileAsync(_selectedProfile, CancellationToken.None);
   }
 
   private async Task ToggleMotionAsync()
@@ -152,25 +197,11 @@ public sealed class CameraViewModel : ViewModelBase, IAsyncDisposable
     }
   }
 
-  private void OnFeedReplaced(VideoFeed oldFeed, VideoFeed newFeed)
-  {
-    if (_videoFeed == oldFeed)
-      RunOnUiThread(() => VideoFeed = newFeed);
-    if (_motionFeed == oldFeed)
-      RunOnUiThread(() => MotionFeed = newFeed);
-  }
-
-  private async Task StopCurrentFeedAsync()
-  {
-    if (_videoFeed != null)
-    {
-      if (IsPlayback)
-        await _playback.StopAsync(_videoFeed, CancellationToken.None);
-      else
-        await _live.UnsubscribeAsync(_videoFeed, CancellationToken.None);
-      VideoFeed = null;
-    }
-  }
+  private void OnPlayerPosition(long posUs) => RunOnUiThread(() => CurrentPositionUs = posUs);
+  private void OnPlayerBuffering(bool buffering) => RunOnUiThread(() => IsBuffering = buffering);
+  private void OnPlayerMode(Decoding.Player.PlayerMode _) =>
+    RunOnUiThread(() => OnPropertyChanged(nameof(IsPlayback)));
+  private void OnPlayerPaused(bool paused) => RunOnUiThread(() => IsPaused = paused);
 
   private async Task SafeAsync(Func<Task> action)
   {
@@ -184,10 +215,16 @@ public sealed class CameraViewModel : ViewModelBase, IAsyncDisposable
 
   public async ValueTask DisposeAsync()
   {
-    _live.FeedReplaced -= OnFeedReplaced;
-    _switchCts?.Cancel();
-    _switchCts?.Dispose();
-    await StopCurrentFeedAsync();
+    if (_player != null)
+    {
+      _player.CurrentPositionChanged -= OnPlayerPosition;
+      _player.BufferingChanged -= OnPlayerBuffering;
+      _player.ModeChanged -= OnPlayerMode;
+      _player.PausedChanged -= OnPlayerPaused;
+      await _player.DetachAsync();
+      _player.Dispose();
+      _player = null;
+    }
     if (_motionFeed != null)
     {
       await _live.UnsubscribeAsync(_motionFeed, CancellationToken.None);

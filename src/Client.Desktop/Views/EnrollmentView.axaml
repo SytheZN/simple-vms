@@ -12,13 +12,13 @@
       <StackPanel Spacing="4">
         <TextBlock Text="Server address" Classes="label" />
         <TextBox Classes="input" Text="{Binding ServerAddress, Mode=TwoWay}"
-                 Watermark="192.168.1.50:8080" />
+                 PlaceholderText="192.168.1.50:8080" />
       </StackPanel>
 
       <StackPanel Spacing="4">
         <TextBlock Text="Enrollment token" Classes="label" />
         <TextBox Classes="input" Text="{Binding Token, Mode=TwoWay}"
-                 Watermark="XXXX-XXXX" />
+                 PlaceholderText="XXXX-XXXX" />
       </StackPanel>
 
       <controls:ErrorCard Message="{Binding ErrorMessage}"

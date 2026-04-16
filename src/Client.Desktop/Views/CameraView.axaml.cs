@@ -7,7 +7,6 @@ using Avalonia.Media;
 using Client.Core.Controls;
 using Client.Core.ViewModels;
 using Client.Desktop.ViewModels;
-using IconPacks.Avalonia.PhosphorIcons;
 using Microsoft.Extensions.DependencyInjection;
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
@@ -21,8 +20,8 @@ public partial class CameraView : UserControl
     [-5, -4, -3, -2, -1, -0.5, -0.25, 0.25, 0.5, 1, 1.5, 2, 3, 4, 5, 8, 16];
 
   private readonly StreamQualitySelector _qualitySelector;
-  private readonly PackIconPhosphorIcons _playPauseIcon;
-  private readonly PackIconPhosphorIcons _fullscreenIcon;
+  private readonly PhosphorIcon _playPauseIcon;
+  private readonly PhosphorIcon _fullscreenIcon;
   private readonly TextBlock _timestampLabel;
   private readonly TextBlock _rateLabel;
   private readonly Border _modeBadge;
@@ -34,14 +33,15 @@ public partial class CameraView : UserControl
   private readonly Panel _bufferingOverlay;
   private readonly Panel _errorOverlay;
   private readonly TextBlock _overlayText;
+  private readonly Client.Core.Controls.VideoPlayer _videoPlayer;
 
   public CameraView()
   {
     InitializeComponent();
 
     _qualitySelector = this.FindControl<StreamQualitySelector>("QualitySelector")!;
-    _playPauseIcon = this.FindControl<PackIconPhosphorIcons>("PlayPauseIcon")!;
-    _fullscreenIcon = this.FindControl<PackIconPhosphorIcons>("FullscreenIcon")!;
+    _playPauseIcon = this.FindControl<PhosphorIcon>("PlayPauseIcon")!;
+    _fullscreenIcon = this.FindControl<PhosphorIcon>("FullscreenIcon")!;
     _timestampLabel = this.FindControl<TextBlock>("TimestampLabel")!;
     _rateLabel = this.FindControl<TextBlock>("RateLabel")!;
     _modeBadge = this.FindControl<Border>("ModeBadge")!;
@@ -53,6 +53,7 @@ public partial class CameraView : UserControl
     _bufferingOverlay = this.FindControl<Panel>("BufferingOverlay")!;
     _errorOverlay = this.FindControl<Panel>("ErrorOverlay")!;
     _overlayText = this.FindControl<TextBlock>("OverlayText")!;
+    _videoPlayer = this.FindControl<Client.Core.Controls.VideoPlayer>("VideoPlayerControl")!;
 
     _rateSlider.Maximum = RateSteps.Length - 1;
     _rateSlider.Value = Array.IndexOf(RateSteps, 1);
@@ -89,12 +90,18 @@ public partial class CameraView : UserControl
   private async Task InitAsync(CameraViewModel vm, Guid cameraId)
   {
     await vm.LoadAsync(cameraId, CancellationToken.None);
+    _videoPlayer.Player = vm.Player;
+    if (!vm.IsTunnelConnected)
+      await vm.WaitForTunnelConnectedAsync(TimeSpan.FromSeconds(10), CancellationToken.None);
     await vm.GoLiveAsync(CancellationToken.None);
 
     if (vm.Camera != null)
       _qualitySelector.Streams = vm.Camera.Streams;
 
     UpdateMode(vm);
+    UpdatePlayPauseIcon(vm.IsPaused);
+    UpdateTimestamp((ulong)vm.CurrentPositionUs);
+    _bufferingOverlay.IsVisible = vm.IsBuffering;
 
     var timelineVm = ((App)Avalonia.Application.Current!).Services
       .GetRequiredService<TimelineViewModel>();
@@ -103,6 +110,7 @@ public partial class CameraView : UserControl
     var fourHours = 4UL * 3600 * 1_000_000;
     timelineVm.SetVisibleRange(now - fourHours, now + fourHours / 4);
     _timeline.ViewModel = timelineVm;
+    timelineVm.CurrentPosition = (ulong)vm.CurrentPositionUs;
     await timelineVm.LoadAsync(CancellationToken.None);
   }
 
@@ -111,6 +119,16 @@ public partial class CameraView : UserControl
     if (sender is not CameraViewModel vm) return;
     if (e.PropertyName == nameof(CameraViewModel.IsPlayback))
       UpdateMode(vm);
+    else if (e.PropertyName == nameof(CameraViewModel.CurrentPositionUs))
+    {
+      UpdateTimestamp((ulong)vm.CurrentPositionUs);
+      if (_timeline.ViewModel != null)
+        _timeline.ViewModel.CurrentPosition = (ulong)vm.CurrentPositionUs;
+    }
+    else if (e.PropertyName == nameof(CameraViewModel.IsPaused))
+      UpdatePlayPauseIcon(vm.IsPaused);
+    else if (e.PropertyName == nameof(CameraViewModel.IsBuffering))
+      _bufferingOverlay.IsVisible = vm.IsBuffering;
   }
 
   private void SetModeDisconnected()
@@ -120,16 +138,19 @@ public partial class CameraView : UserControl
 
   private void UpdateMode(CameraViewModel vm)
   {
-    _playPauseIcon.Kind = vm.IsPlayback
-      ? PackIconPhosphorIconsKind.Play
-      : PackIconPhosphorIconsKind.Pause;
-
     if (vm.IsPlayback)
       SetBadge("WarningMutedBrush", "WarningBrush", "Playback");
     else
       SetBadge("SuccessMutedBrush", "SuccessBrush", "Live");
 
     _rateSlider.Value = Array.IndexOf(RateSteps, 1);
+  }
+
+  private void UpdatePlayPauseIcon(bool paused)
+  {
+    _playPauseIcon.Kind = paused
+      ? PhosphorIconKind.Play
+      : PhosphorIconKind.Pause;
   }
 
   private void SetBadge(string bgKey, string fgKey, string label)
@@ -154,6 +175,8 @@ public partial class CameraView : UserControl
     if (idx < 0 || idx >= RateSteps.Length) return;
     var rate = RateSteps[idx];
     _rateLabel.Text = $"{rate}x";
+    if (DataContext is CameraViewModel vm)
+      vm.SetRate(rate);
   }
 
   private void UpdateTimestamp(ulong timestampUs)
@@ -175,9 +198,8 @@ public partial class CameraView : UserControl
 
   private void OnPlayPause(object? sender, RoutedEventArgs e)
   {
-    if (DataContext is not CameraViewModel vm) return;
-    if (vm.IsPlayback)
-      _ = vm.GoLiveAsync(CancellationToken.None);
+    if (DataContext is CameraViewModel vm)
+      vm.TogglePause();
   }
 
   private void OnGoLive(object? sender, RoutedEventArgs e)
@@ -241,8 +263,8 @@ public partial class CameraView : UserControl
     if (main == null) return;
     main.ToggleFullscreen();
     _fullscreenIcon.Kind = main.IsFullscreen
-      ? PackIconPhosphorIconsKind.CornersIn
-      : PackIconPhosphorIconsKind.CornersOut;
+      ? PhosphorIconKind.CornersIn
+      : PhosphorIconKind.CornersOut;
   }
 
   private void OnProfileChanged(string profile)

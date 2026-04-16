@@ -1,8 +1,10 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:icon="using:IconPacks.Avalonia.PhosphorIcons"
              xmlns:controls="using:Client.Core.Controls"
-             x:Class="Client.Core.Controls.CameraGrid">
+             xmlns:vm="using:Client.Core.ViewModels"
+             xmlns:dto="using:Shared.Models.Dto"
+             x:Class="Client.Core.Controls.CameraGrid"
+             x:DataType="vm:GalleryViewModel">
 
   <UserControl.Resources>
     <controls:StatusToIconKindConverter x:Key="StatusToIconKind" />
@@ -36,7 +38,7 @@
       </ItemsPanelTemplate>
     </ItemsControl.ItemsPanel>
     <ItemsControl.ItemTemplate>
-      <DataTemplate>
+      <DataTemplate x:DataType="dto:CameraListItem">
         <Border Margin="{DynamicResource MarginSpace1}"
                 Classes="card"
                 Padding="0"
@@ -47,7 +49,7 @@
             <!-- Thumbnail area (16:9) with top corner radius to match card -->
             <Border CornerRadius="{DynamicResource RadiusLgInnerTop}" ClipToBounds="True">
               <controls:AspectRatioPanel Background="{DynamicResource SurfaceSunkenBrush}">
-                <icon:PackIconPhosphorIcons Kind="{Binding Status, Converter={StaticResource StatusToIconKind}}"
+                <controls:PhosphorIcon Kind="{Binding Status, Converter={StaticResource StatusToIconKind}}"
                                             Width="{DynamicResource IconXl}"
                                             Height="{DynamicResource IconXl}"
                                             Foreground="{DynamicResource TextMutedBrush}"
@@ -90,7 +92,7 @@
                   </ItemsPanelTemplate>
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
-                  <DataTemplate>
+                  <DataTemplate x:DataType="dto:StreamProfileDto">
                     <TextBlock Classes="text-muted"
                                FontSize="{DynamicResource TextXs}">
                       <TextBlock.Text>

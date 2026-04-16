@@ -40,8 +40,8 @@ public partial class Timeline : UserControl
 
   static Timeline()
   {
-    Gestures.PinchEvent.AddClassHandler<Timeline>((t, e) => t.OnPinch(e));
-    Gestures.PinchEndedEvent.AddClassHandler<Timeline>((t, e) => t.OnPinchEnded(e));
+    PinchEvent.AddClassHandler<Timeline>((t, e) => t.OnPinch(e));
+    PinchEndedEvent.AddClassHandler<Timeline>((t, e) => t.OnPinchEnded(e));
   }
 
   public Timeline()

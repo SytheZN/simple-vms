@@ -2,9 +2,10 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Media;
-using Avalonia.Media.Imaging;
 using Avalonia.Threading;
+using Client.Core.Decoding;
 using Client.Core.Streaming;
+using Microsoft.Extensions.Logging;
 using Shared.Protocol;
 using System.Diagnostics.CodeAnalysis;
 
@@ -13,13 +14,13 @@ namespace Client.Core.Controls;
 [ExcludeFromCodeCoverage]
 public partial class VideoPlayer : UserControl
 {
-  public static readonly StyledProperty<VideoFeed?> FeedProperty =
-    AvaloniaProperty.Register<VideoPlayer, VideoFeed?>(nameof(Feed));
+  public static readonly StyledProperty<IVideoFeed?> MotionFeedProperty =
+    AvaloniaProperty.Register<VideoPlayer, IVideoFeed?>(nameof(MotionFeed));
 
-  public static readonly StyledProperty<VideoFeed?> MotionFeedProperty =
-    AvaloniaProperty.Register<VideoPlayer, VideoFeed?>(nameof(MotionFeed));
+  public static readonly StyledProperty<Player?> PlayerProperty =
+    AvaloniaProperty.Register<VideoPlayer, Player?>(nameof(Player));
 
-  private readonly Image _frameImage;
+  private readonly VideoSurface _videoSurface;
   private readonly StackPanel _placeholder;
   private readonly Canvas _motionOverlay;
 
@@ -34,33 +35,22 @@ public partial class VideoPlayer : UserControl
     }
   }
 
-  public VideoFeed? Feed
-  {
-    get => GetValue(FeedProperty);
-    set => SetValue(FeedProperty, value);
-  }
-
-  public VideoFeed? MotionFeed
+  public IVideoFeed? MotionFeed
   {
     get => GetValue(MotionFeedProperty);
     set => SetValue(MotionFeedProperty, value);
   }
 
-  public WriteableBitmap? CurrentFrame
+  public Player? Player
   {
-    get => _frameImage.Source as WriteableBitmap;
-    set
-    {
-      _frameImage.Source = value;
-      _frameImage.IsVisible = value != null;
-      _placeholder.IsVisible = value == null;
-    }
+    get => GetValue(PlayerProperty);
+    set => SetValue(PlayerProperty, value);
   }
 
   public VideoPlayer()
   {
     InitializeComponent();
-    _frameImage = this.FindControl<Image>("FrameImage")!;
+    _videoSurface = this.FindControl<VideoSurface>("VideoSurface")!;
     _placeholder = this.FindControl<StackPanel>("Placeholder")!;
     _motionOverlay = this.FindControl<Canvas>("MotionOverlay")!;
   }
@@ -69,21 +59,41 @@ public partial class VideoPlayer : UserControl
   {
     base.OnPropertyChanged(change);
 
-    if (change.Property == MotionFeedProperty)
+    if (change.Property == PlayerProperty)
     {
-      DetachMotionFeed(change.GetOldValue<VideoFeed?>());
-      AttachMotionFeed(change.GetNewValue<VideoFeed?>());
+      var p = change.GetNewValue<Player?>();
+      p?.RendererLogger.LogDebug("VideoPlayer.PlayerProperty changed -> player set");
+      AttachPlayer(p);
+    }
+    else if (change.Property == DataContextProperty)
+    {
+      var dc = change.NewValue;
+      // Use whatever logger we have access to via current Player (likely null before binding propagates).
+      Player?.RendererLogger.LogDebug("VideoPlayer.DataContextProperty changed -> {Type}",
+        dc?.GetType().FullName ?? "null");
+    }
+    else if (change.Property == MotionFeedProperty)
+    {
+      DetachMotionFeed(change.GetOldValue<IVideoFeed?>());
+      AttachMotionFeed(change.GetNewValue<IVideoFeed?>());
     }
   }
 
-  private void AttachMotionFeed(VideoFeed? feed)
+  private void AttachPlayer(Player? player)
+  {
+    player?.RendererLogger.LogDebug("VideoPlayer.AttachPlayer attached");
+    _videoSurface.SetPlayer(player);
+    _placeholder.IsVisible = player == null;
+  }
+
+  private void AttachMotionFeed(IVideoFeed? feed)
   {
     if (feed == null) return;
     Dispatcher.UIThread.Post(() => _motionOverlay.IsVisible = true);
     feed.OnGop += OnMotionGopReceived;
   }
 
-  private void DetachMotionFeed(VideoFeed? feed)
+  private void DetachMotionFeed(IVideoFeed? feed)
   {
     if (feed == null) return;
     feed.OnGop -= OnMotionGopReceived;

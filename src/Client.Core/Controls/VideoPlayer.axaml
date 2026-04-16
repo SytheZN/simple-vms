@@ -1,18 +1,14 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:icon="using:IconPacks.Avalonia.PhosphorIcons"
+             xmlns:controls="using:Client.Core.Controls"
              x:Class="Client.Core.Controls.VideoPlayer">
   <Panel Background="{DynamicResource SurfaceSunkenBrush}">
-    <!-- Decoded frame target (WriteableBitmap or GPU interop surface) -->
-    <Image x:Name="FrameImage"
-           Stretch="Uniform"
-           IsVisible="False" />
-    <!-- No-video placeholder -->
+    <controls:VideoSurface x:Name="VideoSurface" />
     <StackPanel x:Name="Placeholder"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center"
                 Spacing="8">
-      <icon:PackIconPhosphorIcons Kind="VideoCamera"
+      <controls:PhosphorIcon Kind="VideoCamera"
                                   Width="{DynamicResource IconXl}"
                                   Height="{DynamicResource IconXl}"
                                   Foreground="{DynamicResource TextMutedBrush}"
@@ -22,7 +18,6 @@
                  FontSize="{DynamicResource TextSm}"
                  HorizontalAlignment="Center" />
     </StackPanel>
-    <!-- Motion overlay -->
     <Canvas x:Name="MotionOverlay"
             IsVisible="False"
             IsHitTestVisible="False" />

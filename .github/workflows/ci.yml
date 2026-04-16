@@ -43,6 +43,7 @@ jobs:
     permissions:
       contents: read
       checks: write
+      packages: read
     container:
       image: fedora:latest
     outputs:
@@ -127,6 +128,9 @@ jobs:
         run: |
           echo "::add-matcher::${GITHUB_WORKSPACE}/.github/matchers/dotnet.json"
           echo "::add-matcher::${GITHUB_WORKSPACE}/.github/matchers/npm.json"
+
+      - name: Authenticate GitHub NuGet feed
+        run: dotnet nuget update source github --username "${{ github.actor }}" --password "${{ secrets.GITHUB_TOKEN }}" --store-password-in-clear-text --configfile nuget.config
 
       - name: Build
         env:

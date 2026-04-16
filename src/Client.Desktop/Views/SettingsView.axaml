@@ -1,7 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Client.Core.ViewModels"
-             xmlns:icon="using:IconPacks.Avalonia.PhosphorIcons"
+             xmlns:controls="using:Client.Core.Controls"
              x:Class="Client.Desktop.Views.SettingsView"
              x:DataType="vm:SettingsViewModel">
   <ScrollViewer Background="Transparent">
@@ -37,7 +37,7 @@
           <Button Classes="btn btn-danger btn-sm" x:Name="DisconnectButton"
                   Margin="0 8 0 0">
             <StackPanel Orientation="Horizontal" Spacing="4">
-              <icon:PackIconPhosphorIcons Kind="SignOut" Width="14" Height="14" />
+              <controls:PhosphorIcon Kind="SignOut" Width="14" Height="14" />
               <TextBlock Text="Disconnect" />
             </StackPanel>
           </Button>
@@ -78,7 +78,7 @@
             <TextBlock Text="Notifications" Classes="section-heading" />
             <Button DockPanel.Dock="Right" Classes="btn btn-ghost btn-sm"
                     HorizontalAlignment="Right" x:Name="AddRuleButton">
-              <icon:PackIconPhosphorIcons Kind="Plus" Width="14" Height="14" />
+              <controls:PhosphorIcon Kind="Plus" Width="14" Height="14" />
             </Button>
           </DockPanel>
           <ItemsControl x:Name="RulesList" />

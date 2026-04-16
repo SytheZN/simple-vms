@@ -1,6 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:icon="using:IconPacks.Avalonia.PhosphorIcons"
+             xmlns:controls="using:Client.Core.Controls"
              x:Class="Client.Core.Controls.ErrorCard">
   <Border x:Name="Root"
           Background="{DynamicResource DangerMutedBrush}"
@@ -12,7 +12,7 @@
     <StackPanel Spacing="8">
       <!-- Message row -->
       <DockPanel>
-        <icon:PackIconPhosphorIcons Kind="XCircle"
+        <controls:PhosphorIcon Kind="XCircle"
                                     DockPanel.Dock="Left"
                                     Width="{DynamicResource IconMd}"
                                     Height="{DynamicResource IconMd}"
@@ -39,7 +39,7 @@
                 Classes="btn btn-ghost"
                 Padding="2"
                 ToolTip.Tip="Copy error details">
-          <icon:PackIconPhosphorIcons Kind="Copy"
+          <controls:PhosphorIcon Kind="Copy"
                                       Width="{DynamicResource TextXs}"
                                       Height="{DynamicResource TextXs}"
                                       Foreground="{DynamicResource TextMutedBrush}" />

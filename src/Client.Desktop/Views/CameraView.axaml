@@ -2,14 +2,13 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Client.Core.ViewModels"
              xmlns:controls="using:Client.Core.Controls"
-             xmlns:icon="using:IconPacks.Avalonia.PhosphorIcons"
              x:Class="Client.Desktop.Views.CameraView"
              x:DataType="vm:CameraViewModel">
   <DockPanel>
     <!-- Header -->
     <DockPanel DockPanel.Dock="Top" Margin="0 0 0 12">
       <Button Classes="btn btn-ghost btn-sm" x:Name="BackButton" DockPanel.Dock="Left">
-        <icon:PackIconPhosphorIcons Kind="ArrowLeft"
+        <controls:PhosphorIcon Kind="ArrowLeft"
                                     Width="{DynamicResource IconSm}"
                                     Height="{DynamicResource IconSm}" />
       </Button>
@@ -47,13 +46,13 @@
                         Spacing="4"
                         VerticalAlignment="Center">
               <Button Classes="btn btn-ghost btn-sm" x:Name="PlayPauseButton">
-                <icon:PackIconPhosphorIcons x:Name="PlayPauseIcon" Kind="Pause"
+                <controls:PhosphorIcon x:Name="PlayPauseIcon" Kind="Pause"
                                             Width="{DynamicResource IconSm}"
                                             Height="{DynamicResource IconSm}" />
               </Button>
               <Button Classes="btn btn-ghost btn-sm" x:Name="GoLiveButton"
                       ToolTip.Tip="Jump to live">
-                <icon:PackIconPhosphorIcons Kind="SkipForward"
+                <controls:PhosphorIcon Kind="SkipForward"
                                             Width="{DynamicResource IconSm}"
                                             Height="{DynamicResource IconSm}" />
               </Button>
@@ -97,7 +96,7 @@
               <controls:StreamQualitySelector x:Name="QualitySelector" />
               <!-- Motion toggle -->
               <Button Classes="btn btn-ghost btn-sm" x:Name="MotionToggle" Opacity="0.5">
-                <icon:PackIconPhosphorIcons Kind="PersonArmsSpread"
+                <controls:PhosphorIcon Kind="PersonArmsSpread"
                                             Width="{DynamicResource IconSm}"
                                             Height="{DynamicResource IconSm}" />
               </Button>
@@ -115,8 +114,7 @@
         <!-- Video area (clipped to top corners so content doesn't overlap card border) -->
         <Border CornerRadius="{DynamicResource RadiusLgInnerTop}" ClipToBounds="True">
         <controls:AspectRatioPanel>
-          <controls:VideoPlayer x:Name="Player"
-                                 Feed="{Binding VideoFeed}"
+          <controls:VideoPlayer x:Name="VideoPlayerControl"
                                  MotionFeed="{Binding MotionFeed}" />
 
           <!-- Buffering overlay -->
@@ -131,7 +129,7 @@
                  Background="#50000000">
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
                         Spacing="{DynamicResource Space2}">
-              <icon:PackIconPhosphorIcons x:Name="OverlayIcon" Kind="Warning"
+              <controls:PhosphorIcon x:Name="OverlayIcon" Kind="Warning"
                                           Width="{DynamicResource IconXl}"
                                           Height="{DynamicResource IconXl}"
                                           Foreground="{DynamicResource DangerBrush}"
@@ -153,7 +151,7 @@
                   VerticalAlignment="Bottom"
                   Margin="0 0 12 12"
                   Opacity="0.8">
-            <icon:PackIconPhosphorIcons x:Name="FullscreenIcon" Kind="CornersOut"
+            <controls:PhosphorIcon x:Name="FullscreenIcon" Kind="CornersOut"
                                         Width="{DynamicResource IconSm}"
                                         Height="{DynamicResource IconSm}"
                                         Foreground="{DynamicResource TextInvertedBrush}" />

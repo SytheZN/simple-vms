@@ -1,3 +1,4 @@
+using Avalonia.Headless.NUnit;
 using Client.Core.ViewModels;
 using Microsoft.Extensions.Logging.Abstractions;
 using Shared.Models;
@@ -19,7 +20,7 @@ public class TimelineViewModelTests
   /// EXPECTED RESULT:
   /// Spans and Events collections are populated from the API response
   /// </summary>
-  [Test]
+  [AvaloniaTest]
   public async Task SetVisibleRange_LoadsTimeline()
   {
     var api = new TimelineApi

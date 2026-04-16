@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Shared.Models;
 using System.Diagnostics.CodeAnalysis;
@@ -77,6 +78,6 @@ public partial class ErrorCard : UserControl
 
     var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
     if (clipboard != null)
-      await clipboard.SetTextAsync(data);
+      await clipboard.SetValueAsync(DataFormat.Text, data);
   }
 }

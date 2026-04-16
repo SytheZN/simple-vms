@@ -13,7 +13,7 @@ public sealed class LiveStreamService : ILiveStreamService, IDisposable
   private readonly List<ActiveSubscription> _subscriptions = [];
   private CancellationTokenSource? _reconnectCts;
 
-  public event Action<VideoFeed, VideoFeed>? FeedReplaced;
+  public event Action<IVideoFeed, IVideoFeed>? FeedReplaced;
 
   public LiveStreamService(ITunnelService tunnel, ILogger<LiveStreamService> logger)
   {
@@ -22,14 +22,14 @@ public sealed class LiveStreamService : ILiveStreamService, IDisposable
     _tunnel.StateChanged += OnStateChanged;
   }
 
-  public async Task<VideoFeed> SubscribeAsync(Guid cameraId, string profile, CancellationToken ct)
+  public async Task<IVideoFeed> SubscribeAsync(Guid cameraId, string profile, CancellationToken ct)
   {
     _logger.LogDebug("Subscribing to live stream camera={CameraId} profile={Profile}", cameraId, profile);
     var subscribe = new LiveSubscribeMessage { CameraId = cameraId, Profile = profile };
     var payload = MessagePackSerializer.Serialize(subscribe, ProtocolSerializer.Options);
     var stream = await _tunnel.OpenStreamAsync(StreamTypes.LiveSubscribe, payload, ct);
 
-    var feed = new VideoFeed(stream, cameraId, profile);
+    var feed = new VideoFeed(stream, cameraId, profile, _logger);
     feed.Start(CancellationToken.None);
 
     lock (_lock)
@@ -38,7 +38,7 @@ public sealed class LiveStreamService : ILiveStreamService, IDisposable
     return feed;
   }
 
-  public async Task UnsubscribeAsync(VideoFeed feed, CancellationToken ct)
+  public async Task UnsubscribeAsync(IVideoFeed feed, CancellationToken ct)
   {
     _logger.LogDebug("Unsubscribing from live stream camera={CameraId} profile={Profile}",
       feed.CameraId, feed.Profile);
@@ -104,5 +104,5 @@ public sealed class LiveStreamService : ILiveStreamService, IDisposable
     _reconnectCts?.Dispose();
   }
 
-  private sealed record ActiveSubscription(Guid CameraId, string Profile, VideoFeed Feed);
+  private sealed record ActiveSubscription(Guid CameraId, string Profile, IVideoFeed Feed);
 }
