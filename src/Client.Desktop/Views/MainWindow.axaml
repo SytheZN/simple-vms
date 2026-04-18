@@ -7,7 +7,7 @@
         x:Class="Client.Desktop.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="VMS"
-        Icon="avares://Client.Core/Assets/tray-icon.png"
+        Icon="avares://Client.Core/Assets/logo/256.png"
         Width="1280" Height="720"
         MinWidth="800" MinHeight="500"
         Background="{DynamicResource SurfaceBrush}">

@@ -40,7 +40,7 @@ public sealed class TrayService : IDisposable
 
       var menu = new NativeMenu { showItem, new NativeMenuItemSeparator(), quitItem };
 
-      var uri = new Uri("avares://Client.Core/Assets/tray-icon.png");
+      var uri = new Uri("avares://Client.Core/Assets/logo/32.png");
       using var iconStream = Avalonia.Platform.AssetLoader.Open(uri);
 
       _trayIcon = new TrayIcon

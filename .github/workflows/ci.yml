@@ -157,7 +157,7 @@ jobs:
           BUILD_VERSION: ${{ steps.version.outputs.version }}
           BUILD_HASH: ${{ steps.version.outputs.hash }}
           BUILD_RID: linux-x64
-        run: ./build.sh publish
+        run: ./scripts/publish/server.sh
 
       - name: Upload server tarball
         if: github.event_name == 'push'
@@ -226,15 +226,31 @@ jobs:
       packages: read
     needs: [build, changes]
     if: needs.changes.outputs.desktop == 'true'
-    runs-on: ubuntu-latest
-    container:
-      image: fedora:latest
+    runs-on: ${{ matrix.runs_on }}
+    container: ${{ matrix.container }}
     strategy:
       fail-fast: false
       matrix:
-        rid: [linux-x64, linux-arm64, win-x64, win-arm64, osx-x64, osx-arm64]
+        include:
+          - rid: linux-x64
+            runs_on: ubuntu-latest
+            container: fedora:latest
+          - rid: linux-arm64
+            runs_on: ubuntu-latest
+            container: fedora:latest
+          - rid: win-x64
+            runs_on: ubuntu-latest
+            container: fedora:latest
+          - rid: win-arm64
+            runs_on: ubuntu-latest
+            container: fedora:latest
+          - rid: osx-x64
+            runs_on: macos-latest
+          - rid: osx-arm64
+            runs_on: macos-latest
     steps:
       - name: Cache dnf packages
+        if: matrix.container != ''
         uses: actions/cache@v5
         with:
           path: /var/cache/dnf
@@ -242,8 +258,38 @@ jobs:
           restore-keys: |
             dnf-fedora-dotnet10-node-
 
-      - name: Install dependencies
+      - name: Install Fedora dependencies
+        if: matrix.container != ''
         run: dnf install -y --setopt=keepcache=True dotnet-sdk-10.0 git zip
+
+      - name: Install AppImage tools (linux-*)
+        if: startsWith(matrix.rid, 'linux-')
+        run: |
+          dnf install -y --setopt=keepcache=True squashfs-tools file desktop-file-utils
+          curl -Lo /usr/local/bin/appimagetool \
+            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x /usr/local/bin/appimagetool
+          mkdir -p /usr/local/share/appimage
+          curl -Lo /usr/local/share/appimage/runtime-x86_64 \
+            https://github.com/AppImage/AppImageKit/releases/download/continuous/runtime-x86_64
+          curl -Lo /usr/local/share/appimage/runtime-aarch64 \
+            https://github.com/AppImage/AppImageKit/releases/download/continuous/runtime-aarch64
+          echo "APPIMAGE_EXTRACT_AND_RUN=1" >> "$GITHUB_ENV"
+          echo "APPIMAGE_RUNTIME_DIR=/usr/local/share/appimage" >> "$GITHUB_ENV"
+
+      - name: Install NSIS (win-*)
+        if: startsWith(matrix.rid, 'win-')
+        run: dnf install -y --setopt=keepcache=True mingw32-nsis
+
+      - name: Install .NET (macOS)
+        if: runner.os == 'macOS'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        run: brew install create-dmg
 
       - uses: actions/checkout@v6
         with:
@@ -268,7 +314,12 @@ jobs:
           BUILD_VERSION: ${{ needs.build.outputs.version }}
           BUILD_HASH: ${{ needs.build.outputs.hash }}
           BUILD_RID: ${{ matrix.rid }}
-        run: ./build.sh publish-desktop
+        run: |
+          case "$BUILD_RID" in
+            osx-*)   ./scripts/publish/desktop-macos.sh ;;
+            linux-*) ./scripts/publish/desktop-linux.sh ;;
+            win-*)   ./scripts/publish/desktop-windows.sh ;;
+          esac
 
       - name: Upload desktop archive
         uses: actions/upload-artifact@v7
@@ -389,7 +440,11 @@ jobs:
           if [ -f out/simple-vms-linux-x64.tar.gz ]; then
             args+=(out/simple-vms-linux-x64.tar.gz)
           fi
-          for asset in out/desktop/simple-vms-desktop-*.tar.gz out/desktop/simple-vms-desktop-*.zip; do
+          for asset in \
+            out/desktop/simple-vms-desktop-*.dmg \
+            out/desktop/simple-vms-desktop-*.AppImage \
+            out/desktop/simple-vms-desktop-*.exe \
+          ; do
             [ -f "$asset" ] && args+=("$asset")
           done
           gh release create "${args[@]}"
@@ -415,7 +470,11 @@ jobs:
           if [ -f out/simple-vms-linux-x64.tar.gz ]; then
             args+=(out/simple-vms-linux-x64.tar.gz)
           fi
-          for asset in out/desktop/simple-vms-desktop-*.tar.gz out/desktop/simple-vms-desktop-*.zip; do
+          for asset in \
+            out/desktop/simple-vms-desktop-*.dmg \
+            out/desktop/simple-vms-desktop-*.AppImage \
+            out/desktop/simple-vms-desktop-*.exe \
+          ; do
             [ -f "$asset" ] && args+=("$asset")
           done
           gh release create "${args[@]}"

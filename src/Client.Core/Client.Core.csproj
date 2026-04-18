@@ -20,7 +20,7 @@
   </ItemGroup>
   <ItemGroup>
     <AvaloniaResource Include="Assets/*.ttf" />
-    <AvaloniaResource Include="Assets/*.png" />
     <AvaloniaResource Include="Assets/Phosphor/*.svg" />
+    <AvaloniaResource Include="../Client.Theme/logo/*.png" Link="Assets/logo/%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>
