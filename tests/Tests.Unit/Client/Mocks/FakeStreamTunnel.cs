@@ -41,7 +41,7 @@ public sealed class FakeStreamTunnel : ITunnelService
 
     var transport = new MemoryStream();
     var muxer = new StreamMuxer(transport, NullLogger.Instance, 1);
-    var stream = new MuxStream(muxer, 1, channel.Reader);
+    var stream = new MuxStream(muxer, 1, channel.Reader, NullLogger.Instance);
     return Task.FromResult(stream);
   }
 

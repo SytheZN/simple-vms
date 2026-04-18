@@ -35,6 +35,7 @@
     <KeyBinding Gesture="D1" Command="{Binding NavGalleryCommand}" />
     <KeyBinding Gesture="D2" Command="{Binding NavCameraCommand}" />
     <KeyBinding Gesture="D3" Command="{Binding NavSettingsCommand}" />
+    <KeyBinding Gesture="Ctrl+D" Command="{Binding ToggleDiagnosticsCommand}" />
   </Window.KeyBindings>
 
   <DockPanel>
@@ -45,7 +46,7 @@
             BorderBrush="{DynamicResource BorderBrush}"
             BorderThickness="0 0 1 0"
             Padding="12"
-            IsVisible="{Binding IsEnrolled}">
+            IsVisible="{Binding IsChromeVisible}">
       <DockPanel>
         <!-- Connection status at bottom -->
         <StackPanel DockPanel.Dock="Bottom"
@@ -109,6 +110,15 @@
 
     <!-- Content area -->
     <ContentControl Content="{Binding CurrentViewModel}"
-                    Margin="{DynamicResource PaddingCard}" />
+                    Classes.fullscreen="{Binding IsCameraFullscreen}">
+      <ContentControl.Styles>
+        <Style Selector="ContentControl">
+          <Setter Property="Margin" Value="{DynamicResource PaddingCard}" />
+        </Style>
+        <Style Selector="ContentControl.fullscreen">
+          <Setter Property="Margin" Value="0" />
+        </Style>
+      </ContentControl.Styles>
+    </ContentControl>
   </DockPanel>
 </Window>

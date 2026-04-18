@@ -311,13 +311,11 @@ public sealed class RtspClient : IAsyncDisposable
     int statusCode = 0;
     int contentLength = 0;
 
-    // read status line
     var statusLine = await ReadLineAsync(ct);
     var parts = statusLine.Split(' ', 3);
     if (parts.Length >= 2)
       int.TryParse(parts[1], out statusCode);
 
-    // read headers
     while (true)
     {
       var line = await ReadLineAsync(ct);
@@ -329,7 +327,6 @@ public sealed class RtspClient : IAsyncDisposable
         int.TryParse(line["Content-Length:".Length..].Trim(), out contentLength);
     }
 
-    // read body
     var body = "";
     if (contentLength > 0)
     {

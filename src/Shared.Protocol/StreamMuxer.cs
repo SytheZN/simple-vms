@@ -15,8 +15,10 @@ public sealed class StreamMuxer : IAsyncDisposable
 
   private readonly Stream _transport;
   private readonly SemaphoreSlim _writeLock = new(1, 1);
-  private readonly Dictionary<uint, Channel<MuxMessage>> _streams = [];
+  private readonly Dictionary<uint, StreamEntry> _streams = [];
   private readonly List<Task> _handlerTasks = [];
+
+  private sealed record StreamEntry(Channel<MuxMessage> Channel, CancellationTokenSource Cts);
   private readonly ILogger _logger;
   private readonly Lock _lock = new();
   private readonly uint _startStreamId;
@@ -41,13 +43,8 @@ public sealed class StreamMuxer : IAsyncDisposable
       var streamId = _nextStreamId;
       _nextStreamId += 2;
 
-      var channel = Channel.CreateBounded<MuxMessage>(new BoundedChannelOptions(256)
-      {
-        FullMode = BoundedChannelFullMode.Wait,
-        SingleReader = true,
-        SingleWriter = true
-      });
-      _streams[streamId] = channel;
+      var entry = NewEntry();
+      _streams[streamId] = entry;
 
       var typeHeader = new byte[MessageEnvelope.StreamTypeHeaderSize];
       MessageEnvelope.WriteStreamType(typeHeader, streamType);
@@ -58,7 +55,7 @@ public sealed class StreamMuxer : IAsyncDisposable
 
       _ = SendAsync(streamId, 0, payload, CancellationToken.None);
 
-      return (streamId, channel.Reader);
+      return (streamId, entry.Channel.Reader);
     }
   }
 
@@ -67,17 +64,36 @@ public sealed class StreamMuxer : IAsyncDisposable
     lock (_lock)
     {
       if (_streams.TryGetValue(streamId, out var existing))
-        return existing.Reader;
+        return existing.Channel.Reader;
 
-      var channel = Channel.CreateBounded<MuxMessage>(new BoundedChannelOptions(256)
-      {
-        FullMode = BoundedChannelFullMode.Wait,
-        SingleReader = true,
-        SingleWriter = true
-      });
-      _streams[streamId] = channel;
-      return channel.Reader;
+      var entry = NewEntry();
+      _streams[streamId] = entry;
+      return entry.Channel.Reader;
     }
+  }
+
+  private static StreamEntry NewEntry(CancellationToken linkTo = default)
+  {
+    var channel = Channel.CreateBounded<MuxMessage>(new BoundedChannelOptions(256)
+    {
+      FullMode = BoundedChannelFullMode.Wait,
+      SingleReader = true,
+      SingleWriter = true
+    });
+    var cts = CancellationTokenSource.CreateLinkedTokenSource(linkTo);
+    return new StreamEntry(channel, cts);
+  }
+
+  private void CompleteAndRemove(uint streamId)
+  {
+    StreamEntry? entry;
+    lock (_lock)
+    {
+      if (!_streams.Remove(streamId, out entry)) return;
+    }
+    entry.Channel.Writer.TryComplete();
+    try { entry.Cts.Cancel(); } catch (ObjectDisposedException) { }
+    entry.Cts.Dispose();
   }
 
   public async Task RunReadLoopAsync(CancellationToken ct)
@@ -118,29 +134,29 @@ public sealed class StreamMuxer : IAsyncDisposable
       var isErr = (flags & MessageEnvelope.FlagErr) != 0;
       var typeFlags = (ushort)(flags & MessageEnvelope.TypeFlagMask);
 
-      Channel<MuxMessage>? channel;
+      StreamEntry? entry;
       bool isNew;
       lock (_lock)
       {
         isNew = !_streams.ContainsKey(streamId);
         if (isNew)
         {
-          var ch = Channel.CreateBounded<MuxMessage>(new BoundedChannelOptions(256)
+          if (OnNewStream == null)
           {
-            FullMode = BoundedChannelFullMode.Wait,
-            SingleReader = true,
-            SingleWriter = true
-          });
-          _streams[streamId] = ch;
-          channel = ch;
+            _logger.LogDebug("StreamMuxer: dropping message for unknown stream {StreamId} (no handler)",
+              streamId);
+            continue;
+          }
+          entry = NewEntry(ct);
+          _streams[streamId] = entry;
         }
         else
         {
-          channel = _streams[streamId];
+          entry = _streams[streamId];
         }
       }
 
-      if (channel == null)
+      if (entry == null)
         continue;
 
       if (isNew && OnNewStream != null)
@@ -153,8 +169,9 @@ public sealed class StreamMuxer : IAsyncDisposable
           ? payload[MessageEnvelope.StreamTypeHeaderSize..]
           : ReadOnlyMemory<byte>.Empty;
 
-        var reader = channel.Reader;
-        var task = Task.Run(() => OnNewStream(streamType, streamId, reader, ct), ct);
+        var reader = entry.Channel.Reader;
+        var streamCt = entry.Cts.Token;
+        var task = Task.Run(() => OnNewStream(streamType, streamId, reader, streamCt), ct);
         lock (_lock)
         {
           _handlerTasks.Add(task);
@@ -163,34 +180,36 @@ public sealed class StreamMuxer : IAsyncDisposable
         }
 
         if (remaining.Length > 0)
-          await channel.Writer.WriteAsync(new MuxMessage(typeFlags, remaining), ct);
+          await WriteWithBacklogLogAsync(entry.Channel, streamId, new MuxMessage(typeFlags, remaining), ct);
 
         if (isFin)
-        {
-          channel.Writer.TryComplete();
-          lock (_lock) _streams.Remove(streamId);
-        }
+          CompleteAndRemove(streamId);
         continue;
       }
 
       if (isErr || isFin)
       {
         if (payload.Length > 0)
-          channel.Writer.TryWrite(new MuxMessage(typeFlags, payload));
-        channel.Writer.TryComplete();
-        lock (_lock) _streams.Remove(streamId);
+          entry.Channel.Writer.TryWrite(new MuxMessage(typeFlags, payload));
+        CompleteAndRemove(streamId);
         continue;
       }
 
-      await channel.Writer.WriteAsync(new MuxMessage(typeFlags, payload), ct);
+      await WriteWithBacklogLogAsync(entry.Channel, streamId, new MuxMessage(typeFlags, payload), ct);
     }
 
-    lock (_lock)
-    {
-      foreach (var (_, ch) in _streams)
-        ch.Writer.TryComplete();
-      _streams.Clear();
-    }
+    List<uint> toClose;
+    lock (_lock) toClose = [.. _streams.Keys];
+    foreach (var id in toClose) CompleteAndRemove(id);
+  }
+
+  private async Task WriteWithBacklogLogAsync(
+    Channel<MuxMessage> channel, uint streamId, MuxMessage msg, CancellationToken ct)
+  {
+    if (channel.Writer.TryWrite(msg)) return;
+    _logger.LogDebug("StreamMuxer: stream {StreamId} channel full ({Count}/256), mux read loop blocked",
+      streamId, channel.Reader.Count);
+    await channel.Writer.WriteAsync(msg, ct);
   }
 
   public async Task SendAsync(
@@ -225,28 +244,21 @@ public sealed class StreamMuxer : IAsyncDisposable
   public Task SendFinAsync(uint streamId, CancellationToken ct) =>
     SendAsync(streamId, MessageEnvelope.FlagFin, ReadOnlyMemory<byte>.Empty, ct);
 
-  public void CloseStream(uint streamId)
-  {
-    lock (_lock)
-    {
-      if (_streams.Remove(streamId, out var channel))
-        channel.Writer.TryComplete();
-    }
-  }
+  public void CloseStream(uint streamId) => CompleteAndRemove(streamId);
 
   public async ValueTask DisposeAsync()
   {
     if (_disposed) return;
     _disposed = true;
 
+    List<uint> ids;
     List<Task> tasks;
     lock (_lock)
     {
-      foreach (var (_, ch) in _streams)
-        ch.Writer.TryComplete();
-      _streams.Clear();
+      ids = [.. _streams.Keys];
       tasks = [.. _handlerTasks];
     }
+    foreach (var id in ids) CompleteAndRemove(id);
 
     foreach (var task in tasks)
     {

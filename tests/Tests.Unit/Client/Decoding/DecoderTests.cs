@@ -1,4 +1,5 @@
 using Client.Core.Decoding;
+using Client.Core.Decoding.Backends;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests.Unit.Client.Decoding;
@@ -16,7 +17,18 @@ namespace Tests.Unit.Client.Decoding;
 public class DecoderTests
 {
   private static Decoder NewDecoder(Fetcher fetcher) =>
-    new(NullLogger.Instance, fetcher);
+    new(NullLogger.Instance, new FakeDecodeBackend(), fetcher);
+
+  private sealed class FakeDecodeBackend : IDecodeBackend
+  {
+    public FrameKind Kind => FrameKind.Cpu;
+    public string DisplayName => "Fake";
+    public bool Configure(CodecParameters config) => true;
+    public bool SendSample(DemuxedSample sample) => true;
+    public bool TryReceiveFrame(out DecodedFrame? frame) { frame = null; return false; }
+    public void Flush() { }
+    public void Dispose() { }
+  }
 
   /// <summary>
   /// SCENARIO:
@@ -132,5 +144,74 @@ public class DecoderTests
     using var decoder = NewDecoder(new Fetcher());
     Assert.DoesNotThrow(() => decoder.ResetWallClock());
     Assert.DoesNotThrow(() => decoder.ResetWallClock());
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// SwDecodeBackend is constructed and disposed without Configure being called
+  ///
+  /// ACTION:
+  /// new + Dispose with a NullLogger
+  ///
+  /// EXPECTED RESULT:
+  /// No exception; no native FFmpeg load attempted
+  /// </summary>
+  [Test]
+  public void SwDecodeBackend_ConstructDispose_NoNativeLoad()
+  {
+    Assert.DoesNotThrow(() =>
+    {
+      using var backend = new SwDecodeBackend(NullLogger<SwDecodeBackend>.Instance);
+    });
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Writer threads call SetTarget/SetStride/ResetWallClock at high rate
+  /// while reader threads call GetFrame/CachedGopCount/NewestFrameTimestampUs
+  ///
+  /// ACTION:
+  /// Run two writers and two readers concurrently for 500ms against a
+  /// Decoder backed by 20 GOPs of opaque fetcher data
+  ///
+  /// EXPECTED RESULT:
+  /// No thread throws; all operations complete cleanly
+  /// </summary>
+  [Test]
+  public void Concurrent_SetTargetAndReads_NoException()
+  {
+    var fetcher = new Fetcher();
+    using var decoder = NewDecoder(fetcher);
+    decoder.SetTimescale(90_000);
+    for (ulong t = 1000; t <= 20_000; t += 1000)
+      fetcher.AppendData(t, new byte[] { 0 });
+
+    var exceptions = new System.Collections.Concurrent.ConcurrentBag<Exception>();
+    using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+    var ct = cts.Token;
+
+    void SafeLoop(Action body)
+    {
+      try { while (!ct.IsCancellationRequested) body(); }
+      catch (Exception ex) { exceptions.Add(ex); }
+    }
+
+    var threads = new[]
+    {
+      new Thread(() => SafeLoop(() => decoder.SetTarget([5000, 6000, 7000]))),
+      new Thread(() => SafeLoop(() => decoder.SetTarget([12_000, 13_000, 14_000, 15_000]))),
+      new Thread(() => SafeLoop(() => { var _ = decoder.GetFrame(6_500_000); })),
+      new Thread(() => SafeLoop(() =>
+      {
+        var _ = decoder.CachedGopCount + decoder.CachedFrameCount;
+        var __ = decoder.NewestFrameTimestampUs;
+      })),
+      new Thread(() => SafeLoop(() => decoder.SetStride(Random.Shared.Next(1, 4)))),
+    };
+
+    foreach (var t in threads) t.Start();
+    foreach (var t in threads) t.Join();
+
+    Assert.That(exceptions, Is.Empty);
   }
 }

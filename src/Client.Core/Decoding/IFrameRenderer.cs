@@ -1,21 +1,27 @@
+using Avalonia;
+
 namespace Client.Core.Decoding;
 
-/// <summary>
-/// Surface that draws decoded frames. Port of the web CanvasRenderer role -
-/// the Player calls RenderFrame with a borrowed DecodedFrame every time a
-/// new frame is selected, and the renderer manages its own refcount to keep
-/// pixels alive until it next replaces the frame or detaches.
-/// </summary>
-public interface IFrameRenderer
+public interface IFrameRenderer : IDisposable
 {
+  string DisplayName { get; }
+
   /// <summary>
-  /// Draw (or queue for the next vsync) the given frame. The frame is borrowed:
-  /// the renderer must IncrementRef to retain it and Dispose the prior frame.
+  /// The frame is borrowed: the renderer IncrementRefs to retain it and
+  /// Disposes the prior frame.
   /// </summary>
   void RenderFrame(DecodedFrame frame);
 
-  /// <summary>
-  /// Drop any retained frame reference. Called on detach.
-  /// </summary>
   void Clear();
+
+  /// <summary>Required before RenderFrame.</summary>
+  void Attach(Visual host);
+
+  /// <summary>Does not release a retained frame; call Clear separately.</summary>
+  void Detach();
+
+  void Resize(Size size);
+
+  /// <summary>Raised on the compositor thread; host subscribes to drive Player.Tick.</summary>
+  event Action? OnVsync;
 }

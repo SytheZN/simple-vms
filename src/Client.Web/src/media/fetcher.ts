@@ -22,7 +22,6 @@ export class Fetcher {
   setTarget(fromUs: number, toUs: number) {
     const forward = toUs > fromUs
 
-    // evict behind the playhead (keep containing GOP + 1 behind)
     if (this.gops.length > 1) {
       const containing = this.findGop(fromUs)
       if (containing) {

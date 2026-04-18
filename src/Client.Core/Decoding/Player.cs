@@ -1,18 +1,12 @@
 using System.Diagnostics;
 using Avalonia.Threading;
+using Client.Core.Decoding.Diagnostics;
 using Client.Core.Streaming;
 using Microsoft.Extensions.Logging;
 using Shared.Protocol;
 
 namespace Client.Core.Decoding;
 
-/// <summary>
-/// Direct port of src/Client.Web/src/composables/usePlayer.ts.
-///
-/// Finite state machine: Idle -> Seeking -> Streaming. Mode: Live | Playback.
-/// Owns the VideoFeed lifecycle; GoLive/StartPlayback/Seek/SetProfile all
-/// subscribe/resubscribe through the injected streaming services.
-/// </summary>
 public sealed class Player : IDisposable
 {
   public enum PlayerState { Idle, Seeking, Streaming }
@@ -21,23 +15,21 @@ public sealed class Player : IDisposable
   private readonly ILogger _logger;
   private readonly Fetcher _fetcher = new();
   private readonly Decoder _decoder;
+  private readonly IFrameRenderer _renderer;
   private readonly ILiveStreamService _liveService;
   private readonly IPlaybackService _playbackService;
 
   private Guid _cameraId;
   private string _currentProfile = "main";
 
-  // Feed
   private IVideoFeed? _feed;
   private CodecParameters? _codecConfig;
   private uint _timescale = 90000;
 
-  // State
   private PlayerState _state = PlayerState.Idle;
   private PlayerMode _mode = PlayerMode.Live;
   private bool _ignoreData;
 
-  // Playback state
   private long _playheadUs;
   private double _rate = 1.0;
   private int _direction = 1;
@@ -46,34 +38,27 @@ public sealed class Player : IDisposable
   private double _minRate = 1;
   private double _maxRate = 1;
 
-  // Loop
   private long _lastTickTimestamp;
   private double _accumUs;
   private long _lastFrameDurationUs = 40_000;
   private bool _suppressBuffering;
   private bool _buffering;
 
-  // Seek state
   private long _seekTargetUs;
   private long _seekRenderTargetUs;
   private readonly List<(ulong Ts, ReadOnlyMemory<byte> Data)> _seekBuffer = [];
   private ulong _seekGapEnd;
-  // When CommitLive first fails to find a prft box. We keep buffering further
-  // GOPs and retry; if no prft is found within 2 s, fall back to UtcNow.
-  private DateTime? _commitLiveStart;
-  private static readonly TimeSpan CommitLivePrftTimeout = TimeSpan.FromSeconds(2);
+  private const double LiveCatchupMaxBoost = 0.1;
+  private const double LiveCatchupTauUs = 500_000;
+  private const long LiveCatchupUpperUs = 500_000;
+  private const long LiveCatchupLowerUs = 200_000;
 
-  // Scrub state
   private long _scrubPendingTs;
   private bool _scrubRunning;
 
-  // Optional renderer. Player pushes frames via RenderFrame; the renderer
-  // retains each one until the next push or detach.
-  private IFrameRenderer? _renderer;
-  private readonly Lock _rendererLock = new();
-
-  // Observables
   private long _lastPublishedPositionUs;
+  private double _lastCatchup = 1.0;
+  private long _lastBufferUs;
   public event Action<long>? CurrentPositionChanged;
   public event Action<bool>? BufferingChanged;
   public event Action<PlayerMode>? ModeChanged;
@@ -82,16 +67,30 @@ public sealed class Player : IDisposable
 
   private bool _disposed;
 
-  public Player(ILoggerFactory loggerFactory, ILiveStreamService liveService, IPlaybackService playbackService)
+  public Player(ILoggerFactory loggerFactory, IDecodeBackend backend, IFrameRenderer renderer,
+    ILiveStreamService liveService, IPlaybackService playbackService,
+    DiagnosticsSettings diagnosticsSettings)
   {
     _logger = loggerFactory.CreateLogger<Player>();
-    _decoder = new Decoder(loggerFactory.CreateLogger<Decoder>(), _fetcher);
+    _renderer = renderer;
+    _decoder = new Decoder(loggerFactory.CreateLogger<Decoder>(), backend, _fetcher);
     _liveService = liveService;
     _playbackService = playbackService;
     _liveService.FeedReplaced += OnFeedReplaced;
+    Diagnostics = new PlaybackDiagnostics(BuildStats, diagnosticsSettings);
   }
 
-  public ILogger RendererLogger => _logger;
+  public PlaybackDiagnostics Diagnostics { get; }
+  public IFrameRenderer Renderer => _renderer;
+
+  private PlaybackStats BuildStats() => new(
+    _decoder.BackendDisplayName, _renderer.DisplayName,
+    _state.ToString(), _mode.ToString(),
+    _rate, _lastCatchup,
+    Interlocked.Read(ref _playheadUs), _lastBufferUs,
+    _fetcher.BufferedGopCount, _fetcher.BufferedBytes,
+    _decoder.CachedGopCount, _decoder.CachedFrameCount,
+    _buffering);
   public long CurrentPositionUs => Interlocked.Read(ref _playheadUs);
   public double Rate => _rate;
   public int Direction => _direction;
@@ -102,42 +101,6 @@ public sealed class Player : IDisposable
   public double MinRate => _minRate;
   public double MaxRate => _maxRate;
   public string CurrentProfile => _currentProfile;
-
-  /// <summary>
-  /// Attach a renderer that receives decoded frames via RenderFrame on every
-  /// successful render tick. Replacing an existing renderer clears the old one.
-  /// </summary>
-  public void AttachRenderer(IFrameRenderer renderer)
-  {
-    IFrameRenderer? old;
-    lock (_rendererLock)
-    {
-      old = _renderer;
-      _renderer = renderer;
-    }
-    old?.Clear();
-  }
-
-  /// <summary>
-  /// Detach the current renderer (if any). The renderer is cleared.
-  /// </summary>
-  public void DetachRenderer(IFrameRenderer renderer)
-  {
-    IFrameRenderer? cleared = null;
-    lock (_rendererLock)
-    {
-      if (ReferenceEquals(_renderer, renderer))
-      {
-        cleared = _renderer;
-        _renderer = null;
-      }
-    }
-    cleared?.Clear();
-  }
-
-  // ---------------------------------------------------------------------
-  // Lifecycle (port of attach/detach/stop)
-  // ---------------------------------------------------------------------
 
   public void Configure(Guid cameraId, string profile)
   {
@@ -166,9 +129,7 @@ public sealed class Player : IDisposable
     _buffering = false;
     _ignoreData = false;
     _codecConfig = null;
-    IFrameRenderer? renderer;
-    lock (_rendererLock) renderer = _renderer;
-    renderer?.Clear();
+    _renderer.Clear();
     if (wasPaused) PausedChanged?.Invoke(false);
   }
 
@@ -179,11 +140,8 @@ public sealed class Player : IDisposable
     _liveService.FeedReplaced -= OnFeedReplaced;
     DetachAsync().AsSyncWait(TimeSpan.FromSeconds(1));
     _decoder.Dispose();
+    _renderer.Dispose();
   }
-
-  // ---------------------------------------------------------------------
-  // State transitions (port of enterSeeking / enterStreaming)
-  // ---------------------------------------------------------------------
 
   private void EnterSeeking(long ts)
   {
@@ -193,7 +151,6 @@ public sealed class Player : IDisposable
     _seekGapEnd = 0;
     _seekTargetUs = ts;
     _seekRenderTargetUs = 0;
-    _commitLiveStart = null;
     _ignoreData = true;
     _buffering = false;
     BufferingChanged?.Invoke(false);
@@ -209,41 +166,32 @@ public sealed class Player : IDisposable
     _accumUs = 0;
   }
 
-  // Port of commitLive: in live mode, set the render target to the first
-  // wall-clock timestamp extracted from a buffered GOP's prft box. Web's
-  // version assumes the first live GOP always carries prft; this port waits
-  // up to CommitLivePrftTimeout for one, then falls back to UtcNow so the
-  // player doesn't stall silently when the server's first fragment omits it.
   private void CommitLive()
   {
-    long firstWallClock = 0;
-    foreach (var (_, data) in _seekBuffer)
+    long newestWallClock = 0;
+    var newestIdx = -1;
+    for (var i = 0; i < _seekBuffer.Count; i++)
     {
-      var samples = Fmp4Demuxer.DemuxGop(data.Span, _timescale);
+      var samples = Fmp4Demuxer.DemuxGop(_seekBuffer[i].Data.Span, _timescale);
       foreach (var s in samples)
       {
-        if (s.TimestampUs > 0) { firstWallClock = s.TimestampUs; break; }
+        if (s.TimestampUs > newestWallClock)
+        {
+          newestWallClock = s.TimestampUs;
+          newestIdx = i;
+        }
       }
-      if (firstWallClock != 0) break;
     }
 
-    if (firstWallClock == 0)
-    {
-      _commitLiveStart ??= DateTime.UtcNow;
-      if (DateTime.UtcNow - _commitLiveStart < CommitLivePrftTimeout)
-        return; // keep buffering; next GOP retries.
+    if (newestWallClock == 0) return;
 
-      firstWallClock = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000;
-      _logger.LogWarning("commitLive: no prft after {Timeout}, falling back to UtcNow {Ts}",
-        CommitLivePrftTimeout, firstWallClock);
-    }
-
-    for (var i = 0; i < _seekBuffer.Count; i++)
+    for (var i = newestIdx; i < _seekBuffer.Count; i++)
       _fetcher.AppendData(_seekBuffer[i].Ts, _seekBuffer[i].Data);
+    var dropped = newestIdx;
     _seekBuffer.Clear();
-    _seekRenderTargetUs = firstWallClock;
-    _commitLiveStart = null;
-    _logger.LogDebug("commitLive firstWallClock={Ts}", firstWallClock);
+    _seekRenderTargetUs = newestWallClock;
+    _logger.LogDebug("commitLive anchor={Ts} droppedStale={Dropped}",
+      newestWallClock, dropped);
   }
 
   private void CommitSeek()
@@ -254,10 +202,6 @@ public sealed class Player : IDisposable
     _seekBuffer.Clear();
     _seekRenderTargetUs = _seekTargetUs;
   }
-
-  // ---------------------------------------------------------------------
-  // Feed subscription management
-  // ---------------------------------------------------------------------
 
   private async Task UnsubscribeCurrentAsync()
   {
@@ -288,9 +232,6 @@ public sealed class Player : IDisposable
       HandleInit(feed.LastInit);
   }
 
-  // Tunnel reconnect: LiveStreamService opens a fresh feed for every
-  // previously-active live subscription and fires FeedReplaced. Re-enter
-  // seeking so commitLive runs on the new feed's first GOP.
   private void OnFeedReplaced(IVideoFeed oldFeed, IVideoFeed newFeed)
   {
     if (!ReferenceEquals(oldFeed, _feed)) return;
@@ -304,10 +245,6 @@ public sealed class Player : IDisposable
     EnterSeeking(0);
     AttachFeed(newFeed);
   }
-
-  // ---------------------------------------------------------------------
-  // User API (port of goLive / seek / togglePause / setRate / setProfile / scrub)
-  // ---------------------------------------------------------------------
 
   public async Task GoLiveAsync(CancellationToken ct)
   {
@@ -400,15 +337,15 @@ public sealed class Player : IDisposable
     {
       var ts = Interlocked.Exchange(ref _scrubPendingTs, 0);
 
-      if (ScrubRender(ts)) continue;
+      if (await ScrubRenderAsync(ts)) continue;
 
       await _fetcher.FetchAtAsync((ulong)ts);
-      ScrubRender(ts);
+      await ScrubRenderAsync(ts);
     }
     _scrubRunning = false;
   }
 
-  private bool ScrubRender(long ts)
+  private async Task<bool> ScrubRenderAsync(long ts)
   {
     var frame = _decoder.GetFrame(ts);
     if (frame != null && Math.Abs(frame.TimestampUs - ts) < 5_000_000)
@@ -421,7 +358,7 @@ public sealed class Player : IDisposable
     if (gop != null)
     {
       var merged = Fetcher.MergedData(gop);
-      _decoder.DecodeKeyframe(merged, gop.Timestamp);
+      await _decoder.DecodeKeyframeAsync(merged, gop.Timestamp);
       var kf = _decoder.GetFrame(ts);
       if (kf != null)
       {
@@ -431,10 +368,6 @@ public sealed class Player : IDisposable
     }
     return false;
   }
-
-  // ---------------------------------------------------------------------
-  // Feed handlers (port of handleInit, handleGop, handleStatus, handleGap)
-  // ---------------------------------------------------------------------
 
   private void HandleAck() => _ignoreData = false;
 
@@ -549,16 +482,8 @@ public sealed class Player : IDisposable
     }
   }
 
-  // ---------------------------------------------------------------------
-  // Loop
-  // ---------------------------------------------------------------------
-
   private int _tickDebugCount;
 
-  /// <summary>
-  /// Advance the player by one display frame. Called by the attached
-  /// <see cref="IFrameRenderer"/> once per compositor vsync.
-  /// </summary>
   public void Tick()
   {
     if (_state == PlayerState.Idle) return;
@@ -592,7 +517,8 @@ public sealed class Player : IDisposable
     _lastTickTimestamp = now;
 
     var effectiveDurationUs = (double)_lastFrameDurationUs * _stride;
-    _accumUs += elapsedMs * 1000.0 * _rate;
+    _lastCatchup = LiveCatchupMultiplier();
+    _accumUs += elapsedMs * 1000.0 * _rate * _lastCatchup;
 
     if (_accumUs < effectiveDurationUs) return;
 
@@ -618,6 +544,27 @@ public sealed class Player : IDisposable
     BufferingChanged?.Invoke(false);
   }
 
+  private double LiveCatchupMultiplier()
+  {
+    if (_mode != PlayerMode.Live) { _lastBufferUs = 0; return 1.0; }
+    var newest = _decoder.NewestFrameTimestampUs;
+    if (newest <= 0) { _lastBufferUs = 0; return 1.0; }
+    var buffer = newest - Interlocked.Read(ref _playheadUs);
+    _lastBufferUs = buffer;
+
+    if (buffer > LiveCatchupUpperUs)
+    {
+      var excess = buffer - LiveCatchupUpperUs;
+      return 1.0 + LiveCatchupMaxBoost * (1.0 - Math.Exp(-excess / LiveCatchupTauUs));
+    }
+    if (buffer < LiveCatchupLowerUs)
+    {
+      var deficit = LiveCatchupLowerUs - buffer;
+      return 1.0 - LiveCatchupMaxBoost * (1.0 - Math.Exp(-deficit / LiveCatchupTauUs));
+    }
+    return 1.0;
+  }
+
   private bool RenderAt(long ts)
   {
     UpdatePipeline(ts);
@@ -634,9 +581,8 @@ public sealed class Player : IDisposable
 
   private void PublishFrame(DecodedFrame frame)
   {
-    IFrameRenderer? renderer;
-    lock (_rendererLock) renderer = _renderer;
-    renderer?.RenderFrame(frame);
+    _renderer.RenderFrame(frame);
+    if (Diagnostics.Enabled) Diagnostics.RecordFrame();
 
     Interlocked.Exchange(ref _playheadUs, frame.TimestampUs);
     if (frame.DurationUs > 0)
@@ -659,6 +605,8 @@ public sealed class Player : IDisposable
     _decoder.SetTarget(ComputeNeededGops(ts));
   }
 
+  private const long PrefetchBoundaryUs = 500_000;
+
   private ulong[] ComputeNeededGops(long ts)
   {
     var available = _fetcher.GopTimestamps();
@@ -671,17 +619,18 @@ public sealed class Player : IDisposable
       return [];
     }
 
-    var lookahead = Math.Max(1, (int)Math.Floor(_rate));
-    var needed = new List<ulong>();
-    var behindIdx = currentIdx - _direction;
-    if (behindIdx >= 0 && behindIdx < available.Length)
-      needed.Add(available[behindIdx]);
-    for (var i = 0; i <= lookahead; i++)
+    var needed = new List<ulong> { available[currentIdx] };
+
+    var aheadIdx = currentIdx + _direction;
+    if (aheadIdx >= 0 && aheadIdx < available.Length)
     {
-      var targetIdx = currentIdx + i * _direction;
-      if (targetIdx < 0 || targetIdx >= available.Length) break;
-      needed.Add(available[targetIdx]);
+      var boundaryUs = _direction == 1
+        ? (long)available[aheadIdx]
+        : (long)available[currentIdx];
+      var distance = _direction == 1 ? boundaryUs - ts : ts - boundaryUs;
+      if (distance < PrefetchBoundaryUs) needed.Add(available[aheadIdx]);
     }
+
     return [.. needed];
   }
 

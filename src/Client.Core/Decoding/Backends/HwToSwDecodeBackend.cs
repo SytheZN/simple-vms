@@ -2,11 +2,11 @@ using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using SimpleVms.FFmpeg.Native;
 
-namespace Client.Core.Decoding;
+namespace Client.Core.Decoding.Backends;
 
-public sealed unsafe class VideoDecoder : IDisposable
+public sealed unsafe class HwToSwDecodeBackend : IDecodeBackend
 {
-  private static readonly AVHWDeviceType[] HwPriority =
+  public static readonly AVHWDeviceType[] FullHwPriority =
   [
     AVHWDeviceType.AV_HWDEVICE_TYPE_VULKAN,
     AVHWDeviceType.AV_HWDEVICE_TYPE_VAAPI,
@@ -16,7 +16,23 @@ public sealed unsafe class VideoDecoder : IDisposable
     AVHWDeviceType.AV_HWDEVICE_TYPE_MEDIACODEC,
   ];
 
+  public static readonly AVHWDeviceType[] VulkanOnly =
+    [AVHWDeviceType.AV_HWDEVICE_TYPE_VULKAN];
+
+  public static readonly AVHWDeviceType[] PlatformOnly =
+  [
+    AVHWDeviceType.AV_HWDEVICE_TYPE_VAAPI,
+    AVHWDeviceType.AV_HWDEVICE_TYPE_D3D11VA,
+    AVHWDeviceType.AV_HWDEVICE_TYPE_DXVA2,
+    AVHWDeviceType.AV_HWDEVICE_TYPE_VIDEOTOOLBOX,
+    AVHWDeviceType.AV_HWDEVICE_TYPE_MEDIACODEC,
+  ];
+
   private readonly ILogger _logger;
+  private readonly AVHWDeviceType[] _hwPriority;
+  private readonly bool _strictHw;
+  private readonly string _strictLabel;
+  private readonly FrameConverter _converter = new();
   private AVCodecContext* _ctx;
   private AVPacket* _pkt;
   private AVFrame* _frame;
@@ -28,10 +44,34 @@ public sealed unsafe class VideoDecoder : IDisposable
   private delegate* unmanaged[Cdecl]<AVCodecContext*, AVPixelFormat*, AVPixelFormat> _getFormatCallback;
   private static AVPixelFormat _activeHwPixelFormat = AVPixelFormat.AV_PIX_FMT_NONE;
   private int _sendLogCount;
+  private int _captureLogCount;
 
-  public VideoDecoder(ILogger logger)
+  public FrameKind Kind => FrameKind.Cpu;
+
+  public string DisplayName => _hwPixelFormat switch
+  {
+    AVPixelFormat.AV_PIX_FMT_VULKAN => "HW Vulkan Decode",
+    AVPixelFormat.AV_PIX_FMT_VAAPI => "HW VAAPI Decode",
+    AVPixelFormat.AV_PIX_FMT_D3D11 => "HW D3D11 Decode",
+    AVPixelFormat.AV_PIX_FMT_DXVA2_VLD => "HW DXVA2 Decode",
+    AVPixelFormat.AV_PIX_FMT_VIDEOTOOLBOX => "HW VideoToolbox Decode",
+    AVPixelFormat.AV_PIX_FMT_MEDIACODEC => "HW MediaCodec Decode",
+    _ => _strictHw ? _strictLabel : (_ctx != null ? "SW Decode" : "HW Decode")
+  };
+
+  public HwToSwDecodeBackend(ILogger<HwToSwDecodeBackend> logger)
+    : this(logger, FullHwPriority, strictHw: false, strictLabel: "HW Decode") { }
+
+  public HwToSwDecodeBackend(
+    ILogger<HwToSwDecodeBackend> logger,
+    AVHWDeviceType[] hwPriority,
+    bool strictHw,
+    string strictLabel)
   {
     _logger = logger;
+    _hwPriority = hwPriority;
+    _strictHw = strictHw;
+    _strictLabel = strictLabel;
   }
 
   public bool Configure(CodecParameters config)
@@ -40,7 +80,6 @@ public sealed unsafe class VideoDecoder : IDisposable
     _logger.LogDebug("Configuring decoder: {Codec} {Width}x{Height} extradata={ExtradataLen}",
       config.Codec, config.Width, config.Height, config.Extradata.Length);
     Reset();
-    _logger.LogDebug("Reset complete");
 
     var codecId = config.Codec switch
     {
@@ -51,7 +90,6 @@ public sealed unsafe class VideoDecoder : IDisposable
       _ => AVCodecID.AV_CODEC_ID_NONE
     };
 
-    _logger.LogDebug("Finding decoder for {CodecId}", codecId);
     if (codecId == AVCodecID.AV_CODEC_ID_NONE)
     {
       _logger.LogError("Unsupported codec: {Codec}", config.Codec);
@@ -59,7 +97,6 @@ public sealed unsafe class VideoDecoder : IDisposable
     }
 
     var codec = FFAvCodec.avcodec_find_decoder(codecId);
-    _logger.LogDebug("avcodec_find_decoder returned {Ptr}", (nint)codec);
     if (codec == null)
     {
       _logger.LogError("FFmpeg decoder not found for {Codec}", config.Codec);
@@ -67,7 +104,6 @@ public sealed unsafe class VideoDecoder : IDisposable
     }
 
     _ctx = FFAvCodec.avcodec_alloc_context3(codec);
-    _logger.LogDebug("avcodec_alloc_context3 returned {Ptr}", (nint)_ctx);
     if (_ctx == null)
     {
       _logger.LogError("Failed to allocate codec context");
@@ -78,7 +114,6 @@ public sealed unsafe class VideoDecoder : IDisposable
     {
       var size = config.Extradata.Length;
       _ctx->extradata = (byte*)FFAvUtil.av_mallocz((nuint)(size + 64));
-      _logger.LogDebug("Extradata allocated at {Ptr}, copying {Size} bytes", (nint)_ctx->extradata, size);
       if (_ctx->extradata != null)
       {
         fixed (byte* src = config.Extradata)
@@ -93,8 +128,14 @@ public sealed unsafe class VideoDecoder : IDisposable
     _ctx->pkt_timebase = new AVRational { num = 1, den = 1_000_000 };
 
     TryInitHardwareAccel(codec);
+    if (_strictHw && _hwDeviceCtx == null)
+    {
+      _logger.LogError("Strict HW required but no allowed device available: {Allowed}",
+        string.Join(",", _hwPriority));
+      Reset();
+      return false;
+    }
 
-    _logger.LogDebug("Opening codec...");
     var ret = FFAvCodec.avcodec_open2(_ctx, codec, null);
     if (ret < 0)
     {
@@ -110,7 +151,7 @@ public sealed unsafe class VideoDecoder : IDisposable
     return true;
   }
 
-  public bool SendPacket(DemuxedSample sample)
+  public bool SendSample(DemuxedSample sample)
   {
     if (_ctx == null || _pkt == null)
       return false;
@@ -145,7 +186,7 @@ public sealed unsafe class VideoDecoder : IDisposable
     }
   }
 
-  public bool TryReceiveFrame(out AVFrame* frame)
+  public bool TryReceiveFrame(out DecodedFrame? frame)
   {
     frame = null;
     if (_ctx == null || _frame == null)
@@ -172,8 +213,47 @@ public sealed unsafe class VideoDecoder : IDisposable
       src = _swFrame;
     }
 
-    frame = src;
-    return true;
+    frame = BuildCpuFrame(src);
+    return frame != null;
+  }
+
+  private CpuDecodedFrame? BuildCpuFrame(AVFrame* src)
+  {
+    var w = src->width;
+    var h = src->height;
+    if (w == 0 || h == 0) return null;
+
+    var stride = w * 4;
+    var size = stride * h;
+    var pixels = (nint)FFAvUtil.av_malloc((nuint)size);
+    if (pixels == 0) return null;
+
+    _converter.Convert(src, (byte*)pixels, stride);
+
+    const long AV_NOPTS_VALUE = unchecked((long)0x8000000000000000);
+    // best_effort_timestamp is the decoder's reordered/recovered pts; for HW
+    // decode paths where pts isn't set on output frames this is where the
+    // timestamp survives.
+    var timestampUs = (long)src->best_effort_timestamp;
+    if (timestampUs == AV_NOPTS_VALUE)
+      timestampUs = (long)src->pts;
+    var durationUs = (long)src->duration;
+
+    if (_logger.IsEnabled(LogLevel.Trace) && _captureLogCount++ % 10 == 0)
+      _logger.LogTrace("CaptureFrame pts={Pts} best_effort={Best} duration={Duration}",
+        (long)src->pts, (long)src->best_effort_timestamp, durationUs);
+
+    // Skip AV_NOPTS_VALUE and zero: without a valid wall-clock the frame
+    // can't be looked up by GetFrame anyway (and a literal zero inside a
+    // stream whose timestamps are unix-micros is itself a sentinel for
+    // "missing").
+    if (timestampUs == AV_NOPTS_VALUE || timestampUs <= 0)
+    {
+      FFAvUtil.av_free((void*)pixels);
+      return null;
+    }
+
+    return new CpuDecodedFrame(timestampUs, durationUs, pixels, w, h, stride);
   }
 
   public void Flush()
@@ -187,11 +267,12 @@ public sealed unsafe class VideoDecoder : IDisposable
     if (_disposed) return;
     _disposed = true;
     Reset();
+    _converter.Dispose();
   }
 
   private void TryInitHardwareAccel(AVCodec* codec)
   {
-    foreach (var deviceType in HwPriority)
+    foreach (var deviceType in _hwPriority)
     {
       if (!CodecSupportsDevice(codec, deviceType, out var hwPixFmt))
         continue;
@@ -233,8 +314,6 @@ public sealed unsafe class VideoDecoder : IDisposable
   [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
   private static AVPixelFormat GetFormatCallback(AVCodecContext* ctx, AVPixelFormat* formats)
   {
-    // Return the HW format matching the device context we created. If the
-    // decoder doesn't offer it, fall back to the first format (software).
     for (var p = formats; *p != AVPixelFormat.AV_PIX_FMT_NONE; p++)
     {
       if (*p == _activeHwPixelFormat)
@@ -242,18 +321,6 @@ public sealed unsafe class VideoDecoder : IDisposable
     }
     return formats[0];
   }
-
-  private static AVPixelFormat GetHwPixelFormat(AVHWDeviceType deviceType) =>
-    deviceType switch
-    {
-      AVHWDeviceType.AV_HWDEVICE_TYPE_VULKAN => AVPixelFormat.AV_PIX_FMT_VULKAN,
-      AVHWDeviceType.AV_HWDEVICE_TYPE_VAAPI => AVPixelFormat.AV_PIX_FMT_VAAPI,
-      AVHWDeviceType.AV_HWDEVICE_TYPE_D3D11VA => AVPixelFormat.AV_PIX_FMT_D3D11,
-      AVHWDeviceType.AV_HWDEVICE_TYPE_DXVA2 => AVPixelFormat.AV_PIX_FMT_DXVA2_VLD,
-      AVHWDeviceType.AV_HWDEVICE_TYPE_VIDEOTOOLBOX => AVPixelFormat.AV_PIX_FMT_VIDEOTOOLBOX,
-      AVHWDeviceType.AV_HWDEVICE_TYPE_MEDIACODEC => AVPixelFormat.AV_PIX_FMT_MEDIACODEC,
-      _ => AVPixelFormat.AV_PIX_FMT_NONE
-    };
 
   private void Reset()
   {

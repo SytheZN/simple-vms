@@ -68,17 +68,9 @@ export function usePlayer(): Player {
 
   const debug = typeof localStorage !== 'undefined' && localStorage.getItem('debug_player') !== null
 
-  // ---------------------------------------------------------------------------
-  // Send commands
-  // ---------------------------------------------------------------------------
-
   function sendGoLive() {
     streamer?.goLive(currentProfile)
   }
-
-  // ---------------------------------------------------------------------------
-  // Data pipeline
-  // ---------------------------------------------------------------------------
 
   function computeNeededGops(ts: number): number[] {
     const available = fetcher.gopTimestamps()
@@ -108,6 +100,18 @@ export function usePlayer(): Player {
     decoder.setTarget(computeNeededGops(ts))
   }
 
+  const liveCatchupMaxBoost = 0.1
+  const liveCatchupTauUs = 4_000_000
+
+  function liveCatchupMultiplier(): number {
+    if (mode.value !== 'live') return 1
+    const gops = fetcher.gopTimestamps()
+    if (gops.length === 0) return 1
+    const lag = gops[gops.length - 1] - timestampUs.value
+    if (lag <= 0) return 1
+    return 1 + liveCatchupMaxBoost * (1 - Math.exp(-lag / liveCatchupTauUs))
+  }
+
   function renderAt(ts: number): boolean {
     updatePipeline(ts)
     const frame = decoder.getFrame(ts)
@@ -131,10 +135,6 @@ export function usePlayer(): Player {
     }
     return timestamps[lo] <= ts ? lo : -1
   }
-
-  // ---------------------------------------------------------------------------
-  // rAF loop
-  // ---------------------------------------------------------------------------
 
   function startLoop() {
     if (rafId !== null) return
@@ -172,7 +172,7 @@ export function usePlayer(): Player {
     lastTick = now
 
     const effectiveDurationUs = lastFrameDurationUs * stride
-    accumUs += elapsed * 1000 * rate.value
+    accumUs += elapsed * 1000 * rate.value * liveCatchupMultiplier()
 
     if (accumUs < effectiveDurationUs) return
 
@@ -190,10 +190,6 @@ export function usePlayer(): Player {
     buffering.value = false
     suppressBuffering = false
   }
-
-  // ---------------------------------------------------------------------------
-  // State transitions
-  // ---------------------------------------------------------------------------
 
   function enterSeeking(ts?: number) {
     stopLoop()
@@ -217,10 +213,6 @@ export function usePlayer(): Player {
     accumUs = 0
   }
 
-  // ---------------------------------------------------------------------------
-  // Data actions
-  // ---------------------------------------------------------------------------
-
   function commitSeek() {
     if (debug) console.log('commitSeek', 'chunks:', seekBuffer.length, 'target:', seekTargetUs)
     for (let i = 0; i < seekBuffer.length; i++)
@@ -231,29 +223,28 @@ export function usePlayer(): Player {
   }
 
   function commitLive() {
-    if (debug) console.log('commitLive', 'chunks:', seekBuffer.length)
-    let firstWallClock = 0
+    let newestWallClock = 0
+    let newestIdx = -1
     for (let i = 0; i < seekBuffer.length; i++) {
-      if (firstWallClock === 0) {
-        const demuxed = demuxGop(seekBuffer[i], timescale)
-        for (const sample of demuxed.samples) {
-          if (sample.timestamp > 0) {
-            firstWallClock = sample.timestamp
-            break
-          }
+      const demuxed = demuxGop(seekBuffer[i], timescale)
+      for (const sample of demuxed.samples) {
+        if (sample.timestamp > newestWallClock) {
+          newestWallClock = sample.timestamp
+          newestIdx = i
         }
       }
-      fetcher.appendData(seekGopTimestamps[i], seekBuffer[i])
     }
+
+    if (newestWallClock === 0) return
+
+    for (let i = newestIdx; i < seekBuffer.length; i++)
+      fetcher.appendData(seekGopTimestamps[i], seekBuffer[i])
+    const dropped = newestIdx
     seekBuffer = []
     seekGopTimestamps = []
-    seekRenderTarget = firstWallClock
-    if (debug) console.log('commitLive seekRenderTarget', firstWallClock)
+    seekRenderTarget = newestWallClock
+    if (debug) console.log('commitLive anchor', newestWallClock, 'droppedStale', dropped)
   }
-
-  // ---------------------------------------------------------------------------
-  // Server input handlers
-  // ---------------------------------------------------------------------------
 
   function handleAck() {
     ignoreData = false
@@ -288,12 +279,10 @@ export function usePlayer(): Player {
         } else {
           seekBuffer.push(new Uint8Array(data))
           seekGopTimestamps.push(gopTimestamp)
-          if (seekBuffer.length === 1) {
-            if (mode.value === 'live')
-              commitLive()
-            else
-              commitSeek()
-          }
+          if (mode.value === 'live')
+            commitLive()
+          else if (seekBuffer.length === 1)
+            commitSeek()
         }
         break
 
@@ -349,10 +338,6 @@ export function usePlayer(): Player {
     maxRate.value = 8
     fetcher.handleRecording()
   }
-
-  // ---------------------------------------------------------------------------
-  // User input handlers
-  // ---------------------------------------------------------------------------
 
   function seek(ts: number) {
     if (state === 'idle') return
@@ -460,10 +445,6 @@ export function usePlayer(): Player {
     else
       seek(timestampUs.value)
   }
-
-  // ---------------------------------------------------------------------------
-  // Lifecycle
-  // ---------------------------------------------------------------------------
 
   function attach(container: HTMLElement, s: Streamer, cameraId: string, profile: string) {
     const canvas = document.createElement('canvas')

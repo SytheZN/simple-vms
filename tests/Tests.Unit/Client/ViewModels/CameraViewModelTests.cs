@@ -1,4 +1,6 @@
 using System.Threading.Channels;
+using Client.Core.Decoding;
+using Client.Core.Decoding.Diagnostics;
 using Client.Core.Streaming;
 using Client.Core.Tunnel;
 using Client.Core.ViewModels;
@@ -210,7 +212,9 @@ public class CameraViewModelTests
     var api = new CameraApi();
     var tunnel = new FakeStreamTunnel { State = ConnectionState.Disconnected };
     var vm = new CameraViewModel(api, new FakeLive(), new FakePlayback(), tunnel,
-      NullLogger<CameraViewModel>.Instance, NullLoggerFactory.Instance);
+      NullLogger<CameraViewModel>.Instance, NullLoggerFactory.Instance,
+      new DecodePipelineFactory(NullLoggerFactory.Instance),
+      new DiagnosticsSettings());
 
     var wait = vm.WaitForTunnelConnectedAsync(
       TimeSpan.FromSeconds(1), CancellationToken.None);
@@ -238,7 +242,9 @@ public class CameraViewModelTests
     var api = new CameraApi();
     var tunnel = new FakeStreamTunnel { State = ConnectionState.Disconnected };
     var vm = new CameraViewModel(api, new FakeLive(), new FakePlayback(), tunnel,
-      NullLogger<CameraViewModel>.Instance, NullLoggerFactory.Instance);
+      NullLogger<CameraViewModel>.Instance, NullLoggerFactory.Instance,
+      new DecodePipelineFactory(NullLoggerFactory.Instance),
+      new DiagnosticsSettings());
 
     var connected = await vm.WaitForTunnelConnectedAsync(
       TimeSpan.FromMilliseconds(50), CancellationToken.None);
@@ -281,7 +287,9 @@ public class CameraViewModelTests
     var playback = new FakePlayback();
     var tunnel = new FakeStreamTunnel();
     var vm = new CameraViewModel(api, live, playback, tunnel,
-      NullLogger<CameraViewModel>.Instance, NullLoggerFactory.Instance);
+      NullLogger<CameraViewModel>.Instance, NullLoggerFactory.Instance,
+      new DecodePipelineFactory(NullLoggerFactory.Instance),
+      new DiagnosticsSettings());
     return (vm, live, playback, api);
   }
 
@@ -300,7 +308,7 @@ public class CameraViewModelTests
     var transport = new MemoryStream();
     var muxer = new StreamMuxer(transport, NullLogger.Instance, 1);
     var channel = Channel.CreateUnbounded<MuxMessage>();
-    var stream = new MuxStream(muxer, 1, channel.Reader);
+    var stream = new MuxStream(muxer, 1, channel.Reader, NullLogger.Instance);
     return new VideoFeed(stream, cameraId, profile, NullLogger.Instance);
   }
 

@@ -5,7 +5,6 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using Client.Core.Decoding;
 using Client.Core.Streaming;
-using Microsoft.Extensions.Logging;
 using Shared.Protocol;
 using System.Diagnostics.CodeAnalysis;
 
@@ -61,16 +60,7 @@ public partial class VideoPlayer : UserControl
 
     if (change.Property == PlayerProperty)
     {
-      var p = change.GetNewValue<Player?>();
-      p?.RendererLogger.LogDebug("VideoPlayer.PlayerProperty changed -> player set");
-      AttachPlayer(p);
-    }
-    else if (change.Property == DataContextProperty)
-    {
-      var dc = change.NewValue;
-      // Use whatever logger we have access to via current Player (likely null before binding propagates).
-      Player?.RendererLogger.LogDebug("VideoPlayer.DataContextProperty changed -> {Type}",
-        dc?.GetType().FullName ?? "null");
+      AttachPlayer(change.GetNewValue<Player?>());
     }
     else if (change.Property == MotionFeedProperty)
     {
@@ -81,7 +71,6 @@ public partial class VideoPlayer : UserControl
 
   private void AttachPlayer(Player? player)
   {
-    player?.RendererLogger.LogDebug("VideoPlayer.AttachPlayer attached");
     _videoSurface.SetPlayer(player);
     _placeholder.IsVisible = player == null;
   }

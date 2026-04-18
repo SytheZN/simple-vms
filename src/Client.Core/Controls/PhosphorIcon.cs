@@ -9,10 +9,7 @@ using Avalonia.Platform;
 
 namespace Client.Core.Controls;
 
-/// <summary>
-/// Names map to Phosphor icon file slugs (kebab-case on disk). Loaded from
-/// src/Client.Core/Assets/Phosphor/ as AvaloniaResource SVGs.
-/// </summary>
+/// <summary>Names map to Phosphor icon file slugs (kebab-case on disk under Assets/Phosphor/).</summary>
 public enum PhosphorIconKind
 {
   ArrowLeft,
@@ -47,12 +44,6 @@ public enum PhosphorIconKind
   XCircle
 }
 
-/// <summary>
-/// Renders a single Phosphor icon from its SVG resource. The SVG's 256x256
-/// viewBox is scaled uniformly to the control's Bounds; shapes are stroked
-/// in Foreground at Phosphor's canonical 16-unit thickness with round caps
-/// and joins.
-/// </summary>
 [ExcludeFromCodeCoverage]
 public sealed class PhosphorIcon : Control
 {
@@ -101,6 +92,7 @@ public sealed class PhosphorIcon : Control
   private const double ViewBoxSize = 256;
 }
 
+[ExcludeFromCodeCoverage]
 internal static class PhosphorIconData
 {
   internal const double StrokeWidth = 16;

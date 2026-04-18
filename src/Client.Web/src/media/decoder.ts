@@ -74,7 +74,6 @@ export class Decoder {
   }
 
   setTarget(gopTimestamps: number[]) {
-    // evict decoded GOPs not in target set (with buffer margin)
     const targetSet = new Set(gopTimestamps)
     const maxKeep = gopTimestamps.length + 2
     if (this.gops.length > maxKeep) {
@@ -88,7 +87,6 @@ export class Decoder {
       }
     }
 
-    // decode new chunks for each target GOP in priority order
     for (const gopTs of gopTimestamps) {
       const gop = this.fetcher.findGop(gopTs)
       if (!gop || gop.timestamp !== gopTs) continue

@@ -3,6 +3,7 @@ using Client.Core;
 using Client.Core.Platform;
 using Client.Desktop.Services;
 using Client.Desktop.ViewModels;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Serilog;
@@ -14,7 +15,15 @@ public static class Program
   [STAThread]
   public static async Task Main(string[] args)
   {
+    var env = Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT") ?? "Production";
+    var configuration = new ConfigurationBuilder()
+      .SetBasePath(AppContext.BaseDirectory)
+      .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false)
+      .AddJsonFile($"appsettings.{env}.json", optional: true, reloadOnChange: false)
+      .Build();
+
     var services = new ServiceCollection();
+    services.AddSingleton<IConfiguration>(configuration);
     services.AddClientCore();
     var logDir = DesktopSettings.ConfigDir;
     Directory.CreateDirectory(logDir);
@@ -49,8 +58,6 @@ public static class Program
       Environment.Exit(1);
     };
 
-    // Crash-fast: unobserved task exceptions indicate a missing await and leave the
-    // app in an unknown state — fail loudly rather than silently degrade.
     TaskScheduler.UnobservedTaskException += (_, e) =>
     {
       e.SetObserved();

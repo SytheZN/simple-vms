@@ -8,6 +8,7 @@ using Client.Core.Controls;
 using Client.Core.ViewModels;
 using Client.Desktop.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 
@@ -34,6 +35,18 @@ public partial class CameraView : UserControl
   private readonly Panel _errorOverlay;
   private readonly TextBlock _overlayText;
   private readonly Client.Core.Controls.VideoPlayer _videoPlayer;
+  private readonly PlaybackStatsOverlay _statsOverlay;
+  private readonly DockPanel _headerPanel;
+  private readonly ErrorCard _errorCardPanel;
+  private readonly Border _playerCard;
+  private readonly Border _videoArea;
+  private readonly StackPanel _controlsStrip;
+  private readonly Button _fullscreenButton;
+  private readonly Button _fullscreenButtonBar;
+  private readonly PhosphorIcon _fullscreenIconBar;
+  private readonly Avalonia.Threading.DispatcherTimer _idleTimer;
+  private MainWindowViewModel? _mainVm;
+  private bool _isFullscreen;
 
   public CameraView()
   {
@@ -54,6 +67,20 @@ public partial class CameraView : UserControl
     _errorOverlay = this.FindControl<Panel>("ErrorOverlay")!;
     _overlayText = this.FindControl<TextBlock>("OverlayText")!;
     _videoPlayer = this.FindControl<Client.Core.Controls.VideoPlayer>("VideoPlayerControl")!;
+    _statsOverlay = this.FindControl<PlaybackStatsOverlay>("StatsOverlay")!;
+    _headerPanel = this.FindControl<DockPanel>("HeaderPanel")!;
+    _errorCardPanel = this.FindControl<ErrorCard>("ErrorCardPanel")!;
+    _playerCard = this.FindControl<Border>("PlayerCard")!;
+    _fullscreenButton = this.FindControl<Button>("FullscreenButton")!;
+    _fullscreenButtonBar = this.FindControl<Button>("FullscreenButtonBar")!;
+    _fullscreenIconBar = this.FindControl<PhosphorIcon>("FullscreenIconBar")!;
+    _fullscreenButtonBar.Click += OnFullscreen;
+    _videoArea = this.FindControl<Border>("VideoArea")!;
+    _controlsStrip = this.FindControl<StackPanel>("ControlsStrip")!;
+    _controlsStrip.LayoutUpdated += (_, _) => UpdateVideoMargin();
+    _idleTimer = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+    _idleTimer.Tick += OnIdleTick;
+    PointerMoved += OnAnyPointerMoved;
 
     _rateSlider.Maximum = RateSteps.Length - 1;
     _rateSlider.Value = Array.IndexOf(RateSteps, 1);
@@ -80,17 +107,91 @@ public partial class CameraView : UserControl
 
     vm.PropertyChanged += OnVmPropertyChanged;
 
-    var mainVm = TopLevel.GetTopLevel(this)?.DataContext as MainWindowViewModel;
-    var cameraId = mainVm?.SelectedCameraId;
+    _mainVm = TopLevel.GetTopLevel(this)?.DataContext as MainWindowViewModel;
+    if (_mainVm != null)
+    {
+      _mainVm.PropertyChanged += OnMainVmPropertyChanged;
+      ApplyFullscreen(_mainVm.IsCameraFullscreen);
+    }
+
+    var cameraId = _mainVm?.SelectedCameraId;
     if (cameraId == null) return;
 
     _ = InitAsync(vm, cameraId.Value);
   }
 
+  protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+  {
+    base.OnDetachedFromVisualTree(e);
+    if (_mainVm != null) _mainVm.PropertyChanged -= OnMainVmPropertyChanged;
+    _idleTimer.Stop();
+  }
+
+  private void OnMainVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
+  {
+    if (e.PropertyName == nameof(MainWindowViewModel.IsCameraFullscreen) && _mainVm != null)
+      ApplyFullscreen(_mainVm.IsCameraFullscreen);
+  }
+
+  private void ApplyFullscreen(bool fs)
+  {
+    _isFullscreen = fs;
+    _headerPanel.IsVisible = !fs;
+    _errorCardPanel.IsVisible = !fs && DataContext is CameraViewModel vm && !string.IsNullOrEmpty(vm.ErrorMessage);
+    _playerCard.Classes.Set("fs", fs);
+    _videoArea.Classes.Set("fs", fs);
+    _controlsStrip.Classes.Set("fs", fs);
+    _controlsStrip.Opacity = 1;
+    _fullscreenButton.IsVisible = !fs;
+    _fullscreenButtonBar.IsVisible = fs;
+    var icon = fs ? PhosphorIconKind.CornersIn : PhosphorIconKind.CornersOut;
+    _fullscreenIcon.Kind = icon;
+    _fullscreenIconBar.Kind = icon;
+    UpdateVideoMargin();
+    if (fs) _idleTimer.Start();
+    else _idleTimer.Stop();
+  }
+
+  private void UpdateVideoMargin()
+  {
+    var bottom = _isFullscreen ? 0 : _controlsStrip.Bounds.Height;
+    _videoArea.Margin = new Thickness(0, 0, 0, bottom);
+  }
+
+  private void OnAnyPointerMoved(object? sender, Avalonia.Input.PointerEventArgs e)
+  {
+    if (!_isFullscreen) return;
+    _controlsStrip.Opacity = 1;
+    _idleTimer.Stop();
+    _idleTimer.Start();
+  }
+
+  private void OnIdleTick(object? sender, EventArgs e)
+  {
+    _idleTimer.Stop();
+    if (_isFullscreen) _controlsStrip.Opacity = 0;
+  }
+
   private async Task InitAsync(CameraViewModel vm, Guid cameraId)
+  {
+    try
+    {
+      await InitCoreAsync(vm, cameraId);
+    }
+    catch (Exception ex)
+    {
+      ((App)Avalonia.Application.Current!).Services
+        .GetRequiredService<ILogger<CameraView>>()
+        .LogError(ex, "CameraView.InitAsync failed");
+    }
+  }
+
+  private async Task InitCoreAsync(CameraViewModel vm, Guid cameraId)
   {
     await vm.LoadAsync(cameraId, CancellationToken.None);
     _videoPlayer.Player = vm.Player;
+    if (vm.Player != null)
+      _statsOverlay.Diagnostics = vm.Player.Diagnostics;
     if (!vm.IsTunnelConnected)
       await vm.WaitForTunnelConnectedAsync(TimeSpan.FromSeconds(10), CancellationToken.None);
     await vm.GoLiveAsync(CancellationToken.None);
@@ -129,6 +230,8 @@ public partial class CameraView : UserControl
       UpdatePlayPauseIcon(vm.IsPaused);
     else if (e.PropertyName == nameof(CameraViewModel.IsBuffering))
       _bufferingOverlay.IsVisible = vm.IsBuffering;
+    else if (e.PropertyName == nameof(CameraViewModel.ErrorMessage))
+      _errorCardPanel.IsVisible = !_isFullscreen && !string.IsNullOrEmpty(vm.ErrorMessage);
   }
 
   private void SetModeDisconnected()
@@ -259,12 +362,7 @@ public partial class CameraView : UserControl
 
   private void OnFullscreen(object? sender, RoutedEventArgs e)
   {
-    var main = TopLevel.GetTopLevel(this)?.DataContext as MainWindowViewModel;
-    if (main == null) return;
-    main.ToggleFullscreen();
-    _fullscreenIcon.Kind = main.IsFullscreen
-      ? PhosphorIconKind.CornersIn
-      : PhosphorIconKind.CornersOut;
+    _mainVm?.ToggleFullscreen();
   }
 
   private void OnProfileChanged(string profile)

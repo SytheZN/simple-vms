@@ -1,4 +1,5 @@
 using Client.Core.Decoding;
+using Client.Core.Decoding.Diagnostics;
 using Client.Core.Streaming;
 using Microsoft.Extensions.Logging.Abstractions;
 using Shared.Protocol;
@@ -8,6 +9,13 @@ namespace Tests.Unit.Client.Decoding;
 [TestFixture]
 public class PlayerTests
 {
+  private static Player NewPlayer(ILiveStreamService live, IPlaybackService playback)
+  {
+    var pipeline = new DecodePipelineFactory(NullLoggerFactory.Instance).Create(DecodeRole.Main)!.Value;
+    return new Player(NullLoggerFactory.Instance, pipeline.Backend, pipeline.Renderer, live, playback,
+      new DiagnosticsSettings());
+  }
+
   /// <summary>
   /// SCENARIO:
   /// A fresh Player is constructed with no camera attached
@@ -21,7 +29,7 @@ public class PlayerTests
   [Test]
   public void NewPlayer_HasLiveDefaults()
   {
-    using var player = new Player(NullLoggerFactory.Instance, new FakeLive(), new FakePlayback());
+    using var player = NewPlayer(new FakeLive(), new FakePlayback());
 
     Assert.That(player.Mode, Is.EqualTo(Player.PlayerMode.Live));
     Assert.That(player.Rate, Is.EqualTo(1.0));
@@ -42,7 +50,7 @@ public class PlayerTests
   public async Task GoLiveAsync_Subscribes()
   {
     var live = new FakeLive();
-    using var player = new Player(NullLoggerFactory.Instance, live, new FakePlayback());
+    using var player = NewPlayer(live, new FakePlayback());
     player.Configure(Guid.NewGuid(), "main");
 
     await player.GoLiveAsync(CancellationToken.None);
@@ -65,7 +73,7 @@ public class PlayerTests
   public async Task GopBeforeAck_Ignored()
   {
     var live = new FakeLive();
-    using var player = new Player(NullLoggerFactory.Instance, live, new FakePlayback());
+    using var player = NewPlayer(live, new FakePlayback());
     player.Configure(Guid.NewGuid(), "main");
     await player.GoLiveAsync(CancellationToken.None);
 
@@ -99,7 +107,7 @@ public class PlayerTests
   public async Task RecordingStatus_SetsPlaybackMode()
   {
     var live = new FakeLive();
-    using var player = new Player(NullLoggerFactory.Instance, live, new FakePlayback());
+    using var player = NewPlayer(live, new FakePlayback());
     player.Configure(Guid.NewGuid(), "main");
     await player.GoLiveAsync(CancellationToken.None);
 
@@ -124,7 +132,7 @@ public class PlayerTests
   public async Task LiveStatus_ClampsRateToOne()
   {
     var live = new FakeLive();
-    using var player = new Player(NullLoggerFactory.Instance, live, new FakePlayback());
+    using var player = NewPlayer(live, new FakePlayback());
     player.Configure(Guid.NewGuid(), "main");
     await player.GoLiveAsync(CancellationToken.None);
     live.LastFeed!.RaiseStatus(StreamStatus.Recording);
@@ -151,7 +159,7 @@ public class PlayerTests
   public async Task SetRate_LiveMode_Ignored()
   {
     var live = new FakeLive();
-    using var player = new Player(NullLoggerFactory.Instance, live, new FakePlayback());
+    using var player = NewPlayer(live, new FakePlayback());
     player.Configure(Guid.NewGuid(), "main");
     await player.GoLiveAsync(CancellationToken.None);
     live.LastFeed!.RaiseStatus(StreamStatus.Live);
@@ -175,7 +183,7 @@ public class PlayerTests
   public async Task SetRate_PlaybackAboveThreshold_UpdatesStride()
   {
     var live = new FakeLive();
-    using var player = new Player(NullLoggerFactory.Instance, live, new FakePlayback());
+    using var player = NewPlayer(live, new FakePlayback());
     player.Configure(Guid.NewGuid(), "main");
     await player.GoLiveAsync(CancellationToken.None);
     live.LastFeed!.RaiseStatus(StreamStatus.Recording);
@@ -200,7 +208,7 @@ public class PlayerTests
   public async Task SetRate_PlaybackBelowThreshold_StrideUnchanged()
   {
     var live = new FakeLive();
-    using var player = new Player(NullLoggerFactory.Instance, live, new FakePlayback());
+    using var player = NewPlayer(live, new FakePlayback());
     player.Configure(Guid.NewGuid(), "main");
     await player.GoLiveAsync(CancellationToken.None);
     live.LastFeed!.RaiseStatus(StreamStatus.Recording);
@@ -225,7 +233,7 @@ public class PlayerTests
   public async Task SetRate_Negative_SetsDirectionReverse()
   {
     var live = new FakeLive();
-    using var player = new Player(NullLoggerFactory.Instance, live, new FakePlayback());
+    using var player = NewPlayer(live, new FakePlayback());
     player.Configure(Guid.NewGuid(), "main");
     await player.GoLiveAsync(CancellationToken.None);
     live.LastFeed!.RaiseStatus(StreamStatus.Recording);
@@ -249,7 +257,7 @@ public class PlayerTests
   [Test]
   public void TogglePause_Toggles()
   {
-    using var player = new Player(NullLoggerFactory.Instance, new FakeLive(), new FakePlayback());
+    using var player = NewPlayer(new FakeLive(), new FakePlayback());
 
     player.TogglePause();
     Assert.That(player.Paused, Is.True);
@@ -273,7 +281,7 @@ public class PlayerTests
   {
     var live = new FakeLive();
     var playback = new FakePlayback();
-    using var player = new Player(NullLoggerFactory.Instance, live, playback);
+    using var player = NewPlayer(live, playback);
     player.Configure(Guid.NewGuid(), "main");
     await player.GoLiveAsync(CancellationToken.None);
 
@@ -298,7 +306,7 @@ public class PlayerTests
   public async Task SetProfileAsync_Live_Resubscribes()
   {
     var live = new FakeLive();
-    using var player = new Player(NullLoggerFactory.Instance, live, new FakePlayback());
+    using var player = NewPlayer(live, new FakePlayback());
     player.Configure(Guid.NewGuid(), "main");
     await player.GoLiveAsync(CancellationToken.None);
 
@@ -324,7 +332,7 @@ public class PlayerTests
   {
     var live = new FakeLive();
     var playback = new FakePlayback();
-    using var player = new Player(NullLoggerFactory.Instance, live, playback);
+    using var player = NewPlayer(live, playback);
     player.Configure(Guid.NewGuid(), "main");
     await player.SeekAsync(5_000_000, CancellationToken.None);
 
@@ -334,10 +342,6 @@ public class PlayerTests
     Assert.That(playback.LastProfile, Is.EqualTo("sub"));
     Assert.That(player.CurrentProfile, Is.EqualTo("sub"));
   }
-
-  // ---------------------------------------------------------------------
-  // Fakes
-  // ---------------------------------------------------------------------
 
   private sealed class FakeVideoFeed(Guid cameraId, string profile) : IVideoFeed
   {

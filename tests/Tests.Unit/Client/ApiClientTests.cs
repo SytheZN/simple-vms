@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using System.Threading.Channels;
+using Avalonia.Logging;
 using Client.Core.Api;
 using Client.Core.Tunnel;
 using MessagePack;
@@ -161,7 +162,7 @@ public class ApiClientTests
 
       var transport = new MemoryStream();
       var muxer = new StreamMuxer(transport, NullLogger.Instance, 1);
-      var stream = new MuxStream(muxer, 1, channel.Reader);
+      var stream = new MuxStream(muxer, 1, channel.Reader, NullLogger.Instance);
       return Task.FromResult(stream);
     }
   }

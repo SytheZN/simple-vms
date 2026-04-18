@@ -18,25 +18,28 @@ public sealed class AspectRatioPanel : Panel
 
   protected override Size MeasureOverride(Size availableSize)
   {
-    var width = availableSize.Width;
-    var height = double.IsInfinity(width) ? 0 : width / Ratio;
-    var childSize = new Size(width, height);
-
-    foreach (var child in Children)
-      child.Measure(childSize);
-
-    return childSize;
+    var size = Fit(availableSize);
+    foreach (var child in Children) child.Measure(size);
+    return size;
   }
 
   protected override Size ArrangeOverride(Size finalSize)
   {
-    var height = finalSize.Width / Ratio;
-    var size = new Size(finalSize.Width, height);
-    var rect = new Rect(size);
+    var size = Fit(finalSize);
+    var x = (finalSize.Width - size.Width) * 0.5;
+    var y = (finalSize.Height - size.Height) * 0.5;
+    var rect = new Rect(x, y, size.Width, size.Height);
+    foreach (var child in Children) child.Arrange(rect);
+    return finalSize;
+  }
 
-    foreach (var child in Children)
-      child.Arrange(rect);
-
-    return size;
+  private Size Fit(Size available)
+  {
+    var w = available.Width;
+    var h = available.Height;
+    if (double.IsInfinity(w) && double.IsInfinity(h)) return new Size();
+    if (double.IsInfinity(w)) return new Size(h * Ratio, h);
+    if (double.IsInfinity(h)) return new Size(w, w / Ratio);
+    return h * Ratio <= w ? new Size(h * Ratio, h) : new Size(w, w / Ratio);
   }
 }

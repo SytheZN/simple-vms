@@ -113,7 +113,7 @@ public sealed class TunnelService : ITunnelService, IAsyncDisposable
     }
 
     var (streamId, reader) = muxer.OpenStream(streamType, payload);
-    return Task.FromResult(new MuxStream(muxer, streamId, reader));
+    return Task.FromResult(new MuxStream(muxer, streamId, reader, _logger));
   }
 
   private async Task ConnectCoreAsync(CancellationToken ct)

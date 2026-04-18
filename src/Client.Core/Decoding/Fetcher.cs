@@ -1,9 +1,5 @@
 namespace Client.Core.Decoding;
 
-/// <summary>
-/// In-memory cache of raw encoded GOP chunks. Port of
-/// src/Client.Web/src/media/fetcher.ts.
-/// </summary>
 public sealed class Fetcher
 {
   private readonly List<GopEntry> _gops = [];
@@ -15,6 +11,25 @@ public sealed class Fetcher
   private bool _live;
   private TaskCompletionSource? _fetchTcs;
 
+  public int BufferedGopCount
+  {
+    get { lock (_lock) return _gops.Count; }
+  }
+
+  public int BufferedBytes
+  {
+    get
+    {
+      lock (_lock)
+      {
+        var total = 0;
+        foreach (var g in _gops)
+          foreach (var c in g.Chunks) total += c.Length;
+        return total;
+      }
+    }
+  }
+
   public void Attach(Func<ulong, ulong, Task> sendFetch)
   {
     _sendFetch = sendFetch;
@@ -25,10 +40,6 @@ public sealed class Fetcher
     _sendFetch = null;
   }
 
-  /// <summary>
-  /// Update the desired playhead window. Evicts GOPs outside the window and,
-  /// in playback mode, triggers a fetch if more data is needed.
-  /// </summary>
   public void SetTarget(long fromUs, long toUs)
   {
     var forward = toUs > fromUs;
@@ -94,10 +105,6 @@ public sealed class Fetcher
     tcs?.TrySetResult();
   }
 
-  /// <summary>
-  /// One-off fetch at a single timestamp (used for scrub). Returns a task that
-  /// completes when the fetch finishes.
-  /// </summary>
   public Task FetchAtAsync(ulong ts)
   {
     lock (_lock)
@@ -179,10 +186,6 @@ public sealed class Fetcher
     }
   }
 
-  /// <summary>
-  /// Concatenate every chunk of a GOP into a single contiguous buffer.
-  /// Port of src/Client.Web/src/media/fetcher.ts: mergedData.
-  /// </summary>
   public static ReadOnlyMemory<byte> MergedData(GopEntry gop)
   {
     if (gop.Chunks.Count == 1) return gop.Chunks[0];

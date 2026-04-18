@@ -15,6 +15,8 @@ public sealed class CameraViewModel : ViewModelBase, IAsyncDisposable
   private readonly ITunnelService _tunnel;
   private readonly ILogger<CameraViewModel> _logger;
   private readonly ILoggerFactory _loggerFactory;
+  private readonly DecodePipelineFactory _decodeFactory;
+  private readonly Decoding.Diagnostics.DiagnosticsSettings _diagnosticsSettings;
 
   private CameraListItem? _camera;
   private IVideoFeed? _motionFeed;
@@ -86,7 +88,8 @@ public sealed class CameraViewModel : ViewModelBase, IAsyncDisposable
   public bool IsTunnelConnected => _tunnel.State == ConnectionState.Connected;
 
   public CameraViewModel(IApiClient api, ILiveStreamService live, IPlaybackService playback,
-    ITunnelService tunnel, ILogger<CameraViewModel> logger, ILoggerFactory loggerFactory)
+    ITunnelService tunnel, ILogger<CameraViewModel> logger, ILoggerFactory loggerFactory,
+    DecodePipelineFactory decodeFactory, Decoding.Diagnostics.DiagnosticsSettings diagnosticsSettings)
   {
     _api = api;
     _live = live;
@@ -94,12 +97,10 @@ public sealed class CameraViewModel : ViewModelBase, IAsyncDisposable
     _tunnel = tunnel;
     _logger = logger;
     _loggerFactory = loggerFactory;
+    _decodeFactory = decodeFactory;
+    _diagnosticsSettings = diagnosticsSettings;
   }
 
-  /// <summary>
-  /// Wait for the tunnel to report Connected. Returns true once connected,
-  /// false if the timeout elapses or the token is cancelled.
-  /// </summary>
   public async Task<bool> WaitForTunnelConnectedAsync(TimeSpan timeout, CancellationToken ct)
   {
     if (_tunnel.State == ConnectionState.Connected) return true;
@@ -143,7 +144,13 @@ public sealed class CameraViewModel : ViewModelBase, IAsyncDisposable
 
     if (_camera != null && _player == null)
     {
-      _player = new Player(_loggerFactory, _live, _playback);
+      var pipeline = _decodeFactory.Create(DecodeRole.Main);
+      if (pipeline == null)
+      {
+        _logger.LogWarning("Decode pipeline unavailable; not creating Player");
+        return;
+      }
+      _player = new Player(_loggerFactory, pipeline.Value.Backend, pipeline.Value.Renderer, _live, _playback, _diagnosticsSettings);
       _player.CurrentPositionChanged += OnPlayerPosition;
       _player.BufferingChanged += OnPlayerBuffering;
       _player.ModeChanged += OnPlayerMode;

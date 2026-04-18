@@ -66,10 +66,6 @@ export function usePlayerFallback(): Player {
     streamer?.goLive(currentProfile)
   }
 
-  // ---------------------------------------------------------------------------
-  // Slot operations
-  // ---------------------------------------------------------------------------
-
   function createSlot(): MseSlot {
     const vid = document.createElement('video')
     vid.className = 'w-full'
@@ -201,10 +197,6 @@ export function usePlayerFallback(): Player {
     state = 'streaming'
   }
 
-  // ---------------------------------------------------------------------------
-  // Wallclock
-  // ---------------------------------------------------------------------------
-
   function extractPrftWallClock(data: Uint8Array): number {
     if (data.length < 40) return 0
     const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
@@ -246,10 +238,6 @@ export function usePlayerFallback(): Player {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Prefetch & slot swap check
-  // ---------------------------------------------------------------------------
-
   function prefetch() {
     if (fetchInFlight || !streamer || !slot || mode.value === 'live') return
     if (state !== 'streaming') return
@@ -283,9 +271,19 @@ export function usePlayerFallback(): Player {
     promoteNextSlot()
   }
 
-  // ---------------------------------------------------------------------------
-  // rAF loop
-  // ---------------------------------------------------------------------------
+  const liveCatchupMaxBoost = 0.1
+  const liveCatchupTauUs = 4_000_000
+
+  function applyLiveCatchup() {
+    if (!slot || mode.value !== 'live' || paused.value) return
+    const vid = slot.video
+    if (vid.buffered.length === 0) return
+    const lagUs = (vid.buffered.end(vid.buffered.length - 1) - vid.currentTime) * 1_000_000
+    const mult = lagUs <= 0 ? 1 : 1 + liveCatchupMaxBoost * (1 - Math.exp(-lagUs / liveCatchupTauUs))
+    const target = rate.value * mult
+    if (Math.abs(vid.playbackRate - target) > 0.005)
+      vid.playbackRate = target
+  }
 
   function startLoop() {
     stopLoop()
@@ -295,6 +293,7 @@ export function usePlayerFallback(): Player {
       if (state === 'streaming' || state === 'buffering-next') {
         prefetch()
         checkSlotSwap()
+        applyLiveCatchup()
       }
       rafId = requestAnimationFrame(tick)
     }
@@ -307,10 +306,6 @@ export function usePlayerFallback(): Player {
       rafId = null
     }
   }
-
-  // ---------------------------------------------------------------------------
-  // State transitions
-  // ---------------------------------------------------------------------------
 
   function enterBlocked() {
     state = 'blocked'
@@ -374,10 +369,6 @@ export function usePlayerFallback(): Player {
     nextSlot = createSlot()
   }
 
-  // ---------------------------------------------------------------------------
-  // Data actions
-  // ---------------------------------------------------------------------------
-
   function commitSeek() {
     if (!slot) return
     if (debug) console.log('COMMITSEEK', 'chunks:', seekBuffer.length)
@@ -386,10 +377,6 @@ export function usePlayerFallback(): Player {
     seekBuffer = []
     enterStreaming()
   }
-
-  // ---------------------------------------------------------------------------
-  // Server input handlers
-  // ---------------------------------------------------------------------------
 
   function handleAck() {
     ignoreData = false
@@ -503,10 +490,6 @@ export function usePlayerFallback(): Player {
     maxRate.value = 4
   }
 
-  // ---------------------------------------------------------------------------
-  // User input handlers
-  // ---------------------------------------------------------------------------
-
   function seek(ts: number) {
     if (debug) console.log('USER SEEK', new Date(ts / 1000).toISOString(), 'state:', state)
     enterSeeking(ts)
@@ -581,10 +564,6 @@ export function usePlayerFallback(): Player {
     else
       seek(timestampUs.value)
   }
-
-  // ---------------------------------------------------------------------------
-  // Lifecycle
-  // ---------------------------------------------------------------------------
 
   function attach(cont: HTMLElement, s: Streamer, cameraId: string, profile: string) {
     container = cont

@@ -1,4 +1,5 @@
 using Client.Core.Api;
+using Client.Core.Decoding;
 using Client.Core.Events;
 using Client.Core.Streaming;
 using Client.Core.Tunnel;
@@ -20,6 +21,8 @@ public static class ServiceCollectionExtensions
     services.AddSingleton<IPlaybackService, PlaybackService>();
     services.AddSingleton<IEventService, EventService>();
     services.AddSingleton<NotificationRouter>();
+    services.AddSingleton<DecodePipelineFactory>();
+    services.AddSingleton<Decoding.Diagnostics.DiagnosticsSettings>();
     services.AddHttpClient();
     services.AddTransient<IEnrollmentClient, EnrollmentClient>();
     services.AddTransient<EnrollmentViewModel>();

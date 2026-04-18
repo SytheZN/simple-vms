@@ -4,9 +4,26 @@
              xmlns:controls="using:Client.Core.Controls"
              x:Class="Client.Desktop.Views.CameraView"
              x:DataType="vm:CameraViewModel">
-  <DockPanel>
-    <!-- Header -->
-    <DockPanel DockPanel.Dock="Top" Margin="0 0 0 12">
+  <UserControl.Styles>
+    <Style Selector="Border.player-card">
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="Border.player-card.fs">
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="0" />
+      <Setter Property="Background" Value="Black" />
+    </Style>
+    <Style Selector="StackPanel.controls-strip.fs">
+      <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}" />
+    </Style>
+    <Style Selector="Border#VideoArea.fs">
+      <Setter Property="CornerRadius" Value="0" />
+    </Style>
+  </UserControl.Styles>
+
+  <DockPanel x:Name="RootDock">
+    <!-- Header (hidden in fullscreen) -->
+    <DockPanel x:Name="HeaderPanel" DockPanel.Dock="Top" Margin="0 0 0 12">
       <Button Classes="btn btn-ghost btn-sm" x:Name="BackButton" DockPanel.Dock="Left">
         <controls:PhosphorIcon Kind="ArrowLeft"
                                     Width="{DynamicResource IconSm}"
@@ -16,149 +33,158 @@
                  VerticalAlignment="Center" Margin="8 0 0 0" />
     </DockPanel>
 
-    <!-- Error -->
-    <controls:ErrorCard DockPanel.Dock="Top"
+    <controls:ErrorCard x:Name="ErrorCardPanel"
+                        DockPanel.Dock="Top"
                         Message="{Binding ErrorMessage}"
                         DebugTag="{Binding ErrorTag}"
                         CopyData="{Binding ErrorJson}"
                         Margin="0 0 0 12" />
 
-    <!-- Player card -->
-    <Border Classes="card" Padding="0" ClipToBounds="True">
-      <DockPanel>
-        <!-- Timeline at bottom -->
-        <Border DockPanel.Dock="Bottom"
-                BorderBrush="{DynamicResource BorderBrush}"
-                BorderThickness="0 1 0 0"
-                Padding="12 8 12 12">
-          <controls:Timeline x:Name="TimelineControl" />
-        </Border>
+    <!-- Player card (chrome stripped in fullscreen) -->
+    <Border x:Name="PlayerCard" Classes="card player-card" ClipToBounds="True">
+      <Grid>
+        <!-- Video area -->
+        <Border x:Name="VideoArea"
+                CornerRadius="{DynamicResource RadiusLgInnerTop}"
+                ClipToBounds="True">
+          <controls:AspectRatioPanel>
+            <controls:VideoPlayer x:Name="VideoPlayerControl"
+                                   MotionFeed="{Binding MotionFeed}" />
 
-        <!-- Transport controls above timeline -->
-        <Border DockPanel.Dock="Bottom"
-                BorderBrush="{DynamicResource BorderBrush}"
-                BorderThickness="0 1 0 0"
-                Padding="16 8">
-          <DockPanel>
-            <!-- Left: play/pause, go-live, rate -->
-            <StackPanel DockPanel.Dock="Left"
-                        Orientation="Horizontal"
-                        Spacing="4"
-                        VerticalAlignment="Center">
-              <Button Classes="btn btn-ghost btn-sm" x:Name="PlayPauseButton">
-                <controls:PhosphorIcon x:Name="PlayPauseIcon" Kind="Pause"
-                                            Width="{DynamicResource IconSm}"
-                                            Height="{DynamicResource IconSm}" />
-              </Button>
-              <Button Classes="btn btn-ghost btn-sm" x:Name="GoLiveButton"
-                      ToolTip.Tip="Jump to live">
-                <controls:PhosphorIcon Kind="SkipForward"
-                                            Width="{DynamicResource IconSm}"
-                                            Height="{DynamicResource IconSm}" />
-              </Button>
-              <!-- Rate slider with ticks -->
-              <StackPanel Orientation="Horizontal" Spacing="4"
-                          VerticalAlignment="Center" x:Name="RatePanel">
-                <StackPanel Width="128">
-                  <Slider x:Name="RateSlider"
-                          Minimum="0" Maximum="16"
-                          Value="8"
-                          IsSnapToTickEnabled="True" TickFrequency="1" />
-                  <Canvas x:Name="RateTickCanvas" Height="8"
-                          Margin="3 0" />
-                </StackPanel>
-                <TextBlock x:Name="RateLabel" Classes="text-muted"
-                           FontSize="{DynamicResource TextXs}"
-                           VerticalAlignment="Center"
-                           Width="28" Text="1x" />
+            <controls:PlaybackStatsOverlay x:Name="StatsOverlay"
+                                           HorizontalAlignment="Left"
+                                           VerticalAlignment="Top"
+                                           Margin="8" />
+
+            <Panel x:Name="BufferingOverlay" IsVisible="False"
+                   Background="#50000000">
+              <controls:Spinner Size="32" HorizontalAlignment="Center"
+                                VerticalAlignment="Center" />
+            </Panel>
+
+            <Panel x:Name="ErrorOverlay" IsVisible="False"
+                   Background="#50000000">
+              <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                          Spacing="{DynamicResource Space2}">
+                <controls:PhosphorIcon x:Name="OverlayIcon" Kind="Warning"
+                                            Width="{DynamicResource IconXl}"
+                                            Height="{DynamicResource IconXl}"
+                                            Foreground="{DynamicResource DangerBrush}"
+                                            HorizontalAlignment="Center" />
+                <TextBlock x:Name="OverlayText" Classes="text-muted"
+                           FontSize="{DynamicResource TextSm}"
+                           HorizontalAlignment="Center" />
+                <Button Classes="btn btn-primary btn-sm" x:Name="RetryButton"
+                        HorizontalAlignment="Center">
+                  Retry
+                </Button>
               </StackPanel>
-            </StackPanel>
+            </Panel>
 
-            <!-- Right: mode badge, resolution, profile, motion -->
-            <StackPanel DockPanel.Dock="Right"
-                        Orientation="Horizontal"
-                        Spacing="8"
-                        VerticalAlignment="Center">
-              <!-- Mode badge -->
-              <Border x:Name="ModeBadge"
-                      Padding="{DynamicResource PaddingBadge}"
-                      CornerRadius="{DynamicResource RadiusFull}"
-                      VerticalAlignment="Center">
-                <StackPanel Orientation="Horizontal" Spacing="4">
-                  <Ellipse x:Name="ModeDot" Width="6" Height="6"
-                           VerticalAlignment="Center" />
-                  <TextBlock x:Name="ModeLabel"
+            <Button Classes="btn btn-sm"
+                    x:Name="FullscreenButton"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Bottom"
+                    Margin="0 0 12 12"
+                    Background="#80000000"
+                    Foreground="White">
+              <controls:PhosphorIcon x:Name="FullscreenIcon" Kind="CornersOut"
+                                          Width="{DynamicResource IconSm}"
+                                          Height="{DynamicResource IconSm}"
+                                          Foreground="White" />
+            </Button>
+          </controls:AspectRatioPanel>
+        </Border>
+
+        <!-- Controls + timeline strip at bottom -->
+        <StackPanel x:Name="ControlsStrip" Classes="controls-strip"
+                    VerticalAlignment="Bottom">
+          <StackPanel.Transitions>
+            <Transitions>
+              <DoubleTransition Property="Opacity" Duration="0:0:0.2" />
+            </Transitions>
+          </StackPanel.Transitions>
+          <Border BorderBrush="{DynamicResource BorderBrush}"
+                  BorderThickness="0 1 0 0"
+                  Padding="16 8">
+            <DockPanel>
+              <StackPanel DockPanel.Dock="Left"
+                          Orientation="Horizontal"
+                          Spacing="4"
+                          VerticalAlignment="Center">
+                <Button Classes="btn btn-ghost btn-sm" x:Name="PlayPauseButton">
+                  <controls:PhosphorIcon x:Name="PlayPauseIcon" Kind="Pause"
+                                              Width="{DynamicResource IconSm}"
+                                              Height="{DynamicResource IconSm}" />
+                </Button>
+                <Button Classes="btn btn-ghost btn-sm" x:Name="GoLiveButton"
+                        ToolTip.Tip="Jump to live">
+                  <controls:PhosphorIcon Kind="SkipForward"
+                                              Width="{DynamicResource IconSm}"
+                                              Height="{DynamicResource IconSm}" />
+                </Button>
+                <StackPanel Orientation="Horizontal" Spacing="4"
+                            VerticalAlignment="Center" x:Name="RatePanel">
+                  <StackPanel Width="128">
+                    <Slider x:Name="RateSlider"
+                            Minimum="0" Maximum="16"
+                            Value="8"
+                            IsSnapToTickEnabled="True" TickFrequency="1" />
+                    <Canvas x:Name="RateTickCanvas" Height="8"
+                            Margin="3 0" />
+                  </StackPanel>
+                  <TextBlock x:Name="RateLabel" Classes="text-muted"
                              FontSize="{DynamicResource TextXs}"
-                             FontFamily="{DynamicResource SansMediumFont}" />
+                             VerticalAlignment="Center"
+                             Width="28" Text="1x" />
                 </StackPanel>
-              </Border>
-              <!-- Profile selector -->
-              <controls:StreamQualitySelector x:Name="QualitySelector" />
-              <!-- Motion toggle -->
-              <Button Classes="btn btn-ghost btn-sm" x:Name="MotionToggle" Opacity="0.5">
-                <controls:PhosphorIcon Kind="PersonArmsSpread"
-                                            Width="{DynamicResource IconSm}"
-                                            Height="{DynamicResource IconSm}" />
-              </Button>
-            </StackPanel>
+              </StackPanel>
 
-            <!-- Center: timestamp -->
-            <TextBlock x:Name="TimestampLabel"
-                       Classes="text-muted"
-                       FontSize="{DynamicResource TextXs}"
-                       HorizontalAlignment="Center"
-                       VerticalAlignment="Center" />
-          </DockPanel>
-        </Border>
+              <StackPanel DockPanel.Dock="Right"
+                          Orientation="Horizontal"
+                          Spacing="8"
+                          VerticalAlignment="Center">
+                <Border x:Name="ModeBadge"
+                        Padding="{DynamicResource PaddingBadge}"
+                        CornerRadius="{DynamicResource RadiusFull}"
+                        VerticalAlignment="Center">
+                  <StackPanel Orientation="Horizontal" Spacing="4">
+                    <Ellipse x:Name="ModeDot" Width="6" Height="6"
+                             VerticalAlignment="Center" />
+                    <TextBlock x:Name="ModeLabel"
+                               FontSize="{DynamicResource TextXs}"
+                               FontFamily="{DynamicResource SansMediumFont}" />
+                  </StackPanel>
+                </Border>
+                <controls:StreamQualitySelector x:Name="QualitySelector" />
+                <Button Classes="btn btn-ghost btn-sm" x:Name="MotionToggle" Opacity="0.5">
+                  <controls:PhosphorIcon Kind="PersonArmsSpread"
+                                              Width="{DynamicResource IconSm}"
+                                              Height="{DynamicResource IconSm}" />
+                </Button>
+                <Button Classes="btn btn-ghost btn-sm" x:Name="FullscreenButtonBar"
+                        IsVisible="False">
+                  <controls:PhosphorIcon x:Name="FullscreenIconBar" Kind="CornersIn"
+                                              Width="{DynamicResource IconSm}"
+                                              Height="{DynamicResource IconSm}" />
+                </Button>
+              </StackPanel>
 
-        <!-- Video area (clipped to top corners so content doesn't overlap card border) -->
-        <Border CornerRadius="{DynamicResource RadiusLgInnerTop}" ClipToBounds="True">
-        <controls:AspectRatioPanel>
-          <controls:VideoPlayer x:Name="VideoPlayerControl"
-                                 MotionFeed="{Binding MotionFeed}" />
+              <TextBlock x:Name="TimestampLabel"
+                         Classes="text-muted"
+                         FontSize="{DynamicResource TextXs}"
+                         HorizontalAlignment="Center"
+                         VerticalAlignment="Center" />
+            </DockPanel>
+          </Border>
 
-          <!-- Buffering overlay -->
-          <Panel x:Name="BufferingOverlay" IsVisible="False"
-                 Background="#50000000">
-            <controls:Spinner Size="32" HorizontalAlignment="Center"
-                              VerticalAlignment="Center" />
-          </Panel>
-
-          <!-- Disconnected/error overlay -->
-          <Panel x:Name="ErrorOverlay" IsVisible="False"
-                 Background="#50000000">
-            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
-                        Spacing="{DynamicResource Space2}">
-              <controls:PhosphorIcon x:Name="OverlayIcon" Kind="Warning"
-                                          Width="{DynamicResource IconXl}"
-                                          Height="{DynamicResource IconXl}"
-                                          Foreground="{DynamicResource DangerBrush}"
-                                          HorizontalAlignment="Center" />
-              <TextBlock x:Name="OverlayText" Classes="text-muted"
-                         FontSize="{DynamicResource TextSm}"
-                         HorizontalAlignment="Center" />
-              <Button Classes="btn btn-primary btn-sm" x:Name="RetryButton"
-                      HorizontalAlignment="Center">
-                Retry
-              </Button>
-            </StackPanel>
-          </Panel>
-
-          <!-- Fullscreen button floating over video -->
-          <Button Classes="btn btn-ghost btn-sm"
-                  x:Name="FullscreenButton"
-                  HorizontalAlignment="Right"
-                  VerticalAlignment="Bottom"
-                  Margin="0 0 12 12"
-                  Opacity="0.8">
-            <controls:PhosphorIcon x:Name="FullscreenIcon" Kind="CornersOut"
-                                        Width="{DynamicResource IconSm}"
-                                        Height="{DynamicResource IconSm}"
-                                        Foreground="{DynamicResource TextInvertedBrush}" />
-          </Button>
-        </controls:AspectRatioPanel>
-        </Border>
-      </DockPanel>
+          <Border BorderBrush="{DynamicResource BorderBrush}"
+                  BorderThickness="0 1 0 0"
+                  Padding="12 8 12 12">
+            <controls:Timeline x:Name="TimelineControl" />
+          </Border>
+        </StackPanel>
+      </Grid>
     </Border>
   </DockPanel>
 </UserControl>

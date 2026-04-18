@@ -32,6 +32,8 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
         OnPropertyChanged(nameof(IsCamera));
         OnPropertyChanged(nameof(IsSettings));
         OnPropertyChanged(nameof(IsEnrolled));
+        OnPropertyChanged(nameof(IsCameraFullscreen));
+        OnPropertyChanged(nameof(IsChromeVisible));
       }
     }
   }
@@ -56,8 +58,18 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
   public bool IsFullscreen
   {
     get => _isFullscreen;
-    set => SetProperty(ref _isFullscreen, value);
+    set
+    {
+      if (SetProperty(ref _isFullscreen, value))
+      {
+        OnPropertyChanged(nameof(IsCameraFullscreen));
+        OnPropertyChanged(nameof(IsChromeVisible));
+      }
+    }
   }
+
+  public bool IsCameraFullscreen => _isFullscreen && _currentView == ViewKind.Camera;
+  public bool IsChromeVisible => IsEnrolled && !IsCameraFullscreen;
 
   public Guid? SelectedCameraId
   {
@@ -72,9 +84,11 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
   public ICommand NavGalleryCommand { get; }
   public ICommand NavCameraCommand { get; }
   public ICommand NavSettingsCommand { get; }
+  public ICommand ToggleDiagnosticsCommand { get; }
 
   public MainWindowViewModel(IServiceProvider services, ITunnelService tunnel,
-    ICredentialStore credentials, ILogger<MainWindowViewModel> logger)
+    ICredentialStore credentials, ILogger<MainWindowViewModel> logger,
+    Client.Core.Decoding.Diagnostics.DiagnosticsSettings diagnostics)
   {
     _services = services;
     _tunnel = tunnel;
@@ -90,6 +104,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
     NavGalleryCommand = new RelayCommand(() => NavigateTo(ViewKind.Gallery));
     NavCameraCommand = new RelayCommand(() => NavigateTo(ViewKind.Camera));
     NavSettingsCommand = new RelayCommand(() => NavigateTo(ViewKind.Settings));
+    ToggleDiagnosticsCommand = new RelayCommand(() => diagnostics.ShowOverlay = !diagnostics.ShowOverlay);
 
     _ = InitAsync();
   }

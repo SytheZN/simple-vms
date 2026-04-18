@@ -26,6 +26,7 @@ public partial class SettingsView : UserControl
     ("1", "Gallery"),
     ("2", "Camera"),
     ("3", "Settings"),
+    ("Ctrl + D", "Toggle stats overlay"),
   ];
 
   private readonly Ellipse _statusDot;
