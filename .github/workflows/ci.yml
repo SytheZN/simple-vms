@@ -61,7 +61,7 @@ jobs:
             dnf-fedora-dotnet10-node-
 
       - name: Install dependencies
-        run: dnf install -y --setopt=keepcache=True dotnet-sdk-10.0 nodejs git
+        run: dnf install -y --setopt=keepcache=True dotnet-sdk-10.0 nodejs git zip
 
       - uses: actions/checkout@v6
         with:
@@ -220,6 +220,62 @@ jobs:
           detect_change ios \
             "src/Client.Core/" "src/Client.iOS/" "src/Shared"
 
+  desktop:
+    permissions:
+      contents: read
+      packages: read
+    needs: [build, changes]
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rid: [linux-x64, linux-arm64, win-x64, win-arm64, osx-x64, osx-arm64]
+    steps:
+      - name: Cache dnf packages
+        uses: actions/cache@v5
+        with:
+          path: /var/cache/dnf
+          key: dnf-fedora-dotnet10-node-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: |
+            dnf-fedora-dotnet10-node-
+
+      - name: Install dependencies
+        run: dnf install -y --setopt=keepcache=True dotnet-sdk-10.0 git zip
+
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Configure git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Packages.props', 'Directory.Build.props') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Authenticate GitHub NuGet feed
+        run: dotnet nuget update source github --username "${{ github.actor }}" --password "${{ secrets.GITHUB_TOKEN }}" --store-password-in-clear-text --configfile nuget.config
+
+      - name: Publish desktop
+        env:
+          BUILD_VERSION: ${{ needs.build.outputs.version }}
+          BUILD_HASH: ${{ needs.build.outputs.hash }}
+          BUILD_RID: ${{ matrix.rid }}
+        run: ./build.sh publish-desktop
+
+      - name: Upload desktop archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-${{ matrix.rid }}
+          path: out/simple-vms-desktop-${{ matrix.rid }}.*
+
   docker:
     permissions:
       contents: read
@@ -286,8 +342,8 @@ jobs:
   release:
     permissions:
       contents: write
-    needs: [build, changes, docker]
-    if: always() && needs.changes.result == 'success' && (needs.docker.result == 'success' || needs.docker.result == 'skipped')
+    needs: [build, changes, docker, desktop]
+    if: always() && needs.changes.result == 'success' && (needs.docker.result == 'success' || needs.docker.result == 'skipped') && (needs.desktop.result == 'success' || needs.desktop.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -300,6 +356,14 @@ jobs:
         with:
           name: server-linux-x64-tarball
           path: out/
+
+      - name: Download desktop artifacts
+        if: needs.changes.outputs.desktop == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          pattern: desktop-*
+          path: out/desktop/
+          merge-multiple: true
 
       - name: Create tagged release
         if: needs.build.outputs.is_tagged == 'true'
@@ -325,6 +389,9 @@ jobs:
           if [ -f out/simple-vms-linux-x64.tar.gz ]; then
             args+=(out/simple-vms-linux-x64.tar.gz)
           fi
+          for asset in out/desktop/simple-vms-desktop-*.tar.gz out/desktop/simple-vms-desktop-*.zip; do
+            [ -f "$asset" ] && args+=("$asset")
+          done
           gh release create "${args[@]}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -348,6 +415,9 @@ jobs:
           if [ -f out/simple-vms-linux-x64.tar.gz ]; then
             args+=(out/simple-vms-linux-x64.tar.gz)
           fi
+          for asset in out/desktop/simple-vms-desktop-*.tar.gz out/desktop/simple-vms-desktop-*.zip; do
+            [ -f "$asset" ] && args+=("$asset")
+          done
           gh release create "${args[@]}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

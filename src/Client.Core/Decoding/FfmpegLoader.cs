@@ -47,6 +47,9 @@ internal static class FfmpegLoader
         return candidate;
     }
 
+    if (File.Exists(Path.Combine(baseDir, MapName("avutil"))))
+      return baseDir;
+
     return null;
   }
 
