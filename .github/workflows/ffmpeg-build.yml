@@ -239,24 +239,21 @@ jobs:
   build-win-x64:
     needs: source
     runs-on: ubuntu-latest
-    container: fedora:latest
+    container: mstorsjo/llvm-mingw:latest
     steps:
-      - name: Cache dnf packages
-        uses: actions/cache@v5
-        with:
-          path: |
-            /var/cache/dnf
-            /var/cache/libdnf5
-          key: dnf-fedora-win-x64-${{ hashFiles('.github/workflows/ffmpeg-build.yml') }}
-          restore-keys: |
-            dnf-fedora-win-x64-
-
       - name: Install toolchain
         run: |
-          dnf install -y --setopt=keepcache=True \
-            gcc gcc-c++ make yasm nasm pkgconf-pkg-config ccache git tar which \
-            mingw64-gcc mingw64-gcc-c++ mingw64-winpthreads \
-            mingw64-vulkan-headers mingw64-vulkan-loader
+          apt-get update
+          apt-get install -y --no-install-recommends yasm nasm pkg-config make curl ca-certificates ccache
+
+      - name: Install Vulkan headers
+        run: |
+          tag=$(curl -sSL https://api.github.com/repos/KhronosGroup/Vulkan-Headers/tags | sed -n 's/.*"name": *"\(v[0-9][^"]*\)".*/\1/p' | head -1)
+          echo "Using Vulkan-Headers $tag"
+          curl -sSL "https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/${tag}.tar.gz" | tar xz
+          mkdir -p /usr/local/include
+          cp -r Vulkan-Headers-*/include/vulkan /usr/local/include/
+          cp -r Vulkan-Headers-*/include/vk_video /usr/local/include/
 
       - name: Cache ccache
         uses: actions/cache@v5
@@ -276,8 +273,6 @@ jobs:
 
       - name: Configure
         working-directory: ffmpeg
-        env:
-          PKG_CONFIG_PATH: /usr/x86_64-w64-mingw32/sys-root/mingw/lib/pkgconfig
         run: |
           chmod +x ../scripts/configure-common.sh
           common_flags=$(../scripts/configure-common.sh | tr '\n' ' ')
@@ -291,7 +286,9 @@ jobs:
             --prefix=$GITHUB_WORKSPACE/install \
             --enable-shared --disable-static \
             --enable-d3d11va --enable-dxva2 --enable-vulkan \
-            --enable-hwaccel=h264_d3d11va,h264_d3d11va2,hevc_d3d11va,hevc_d3d11va2,h264_dxva2,hevc_dxva2,h264_vulkan,hevc_vulkan
+            --enable-hwaccel=h264_d3d11va,h264_d3d11va2,hevc_d3d11va,hevc_d3d11va2,h264_dxva2,hevc_dxva2,h264_vulkan,hevc_vulkan \
+            --extra-cflags="-I/usr/local/include" \
+            --extra-ldflags="-Wl,--delayload=vulkan-1.dll"
 
       - name: Dump config.log on failure
         if: failure()
@@ -369,7 +366,8 @@ jobs:
             --enable-shared --disable-static \
             --enable-d3d11va --enable-dxva2 --enable-vulkan \
             --enable-hwaccel=h264_d3d11va,h264_d3d11va2,hevc_d3d11va,hevc_d3d11va2,h264_dxva2,hevc_dxva2,h264_vulkan,hevc_vulkan \
-            --extra-cflags="-I/usr/local/include"
+            --extra-cflags="-I/usr/local/include" \
+            --extra-ldflags="-Wl,--delayload=vulkan-1.dll"
 
       - name: Dump config.log on failure
         if: failure()
