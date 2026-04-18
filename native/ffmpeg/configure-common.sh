@@ -26,4 +26,5 @@ cat <<'EOF'
 --enable-pic
 --enable-small
 --disable-debug
+--disable-autodetect
 EOF

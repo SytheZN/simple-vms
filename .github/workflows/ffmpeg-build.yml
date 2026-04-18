@@ -96,7 +96,7 @@ jobs:
         run: |
           dnf install -y --setopt=keepcache=True \
             gcc gcc-c++ make yasm nasm pkgconf-pkg-config ccache git tar which \
-            libva-devel libvdpau-devel vulkan-headers vulkan-loader-devel
+            libva-devel vulkan-headers vulkan-loader-devel
 
       - name: Cache ccache
         uses: actions/cache@v5
@@ -124,8 +124,8 @@ jobs:
             --cc="ccache gcc" \
             --prefix=$GITHUB_WORKSPACE/install \
             --enable-shared --disable-static \
-            --enable-vaapi --enable-vdpau --enable-vulkan \
-            --enable-hwaccel=h264_vaapi,hevc_vaapi,h264_vdpau,hevc_vdpau,h264_vulkan,hevc_vulkan
+            --enable-vaapi --enable-vulkan \
+            --enable-hwaccel=h264_vaapi,hevc_vaapi,h264_vulkan,hevc_vulkan
 
       - name: Dump config.log on failure
         if: failure()
