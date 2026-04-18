@@ -27,7 +27,7 @@
     <PackageVersion Include="NUnit3TestAdapter" Version="6.1.0" />
     <PackageVersion Include="Serilog.Extensions.Logging" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
-    <PackageVersion Include="SimpleVms.FFmpeg.Native" Version="8.1.0-9047fa1.27" />
+    <PackageVersion Include="SimpleVms.FFmpeg.Native" Version="8.1.0-9047fa1.28" />
     <PackageVersion Include="SkiaSharp" Version="3.119.3-preview.1.1" />
     <PackageVersion Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
     <PackageVersion Include="Tmds.DBus.Protocol" Version="0.92.0" />
