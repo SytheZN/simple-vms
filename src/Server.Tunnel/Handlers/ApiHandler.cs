@@ -59,6 +59,18 @@ internal static class ApiHandler
         Message = ex.Message
       };
     }
+    catch (OperationCanceledException) { throw; }
+    catch (Exception ex)
+    {
+      logger.LogError(ex, "Unhandled exception dispatching {Method} {Path}",
+        request.Method, request.Path);
+      envelope = new ResponseEnvelope
+      {
+        Result = Result.InternalError,
+        DebugTag = new DebugTag(ModuleIds.Tunnel, 0x0003),
+        Message = ex.Message
+      };
+    }
 
     var response = new ApiResponseMessage
     {

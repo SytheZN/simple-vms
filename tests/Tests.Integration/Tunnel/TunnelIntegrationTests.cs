@@ -287,7 +287,7 @@ public sealed class TunnelIntegrationTests
   /// Swap _creds.CaCert for a freshly generated unrelated CA, attempt to connect
   ///
   /// EXPECTED RESULT:
-  /// TLS handshake fails with a bad_certificate alert — PinnedAuthentication rejects
+  /// TLS handshake fails with a bad_certificate alert - PinnedAuthentication rejects
   /// the server cert because it is not signed by the pinned CA.
   /// </summary>
   [Test, Order(10)]
@@ -328,7 +328,7 @@ public sealed class TunnelIntegrationTests
   /// EXPECTED RESULT:
   /// All calls succeed. Note: outbound records all come through the mux write lock,
   /// so this guards against the BC blocking-mode deadlock (writer blocked waiting for a
-  /// read) — it does NOT exercise concurrent record production from the read side
+  /// read) - it does NOT exercise concurrent record production from the read side
   /// (post-handshake messages). A targeted test for that would need a way to force
   /// read-side record emission alongside steady app-data traffic.
   /// </summary>
@@ -351,8 +351,14 @@ public sealed class TunnelIntegrationTests
     var all = Task.WhenAll(tasks);
     await all.WaitAsync(timeout.Token);
 
-    foreach (var t in tasks)
-      Assert.That(t.Result.IsT0, Is.True);
+    for (var i = 0; i < tasks.Length; i++)
+    {
+      var result = tasks[i].Result;
+      var detail = result.IsT1
+        ? $"{result.AsT1.Tag} result={result.AsT1.Result} message={result.AsT1.Message}"
+        : "";
+      Assert.That(result.IsT0, Is.True, $"task {i} failed: {detail}");
+    }
 
     await tunnel.DisconnectAsync();
   }

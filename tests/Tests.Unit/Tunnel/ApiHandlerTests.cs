@@ -1,11 +1,15 @@
+using System.Net.Http;
 using System.Threading.Channels;
 using MessagePack;
 using Microsoft.Extensions.Logging.Abstractions;
 using Server.Core;
 using Server.Core.Routing;
 using Server.Core.Services;
+using Server.Core.PortForwarding;
+using Server.Plugins;
 using Server.Tunnel.Handlers;
 using Shared.Models;
+using Shared.Models.Dto;
 using Shared.Protocol;
 using Tests.Unit.Streaming;
 
@@ -26,7 +30,59 @@ public class ApiHandlerTests
     _services = new FakeServiceProvider();
     var health = new SystemHealth();
     health.TransitionToHealthy();
-    _services.Register(new SystemService(new SessionTestPluginHost(), health));
+    var pluginHost = new SessionTestPluginHost(new StubDataProviderWithConfig());
+    var endpoints = new ServerEndpoints { TunnelPort = 4433 };
+    _services.Register(new SystemService(
+      pluginHost, health, endpoints, new NoopPortForwardingApplier(), new StubHttpClientFactory(),
+      NullLogger<SystemService>.Instance));
+  }
+
+  private sealed class NoopPortForwardingApplier : IPortForwardingApplier
+  {
+    public Task<OneOf<Success, Error>> ApplyAsync(CancellationToken ct) =>
+      Task.FromResult<OneOf<Success, Error>>(new Success());
+    public PortForwardingStatus GetStatus() => new() { Active = false };
+  }
+
+  private sealed class StubHttpClientFactory : IHttpClientFactory
+  {
+    public HttpClient CreateClient(string name) => new();
+  }
+
+  private sealed class StubDataProviderWithConfig : IDataProvider
+  {
+    public string ProviderId => "test";
+    public ICameraRepository Cameras => null!;
+    public IStreamRepository Streams => null!;
+    public ISegmentRepository Segments => null!;
+    public IKeyframeRepository Keyframes => null!;
+    public IEventRepository Events => null!;
+    public IClientRepository Clients => null!;
+    public IConfigRepository Config { get; } = new StubConfigRepository();
+    public IDataStore GetDataStore(string pluginId) => null!;
+  }
+
+  private sealed class StubConfigRepository : IConfigRepository
+  {
+    public Task<OneOf<string?, Error>> GetAsync(
+      string pluginId, string key, CancellationToken ct) =>
+      Task.FromResult<OneOf<string?, Error>>((string?)null);
+
+    public Task<OneOf<IReadOnlyDictionary<string, string>, Error>> GetAllAsync(
+      string pluginId, CancellationToken ct) =>
+      Task.FromResult<OneOf<IReadOnlyDictionary<string, string>, Error>>(
+        new Dictionary<string, string>
+        {
+          ["server.internalEndpoint"] = "192.168.1.50:4433"
+        });
+
+    public Task<OneOf<Success, Error>> SetAsync(
+      string pluginId, string key, string value, CancellationToken ct) =>
+      Task.FromResult<OneOf<Success, Error>>(new Success());
+
+    public Task<OneOf<Success, Error>> DeleteAsync(
+      string pluginId, string key, CancellationToken ct) =>
+      Task.FromResult<OneOf<Success, Error>>(new Success());
   }
 
   /// <summary>

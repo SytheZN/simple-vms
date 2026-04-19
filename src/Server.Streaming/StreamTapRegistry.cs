@@ -32,7 +32,7 @@ public sealed class StreamTapRegistry : IStreamTap
     Guid cameraId, string profile, CancellationToken ct)
   {
     if (!_pipelines.TryGetValue((cameraId, profile), out var pipeline))
-      return Error.Create(ModuleIds.Streaming, 0x0001, Result.NotFound,
+      return Error.Create(ModuleIds.Streaming, 0x0004, Result.NotFound,
         $"No pipeline for camera {cameraId} profile '{profile}'");
 
     return await pipeline.SubscribeVideoAsync(ct);

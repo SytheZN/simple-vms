@@ -223,7 +223,7 @@ public sealed class CameraService
     var provider = _plugins.CameraProviders.FirstOrDefault(p => p.ProviderId == camera.ProviderId)
       ?? _plugins.CameraProviders.FirstOrDefault();
     if (provider == null)
-      return new Error(Result.BadRequest, new DebugTag(ModuleIds.CameraManagement, 0x0001),
+      return new Error(Result.BadRequest, new DebugTag(ModuleIds.CameraManagement, 0x0004),
         "No camera provider available");
 
     Credentials creds;
@@ -248,7 +248,7 @@ public sealed class CameraService
     }
     catch (Exception ex)
     {
-      return new Error(Result.InternalError, new DebugTag(ModuleIds.CameraManagement, 0x0003),
+      return new Error(Result.InternalError, new DebugTag(ModuleIds.CameraManagement, 0x0005),
         $"Failed to configure camera: {ex.Message}");
     }
 
@@ -349,7 +349,7 @@ public sealed class CameraService
   {
     return Task.FromResult<OneOf<Success, Error>>(new Error(
       Result.Unavailable,
-      new DebugTag(ModuleIds.CameraManagement, 0x0010),
+      new DebugTag(ModuleIds.CameraManagement, 0x0006),
       "Streaming pipeline not available"));
   }
 
@@ -357,7 +357,7 @@ public sealed class CameraService
   {
     return Task.FromResult<OneOf<byte[], Error>>(new Error(
       Result.Unavailable,
-      new DebugTag(ModuleIds.CameraManagement, 0x0011),
+      new DebugTag(ModuleIds.CameraManagement, 0x0007),
       "Snapshot not available"));
   }
 

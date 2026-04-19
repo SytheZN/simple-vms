@@ -159,6 +159,29 @@ public sealed class PluginHost : IPluginHost
   }
 
   [RequiresUnreferencedCode("Plugin types are instantiated dynamically")]
+  public void ResetErrored()
+  {
+    foreach (var entry in _plugins.Where(p => p.State == PluginState.Error))
+    {
+      entry.Plugin = (IPlugin)Activator.CreateInstance(entry.PluginType)!;
+      entry.Metadata = entry.Plugin.Metadata;
+      entry.State = PluginState.Discovered;
+      entry.ErrorMessage = null;
+
+      var context = BuildContext(entry);
+      var result = entry.Plugin.Initialize(context);
+      if (result.IsT1)
+      {
+        entry.State = PluginState.Error;
+        entry.ErrorMessage = result.AsT1.Message;
+        _logger.LogError(
+          "ResetErrored: re-initialise failed for plugin {Id}: {Message}",
+          entry.Metadata.Id, result.AsT1.Message);
+      }
+    }
+  }
+
+  [RequiresUnreferencedCode("Plugin types are instantiated dynamically")]
   private void ReinstantiatePlugins()
   {
     ClearExtensionPoints();

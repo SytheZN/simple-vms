@@ -9,8 +9,20 @@ if [ -n "${BUILD_VERSION:-}" ]; then
   VERSION_ARGS=(-p:Version="$BUILD_VERSION")
 fi
 
+COMMON_ARGS=(--tl:on)
+TEST_CONSOLE_LOGGER=()
+QUIET=0
+if [ "${BUILD_VERBOSITY:-}" = "quiet" ]; then
+  COMMON_ARGS+=(-v quiet)
+  TEST_CONSOLE_LOGGER=(--logger "console;verbosity=quiet")
+  QUIET=1
+fi
+
 build() {
-  dotnet build "$SOLUTION_DIR/Solution.slnx" -c Release --no-incremental "${VERSION_ARGS[@]}"
+  dotnet build "$SOLUTION_DIR/Solution.slnx" -c Release --no-incremental \
+    "${COMMON_ARGS[@]}" "${VERSION_ARGS[@]}"
+  [ "$QUIET" = 1 ] && echo "Build Succeeded"
+  return 0
 }
 
 test() {
@@ -22,10 +34,12 @@ test() {
   for proj in "$SOLUTION_DIR"/src/plugins/*/*/*.csproj; do
     local name
     name="$(basename "$(dirname "$proj")")"
-    dotnet publish "$proj" -c Release --no-build -o "$test_plugins_dir/$name"
+    dotnet publish "$proj" -c Release --no-build \
+      "${COMMON_ARGS[@]}" -o "$test_plugins_dir/$name"
   done
 
   dotnet test "$SOLUTION_DIR/Solution.slnx" -c Release --no-build \
+    "${COMMON_ARGS[@]}" "${TEST_CONSOLE_LOGGER[@]}" \
     --collect:"XPlat Code Coverage" \
     --settings "$SOLUTION_DIR/coverage.runsettings" \
     --logger "trx;LogFileName=results.trx" \
@@ -34,15 +48,19 @@ test() {
   local reports
   reports=$(find "$OUT_DIR/test-results" -name "coverage.cobertura.xml" -printf "%p;" 2>/dev/null)
   if [ -n "$reports" ]; then
-    dotnet tool restore
+    dotnet tool restore > /dev/null
     dotnet tool run reportgenerator \
       -reports:"${reports%;}" \
       -targetdir:"$OUT_DIR/test-results/coverage" \
       -reporttypes:Cobertura\;TextSummary \
       > /dev/null
 
-    cat "$OUT_DIR/test-results/coverage/Summary.txt"
+    [ "$QUIET" = 1 ] && echo "  $OUT_DIR/test-results/coverage/Summary.txt"
+    [ "$QUIET" = 1 ] || cat "$OUT_DIR/test-results/coverage/Summary.txt"
   fi
+
+  [ "$QUIET" = 1 ] && echo "Test Succeeded"
+  return 0
 }
 
 if [ $# -eq 0 ]; then
@@ -50,6 +68,7 @@ if [ $# -eq 0 ]; then
   echo ""
   echo "Environment:"
   echo "  BUILD_VERSION    Version string (default: from Directory.Build.props)"
+  echo "  BUILD_VERBOSITY  'quiet' suppresses output except warnings and errors"
   echo ""
   echo "For publishing and packaging, see scripts/publish/*.sh"
   exit 1

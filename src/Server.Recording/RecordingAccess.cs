@@ -61,7 +61,7 @@ public sealed class RecordingAccess : IRecordingAccess
 
     var match = streamsResult.AsT0.FirstOrDefault(s => s.Profile == profile);
     if (match == null)
-      return Error.Create(ModuleIds.Recording, 0x0001, Result.NotFound,
+      return Error.Create(ModuleIds.Recording, 0x0004, Result.NotFound,
         $"No stream with profile '{profile}' for camera {cameraId}");
 
     return match;

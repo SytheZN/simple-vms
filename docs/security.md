@@ -19,6 +19,7 @@ See [architecture.md#threat-model](architecture.md#threat-model) for the short f
 
 - Port-forward the tunnel port only (4433 by default). Never forward the HTTP port (8080 by default) - it serves the unauthenticated web UI and the enrollment API.
 - UPnP-driven forwarding of the tunnel port is acceptable but inherits the router's UPnP implementation quality. Operators on CGNAT or with UPnP disabled must forward manually.
+- UPnP mode restricts the external port to 20000-60000 to avoid inadvertently exposing a router-side port clients associate with a well-known service. For an external port outside that range, forward manually.
 - Segregate cameras onto a separate VLAN or SSID if the LAN includes devices not under the operator's control. Cameras are the softest class of device on a typical home network and a compromised camera has a direct path into the server process.
 
 ## Revocation

@@ -1,8 +1,6 @@
 using System.Collections.Concurrent;
-using System.Net;
-using System.Net.NetworkInformation;
-using System.Net.Sockets;
 using System.Security.Cryptography;
+using Server.Core;
 using Server.Plugins;
 using Shared.Models;
 using Shared.Models.Dto;
@@ -106,38 +104,24 @@ public sealed class EnrollmentService
     var addresses = new List<string>();
     var port = _endpoints.TunnelPort;
 
-    foreach (var ip in GetLocalIps())
-      addresses.Add($"{ip}:{port}");
-
-    try
+    var settings = await _plugins.DataProvider.Config.GetAllAsync("server", ct);
+    if (settings.IsT0)
     {
-      var settings = await _plugins.DataProvider.Config.GetAllAsync("server", ct);
-      if (settings.IsT0)
-      {
-        var externalEndpoint = settings.AsT0.GetValueOrDefault("server.externalEndpoint");
-        if (!string.IsNullOrWhiteSpace(externalEndpoint))
-        {
-          var ext = externalEndpoint.Contains(':')
-            ? externalEndpoint
-            : $"{externalEndpoint}:{port}";
-          addresses.Add(ext);
-        }
-      }
+      var map = settings.AsT0;
+
+      var internalEndpoint = map.GetValueOrDefault("server.internalEndpoint");
+      if (!string.IsNullOrWhiteSpace(internalEndpoint))
+        addresses.Add(HostPort.NormalizeEndpoint(internalEndpoint, port));
+
+      var externalHost = map.GetValueOrDefault("server.externalHost");
+      var externalPortStr = map.GetValueOrDefault("server.externalPort");
+      if (!string.IsNullOrWhiteSpace(externalHost)
+          && int.TryParse(externalPortStr, out var externalPort))
+        addresses.Add($"{externalHost}:{externalPort}");
     }
-    catch { }
 
     return [.. addresses];
   }
-
-  private static List<string> GetLocalIps() =>
-    NetworkInterface.GetAllNetworkInterfaces()
-      .Where(ni => ni.OperationalStatus == OperationalStatus.Up
-                && ni.NetworkInterfaceType != NetworkInterfaceType.Loopback)
-      .SelectMany(ni => ni.GetIPProperties().UnicastAddresses)
-      .Where(a => a.Address.AddressFamily == AddressFamily.InterNetwork
-               && !IPAddress.IsLoopback(a.Address))
-      .Select(a => a.Address.ToString())
-      .ToList();
 
   private static string GenerateToken()
   {

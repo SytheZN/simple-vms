@@ -3,6 +3,9 @@ services:
     image: ghcr.io/sythezn/simple-vms:latest
     restart: unless-stopped
     ports:
+      # Tunnel port: the host port MUST match the container port.
+      # UPnP maps the router's external port to this port directly; a mismatched
+      # host mapping (e.g. 8443:4433) will make UPnP-forwarded connections fail.
       - "4433:4433"
       - "8080:8080"
     volumes:

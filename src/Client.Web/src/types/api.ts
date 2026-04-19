@@ -158,6 +158,13 @@ export interface HealthResponse {
   status: string
   uptime: number
   version: string
+  tunnelPort: number
+  missingSettings?: string[]
+}
+
+export interface VerifyRemoteAddressResponse {
+  publicIp: string
+  resolvedIps?: string[]
 }
 
 export interface StorageResponse {
@@ -180,11 +187,28 @@ export interface StorageBreakdownItem {
   durationMicros: number
 }
 
+export type RemoteAccessMode = 'none' | 'manual' | 'upnp'
+
+export interface PortForwardingStatus {
+  active: boolean
+  protocol?: 'nat-pmp' | 'upnp'
+  externalPort?: number
+  internalPort?: number
+  lastError?: string
+  lastAppliedAtMicros?: number
+}
+
 export interface ServerSettings {
   serverName?: string
-  externalEndpoint?: string
+  internalEndpoint?: string
+  mode?: RemoteAccessMode
+  externalHost?: string
+  externalPort?: number
+  upnpRouterAddress?: string
   segmentDuration?: number
   discoverySubnets?: string[]
+  legacyExternalEndpoint?: string
+  portForwardingStatus?: PortForwardingStatus
 }
 
 export interface PluginListItem {

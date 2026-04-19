@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Server.Api;
 using Server.Core;
 using Server.Core.Routing;
+using Server.Core.Services;
 using Server.Logging;
 using Server.Plugins;
 using Server.Recording;
@@ -143,8 +144,7 @@ public static class AppSetup
     {
       _loggerProvider?.EnableDataDir(app.Configuration["data-path"]!);
       systemHealth.TransitionToStarting();
-      await CompleteStartupAsync(app);
-      systemHealth.TransitionToHealthy();
+      await CompleteStartupAsync(app, systemHealth);
     }
     else
     {
@@ -156,18 +156,40 @@ public static class AppSetup
 
   [RequiresUnreferencedCode("Plugin initialization uses dynamic type instantiation")]
   [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]
-  internal static async Task CompleteStartupAsync(WebApplication app)
+  internal static async Task CompleteStartupAsync(WebApplication app, SystemHealth systemHealth)
+  {
+    var pluginHost = app.Services.GetRequiredService<IPluginHost>();
+    var tapRegistry = app.Services.GetRequiredService<StreamTapRegistry>();
+    var eventBus = app.Services.GetRequiredService<IEventBus>();
+
+    pluginHost.SetStreamTap(tapRegistry);
+
+    pluginHost.Initialize();
+    await pluginHost.StartAsync(app.Lifetime.ApplicationStopping);
+
+    if (!IsDataProviderRunning(pluginHost))
+    {
+      systemHealth.TransitionToDegraded();
+      _ = RetryDataProviderAsync(app, systemHealth);
+      return;
+    }
+
+    await FinaliseStartupAsync(app, systemHealth);
+  }
+
+  [RequiresUnreferencedCode("Plugin initialization uses dynamic type instantiation")]
+  [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]
+  private static async Task FinaliseStartupAsync(WebApplication app, SystemHealth systemHealth)
   {
     var pluginHost = app.Services.GetRequiredService<IPluginHost>();
     var tapRegistry = app.Services.GetRequiredService<StreamTapRegistry>();
     var statusTracker = app.Services.GetRequiredService<CameraStatusTracker>();
     var eventBus = app.Services.GetRequiredService<IEventBus>();
+    var systemService = app.Services.GetRequiredService<SystemService>();
 
-    pluginHost.SetStreamTap(tapRegistry);
+    await systemService.RecomputeMissingSettingsAsync(app.Lifetime.ApplicationStopping);
+
     WatchCameraStatus(eventBus, statusTracker, app.Lifetime.ApplicationStopping);
-
-    pluginHost.Initialize();
-    await pluginHost.StartAsync(app.Lifetime.ApplicationStopping);
 
     var cameraRegistry = new CameraRegistry(pluginHost.DataProvider, statusTracker);
     pluginHost.SetCameraRegistry(cameraRegistry);
@@ -206,6 +228,66 @@ public static class AppSetup
       app.Services,
       app.Services.GetRequiredService<ILoggerFactory>());
     await _tunnelService.StartAsync(app.Lifetime.ApplicationStopping);
+
+    systemHealth.TransitionToHealthy();
+  }
+
+  private static bool IsDataProviderRunning(IPluginHost pluginHost)
+  {
+    var running = pluginHost.Plugins.FirstOrDefault(p =>
+      p.ExtensionPoints.Contains("data") && p.State == PluginState.Running);
+    return running != null;
+  }
+
+  [RequiresUnreferencedCode("Plugin types are instantiated dynamically")]
+  [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]
+  private static async Task RetryDataProviderAsync(WebApplication app, SystemHealth systemHealth)
+  {
+    var ct = app.Lifetime.ApplicationStopping;
+    var pluginHost = app.Services.GetRequiredService<IPluginHost>();
+    var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("DataProviderRetry");
+
+    try
+    {
+      while (!ct.IsCancellationRequested && systemHealth.Status == "degraded")
+      {
+        try { await Task.Delay(TimeSpan.FromSeconds(30), ct); }
+        catch (OperationCanceledException) { break; }
+
+        logger.LogInformation("Retrying data provider start");
+        try
+        {
+          pluginHost.ResetErrored();
+          await pluginHost.StartAsync(ct);
+        }
+        catch (Exception ex)
+        {
+          logger.LogWarning(ex, "Data provider retry failed; will try again");
+          continue;
+        }
+
+        if (IsDataProviderRunning(pluginHost))
+        {
+          logger.LogInformation("Data provider is now running; completing startup");
+          systemHealth.TransitionToStarting();
+          try
+          {
+            await FinaliseStartupAsync(app, systemHealth);
+          }
+          catch (Exception ex)
+          {
+            logger.LogError(ex, "Finalising startup failed after data provider recovery");
+            systemHealth.TransitionToUnhealthy();
+          }
+          return;
+        }
+      }
+    }
+    catch (Exception ex)
+    {
+      logger.LogError(ex, "Data provider retry loop terminated unexpectedly");
+      systemHealth.TransitionToUnhealthy();
+    }
   }
 
   private static bool TryInitializeCerts(WebApplication app, CertificateManager certManager)
@@ -246,8 +328,7 @@ public static class AppSetup
       {
         _loggerProvider?.EnableDataDir(app.Configuration["data-path"]!);
         systemHealth.TransitionToStarting();
-        await CompleteStartupAsync(app);
-        systemHealth.TransitionToHealthy();
+        await CompleteStartupAsync(app, systemHealth);
         return;
       }
     }

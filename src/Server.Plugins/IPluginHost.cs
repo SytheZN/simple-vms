@@ -24,6 +24,8 @@ public interface IPluginHost
   void Discover(string pluginsPath);
   [RequiresUnreferencedCode("Plugin initialization uses dynamic type instantiation")]
   void Initialize(bool dataOnly = false);
+  [RequiresUnreferencedCode("Plugin types are instantiated dynamically")]
+  void ResetErrored();
   Task StartAsync(CancellationToken ct);
   Task StopAsync();
 }

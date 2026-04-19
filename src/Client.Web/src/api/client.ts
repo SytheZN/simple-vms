@@ -15,11 +15,14 @@ import type {
   CameraEvent,
   RetentionPolicy,
   HealthResponse,
+  VerifyRemoteAddressResponse,
   StorageResponse,
   ServerSettings,
   PluginListItem,
   SettingGroup,
 } from '@/types/api'
+
+import router from '@/router'
 
 class ApiError extends Error {
   result: string
@@ -32,6 +35,47 @@ class ApiError extends Error {
   }
 }
 
+type ConfigurationReason =
+  | 'missing-certs'
+  | 'starting'
+  | 'data-provider-unavailable'
+  | 'missing-settings'
+
+class ConfigurationRequiredError extends Error {
+  reason: ConfigurationReason
+  missing?: string[]
+  constructor(reason: ConfigurationReason, missing?: string[]) {
+    super(`configuration-required: ${reason}`)
+    this.reason = reason
+    this.missing = missing
+  }
+}
+
+async function handleConfigurationRequired(res: Response): Promise<ConfigurationRequiredError | null> {
+  let body: { error?: string; reason?: string; missing?: string[] } | null = null
+  try {
+    body = await res.clone().json()
+  } catch {
+    return null
+  }
+  if (body?.error !== 'configuration-required' || !body.reason) return null
+
+  const reason = body.reason as ConfigurationReason
+  const currentName = router.currentRoute.value.name
+  switch (reason) {
+    case 'missing-certs':
+    case 'data-provider-unavailable':
+      if (currentName !== 'setup') await router.replace('/setup')
+      break
+    case 'missing-settings':
+      if (currentName !== 'setup-complete') await router.replace('/setup/complete')
+      break
+    case 'starting':
+      break
+  }
+  return new ConfigurationRequiredError(reason, body.missing)
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const init: RequestInit = {
     method,
@@ -41,6 +85,12 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
   const res = await fetch(path, init)
   if (res.status === 204) return undefined as T
+
+  if (res.status === 412) {
+    const configError = await handleConfigurationRequired(res)
+    if (configError) throw configError
+    throw new ApiError('preconditionFailed', '', 'Precondition failed')
+  }
 
   const envelope: ResponseEnvelope<T> = await res.json()
   if (envelope.result !== 'success' && envelope.result !== 'created') {
@@ -130,6 +180,9 @@ export const api = {
     storage: () => get<StorageResponse>('/api/v1/system/storage'),
     settings: () => get<ServerSettings>('/api/v1/system/settings'),
     updateSettings: (body: ServerSettings) => put<void>('/api/v1/system/settings', body),
+    verifyRemoteAddress: (host?: string) =>
+      get<VerifyRemoteAddressResponse>(
+        `/api/v1/system/verify-remote-address${qs({ host })}`),
     generateCerts: () => post<void>('/api/v1/system/certs'),
   },
 
@@ -146,4 +199,5 @@ export const api = {
 
 }
 
-export { ApiError }
+export { ApiError, ConfigurationRequiredError }
+export type { ConfigurationReason }

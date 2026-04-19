@@ -3,6 +3,7 @@ using Server.Api.Middleware;
 using Server.Core;
 using Server.Core.Routing;
 using Server.Core.Services;
+using Server.Core.PortForwarding;
 
 namespace Server.Api;
 
@@ -21,6 +22,10 @@ public static class ApiExtensions
     services.AddSingleton<RetentionService>();
     services.AddSingleton<SystemService>();
     services.AddSingleton<PluginService>();
+    services.AddHttpClient("upnp", c => c.Timeout = TimeSpan.FromSeconds(10));
+    services.AddSingleton<PortForwardingService>();
+    services.AddSingleton<IPortForwardingApplier>(sp => sp.GetRequiredService<PortForwardingService>());
+    services.AddHostedService(sp => sp.GetRequiredService<PortForwardingService>());
 
     var dispatcher = new ApiDispatcher();
     ApiRoutes.Register(dispatcher);
@@ -31,6 +36,7 @@ public static class ApiExtensions
 
   public static WebApplication UseApiMiddleware(this WebApplication app)
   {
+    app.UseMiddleware<ConfigurationRequiredMiddleware>();
     app.UseMiddleware<CancellationMiddleware>();
     app.UseMiddleware<AuthMiddleware>();
     app.UseMiddleware<AuthzMiddleware>();

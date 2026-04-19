@@ -108,24 +108,52 @@ public sealed class SystemTests
   /// Settings have been previously set
   ///
   /// ACTION:
-  /// PUT /api/v1/system/settings with only externalEndpoint
+  /// PUT with mode=manual + externalHost + externalPort, then PUT with only serverName
   ///
   /// EXPECTED RESULT:
-  /// Only the specified field is updated; other fields remain unchanged
+  /// The remote access fields are preserved across the partial update
   /// </summary>
   [Test]
-  public async Task Settings_PartialUpdate()
+  public async Task Settings_PartialUpdate_PreservesRemoteAccess()
   {
     await _client.PutAsJsonAsync("/api/v1/system/settings",
-      new { serverName = "Partial Test" });
+      new { mode = "manual", externalHost = "myhome.ddns.net", externalPort = 443 });
 
     await _client.PutAsJsonAsync("/api/v1/system/settings",
-      new { externalEndpoint = "myhome.ddns.net" });
+      new { serverName = "Partial Test" });
 
     var body = (await ApiTestFixture.Envelope<ServerSettings>(
       await _client.GetAsync("/api/v1/system/settings"))).Body!;
     Assert.That(body.ServerName, Is.EqualTo("Partial Test"));
-    Assert.That(body.ExternalEndpoint, Is.EqualTo("myhome.ddns.net"));
+    Assert.That(body.ExternalHost, Is.EqualTo("myhome.ddns.net"));
+    Assert.That(body.ExternalPort, Is.EqualTo(443));
+    Assert.That(body.Mode, Is.EqualTo(RemoteAccessMode.Manual));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Admin picks UPnP mode with an out-of-range port
+  ///
+  /// ACTION:
+  /// PUT /api/v1/system/settings with mode=upnp and externalPort=443
+  ///
+  /// EXPECTED RESULT:
+  /// 400 BadRequest - UPnP port must be 20000-60000
+  /// </summary>
+  [Test]
+  public async Task Settings_UpnpRejectsWellKnownPorts()
+  {
+    var response = await _client.PutAsJsonAsync("/api/v1/system/settings",
+      new
+      {
+        mode = "upnp",
+        externalHost = "myhome.ddns.net",
+        externalPort = 443,
+        upnpRouterAddress = "192.168.1.1"
+      });
+
+    var envelope = await ApiTestFixture.Envelope<object>(response);
+    Assert.That(envelope.Result, Is.EqualTo(Result.BadRequest));
   }
 
   /// <summary>

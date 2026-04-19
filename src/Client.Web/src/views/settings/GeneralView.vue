@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { api, ApiError } from '@/api/client'
 import { useTheme } from '@/stores/theme'
 import type { HealthResponse, ServerSettings } from '@/types/api'
+import { validateHostOrIp } from '@/lib/validation/networkEndpoints'
+import RemoteAccessSection from '@/components/settings/RemoteAccessSection.vue'
 
 const { preference: themePreference } = useTheme()
 
@@ -10,6 +12,8 @@ const error = ref('')
 const saving = ref(false)
 const health = ref<HealthResponse | null>(null)
 const settings = ref<ServerSettings>({})
+const loaded = ref<ServerSettings>({})
+const remoteValid = ref(true)
 
 async function load() {
   try {
@@ -18,21 +22,50 @@ async function load() {
       api.system.settings(),
     ])
     health.value = h
-    settings.value = s
+    settings.value = { ...s }
+    loaded.value = { ...s }
   } catch (e) {
     if (e instanceof ApiError) error.value = e.message
   }
 }
 
+const READONLY_KEYS = new Set<keyof ServerSettings>(['portForwardingStatus', 'legacyExternalEndpoint'])
+
+function diff(current: ServerSettings, previous: ServerSettings): ServerSettings {
+  const out: ServerSettings = {}
+  const keys = new Set([
+    ...Object.keys(current),
+    ...Object.keys(previous)
+  ]) as Set<keyof ServerSettings>
+  for (const key of keys) {
+    if (READONLY_KEYS.has(key)) continue
+    if (JSON.stringify(current[key]) !== JSON.stringify(previous[key]))
+      (out as Record<string, unknown>)[key] = current[key]
+  }
+  return out
+}
+
+const internalError = computed(() => {
+  const v = settings.value.internalEndpoint?.trim() ?? ''
+  if (!v) return ''
+  const r = validateHostOrIp(v, { allowPort: true, fieldLabel: 'Internal address' })
+  return r.valid ? '' : r.error ?? ''
+})
+
+const canSave = computed(() => !internalError.value && remoteValid.value)
+
 async function save() {
+  if (!canSave.value) return
+  const patch = diff(settings.value, loaded.value)
   saving.value = true
   error.value = ''
   try {
-    await api.system.updateSettings(settings.value)
+    await api.system.updateSettings(patch)
   } catch (e) {
     if (e instanceof ApiError) error.value = e.message
   } finally {
     saving.value = false
+    await load()
   }
 }
 
@@ -114,19 +147,28 @@ onMounted(load)
       <h2 class="section-subheading">Server</h2>
       <div class="card p-6 space-y-4">
         <div class="space-y-1">
-          <label class="label">Server Name</label>
+          <label class="label">Server name</label>
           <input class="input" v-model="settings.serverName" placeholder="My VMS" />
         </div>
         <div class="space-y-1">
-          <label class="label">External Endpoint</label>
-          <input class="input" v-model="settings.externalEndpoint" placeholder="myhome.ddns.net:443" />
+          <label class="label">Internal address</label>
+          <p class="text-xs text-text-muted">The hostname or IP other devices on your LAN use to reach this server.</p>
+          <input class="input" v-model="settings.internalEndpoint" placeholder="vms.local or 192.168.1.50" />
+          <p v-if="internalError" class="text-xs text-danger">{{ internalError }}</p>
         </div>
-        <button class="btn btn-primary" :disabled="saving" @click="save">
-          <div v-if="saving" class="spinner spinner-sm"></div>
-          <i v-else class="ph ph-floppy-disk icon-sm"></i>
-          {{ saving ? 'Saving...' : 'Save' }}
-        </button>
       </div>
     </section>
+
+    <RemoteAccessSection
+      v-model="settings"
+      :tunnel-port-hint="health?.tunnelPort"
+      @validity="remoteValid = $event"
+    />
+
+    <button class="btn btn-primary" :disabled="saving || !canSave" @click="save">
+      <div v-if="saving" class="spinner spinner-sm"></div>
+      <i v-else class="ph ph-floppy-disk icon-sm"></i>
+      {{ saving ? 'Saving...' : 'Save' }}
+    </button>
   </div>
 </template>

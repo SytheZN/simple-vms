@@ -72,7 +72,7 @@ public sealed class EnrollmentClient : IEnrollmentClient
 
     if (envelope == null)
       return new HttpError(
-        Error.Create(ClientModuleIds.Enrollment, 0x0002, Result.InternalError, "Empty response from server"),
+        Error.Create(ClientModuleIds.Enrollment, 0x0008, Result.InternalError, "Empty response from server"),
         diag);
 
     if (envelope.Result != Result.Success && envelope.Result != Result.Created)
@@ -93,7 +93,7 @@ public sealed class EnrollmentClient : IEnrollmentClient
     var enrollResponse = envelope.Body.Value.Deserialize(ClientJsonContext.Default.EnrollResponse);
     if (enrollResponse == null)
       return new HttpError(
-        Error.Create(ClientModuleIds.Enrollment, 0x0003, Result.InternalError,
+        Error.Create(ClientModuleIds.Enrollment, 0x0009, Result.InternalError,
           "Failed to parse enrollment response"),
         diag);
 

@@ -8,6 +8,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Server;
 using Server.Core;
+using Server.Core.Services;
 using Server.Plugins;
 using Shared.Models;
 using Dto = Shared.Models.Dto;
@@ -62,6 +63,13 @@ public sealed class ApiTestFixture
 
     var endpoints = App.Services.GetRequiredService<ServerEndpoints>();
     endpoints.HttpAddresses = [.. addresses];
+
+    var pluginHost = App.Services.GetRequiredService<IPluginHost>();
+    await pluginHost.DataProvider.Config.SetAsync(
+      "server", "server.internalEndpoint", "192.168.1.50:4433", CancellationToken.None);
+
+    var systemService = App.Services.GetRequiredService<SystemService>();
+    await systemService.RecomputeMissingSettingsAsync(CancellationToken.None);
 
     Client = new HttpClient { BaseAddress = new Uri(address) };
   }

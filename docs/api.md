@@ -24,6 +24,29 @@ Authorization is pluggable via `IAuthzProvider`. The provider receives an opaque
 
 When no `IAuthzProvider` plugin is installed, all operations are permitted. The authorization layer only filters; it never changes the shape of the API.
 
+## Configuration Required
+
+When the server is not ready to serve requests (no certs, plugins starting, data provider unreachable, or required settings missing), any API request outside the whitelist below returns HTTP 412 with body:
+
+```
+{ "error": "configuration-required", "reason": "...", "missing": [...] }
+```
+
+`reason` values:
+
+| Reason | Meaning | Suggested client action |
+|---|---|---|
+| `missing-certs` | Setup wizard hasn't created certs yet. | Route to the setup wizard. |
+| `starting` | Plugins are starting. | Wait briefly and retry health. |
+| `data-provider-unavailable` | Data provider failed to start and a background retry is running. | Route to the setup wizard; it will render a storage-unavailable banner. |
+| `missing-settings` | Required settings keys (listed in `missing`) are unset. | Route to the complete-settings form. |
+
+Whitelist (always reachable regardless of state):
+- `/api/v1/system/*`
+- `/api/v1/plugins/*`
+
+`missing` is only present when `reason` is `missing-settings`. It is an opaque list of identifiers naming settings the server is waiting on. Clients that recognise a key render the corresponding field; for anything unknown, the form should fall back to a generic prompt directing the admin to the Settings view. The set of keys is a property of the running server version, not part of this contract.
+
 ## Endpoints
 
 ### Enrollment
@@ -385,6 +408,8 @@ Server health check.
 | `status` | string | `healthy`, `degraded`, `unhealthy`, `missing-certs`, `starting` |
 | `uptime` | int | Seconds since server start (informational duration, not a timestamp) |
 | `version` | string | Server version |
+| `tunnelPort` | int | TCP port the server listens on for native client tunnel connections |
+| `missingSettings` | string[]? | Non-empty when required settings are unset. See [Configuration Required](#configuration-required). |
 
 #### GET /api/v1/system/storage
 
@@ -407,21 +432,45 @@ Store object:
 
 #### GET /api/v1/system/settings
 
-Get server settings.
+Get server settings. Response carries the same shape as the PUT body.
 
 #### PUT /api/v1/system/settings
 
-Update server settings.
+Update server settings. Partial updates are allowed; omitted fields are left unchanged.
 
 **Request body:**
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `serverName` | string? | Display name for this server |
-| `externalEndpoint` | string? | External hostname/IP for enrollment payloads |
+| `internalEndpoint` | string? | LAN host or host:port other devices use to reach the server. Rejected for loopback, link-local, `localhost`, or `host.docker.internal`. |
+| `mode` | string? | Remote access mode: `none`, `manual`, or `upnp`. Required when any remote-access field is set. |
+| `externalHost` | string? | External hostname or IP placed in enrollment payloads. Required in `manual` and `upnp`; rejected in `none`. |
+| `externalPort` | int? | External TCP port. 1-65535 in `manual`; 20000-60000 in `upnp`; rejected in `none`. |
+| `upnpRouterAddress` | string? | Router's LAN address, IPv4 literal or hostname. Required in `upnp`; rejected in `manual` and `none`. |
 | `segmentDuration` | int? | Default recording segment duration in seconds (default: 300). Actual duration rounds to the nearest sync point boundary. |
 | `discoverySubnets` | string[]? | Subnets to include in discovery scans |
-| `defaultCredentials` | object? | Default camera credentials for discovery |
+
+When `mode` is `upnp`, save attempts the port mapping synchronously, trying NAT-PMP first and falling back to UPnP IGD if NAT-PMP does not respond. A router-reported fault is returned as `result: badRequest` with the fault description in `message`; the configured values are still persisted so the admin can correct and retry. A background reconcile refreshes the mapping's lease every 60 seconds.
+
+#### GET /api/v1/system/verify-remote-address
+
+Look up the server's public IP (via `api.ipify.org`) and optionally resolve a hostname via the server host's DNS resolver. Used by the settings UI to confirm an external host is reachable from the public internet. The client compares the returned values.
+
+**Query parameters:**
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `host` | string? | Hostname or IP literal to resolve. Omit to return public IP only. IP literals are echoed back unchanged. |
+
+**Response body:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `publicIp` | string | Public IP as reported by `api.ipify.org` |
+| `resolvedIps` | string[]? | IPv4 addresses the server's resolver returned for `host` |
+
+Returns `result: unavailable` when ipify is unreachable or DNS resolution fails; the message carries the underlying reason.
 
 #### POST /api/v1/system/certs
 

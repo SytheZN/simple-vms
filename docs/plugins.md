@@ -513,7 +513,7 @@ On startup, the plugin host immediately:
 3. Finds types implementing `IPlugin` and instantiates them
 4. Detects which extension point interfaces each plugin class implements
 
-After discovery, no plugins are initialized or running. The server begins listening on HTTP. The web UI can enumerate discovered plugins (e.g. to let the setup wizard present data provider options).
+After discovery, plugins are instantiated but not yet started. The server begins listening on HTTP so the web UI can enumerate discovered plugins (e.g. to let the setup wizard present data provider options).
 
 
 ### Initialization and Starting

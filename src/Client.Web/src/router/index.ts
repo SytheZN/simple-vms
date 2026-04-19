@@ -5,6 +5,7 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/setup', name: 'setup', component: SetupView },
+    { path: '/setup/complete', name: 'setup-complete', component: () => import('@/views/CompleteSettingsView.vue') },
     { path: '/', redirect: '/gallery' },
     { path: '/gallery', name: 'gallery', component: () => import('@/views/GalleryView.vue') },
     { path: '/gallery/:id', name: 'camera', component: () => import('@/views/CameraView.vue') },

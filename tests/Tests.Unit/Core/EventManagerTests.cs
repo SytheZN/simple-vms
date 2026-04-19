@@ -281,6 +281,7 @@ public class EventManagerTests
     public void SetRecordingAccess(IRecordingAccess recordingAccess) { }
     public void Discover(string pluginsPath) { }
     public void Initialize(bool dataOnly = false) { }
+    public void ResetErrored() { }
     public Task StartAsync(CancellationToken ct) => Task.CompletedTask;
     public Task StopAsync() => Task.CompletedTask;
   }

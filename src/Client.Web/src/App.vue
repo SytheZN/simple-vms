@@ -13,8 +13,11 @@ const isSettingsPage = computed(() =>
 
 const settingsOpen = computed(() => settingsExpanded.value || isSettingsPage.value)
 
+const isSetupRoute = (name: unknown) =>
+  name === 'setup' || name === 'setup-complete'
+
 onMounted(async () => {
-  if (route.name === 'setup') {
+  if (isSetupRoute(route.name)) {
     ready.value = true
     return
   }
@@ -22,14 +25,22 @@ onMounted(async () => {
   while (true) {
     try {
       const health = await api.system.health()
-      if (health.status === 'missing-certs') {
+      const status = health.status
+      if (status === 'missing-certs' || status === 'degraded') {
         await router.replace('/setup')
         break
       }
-      if (health.status !== 'starting') break
+      if (status === 'starting') {
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        continue
+      }
+      if (health.missingSettings && health.missingSettings.length > 0) {
+        await router.replace('/setup/complete')
+      }
+      break
     } catch {
+      await new Promise(resolve => setTimeout(resolve, 1000))
     }
-    await new Promise(resolve => setTimeout(resolve, 1000))
   }
   ready.value = true
 })
@@ -39,7 +50,7 @@ onMounted(async () => {
   <div v-if="!ready" class="min-h-screen bg-surface flex items-center justify-center">
     <div class="spinner spinner-lg"></div>
   </div>
-  <div v-else-if="route.name === 'setup'" class="min-h-screen bg-surface font-sans">
+  <div v-else-if="isSetupRoute(route.name)" class="min-h-screen bg-surface font-sans">
     <router-view />
   </div>
   <div v-else class="min-h-screen bg-surface font-sans flex">

@@ -237,12 +237,12 @@ public static class ApiRoutes
 
   private static void RegisterSystem(ApiDispatcher dispatcher)
   {
-    dispatcher.Add("GET", "/api/v1/system/health", (req, _) =>
+    dispatcher.Add("GET", "/api/v1/system/health", async (req, ct) =>
     {
       var system = req.Resolve<SystemService>();
-      return Task.FromResult(
-        ApiResult.Success(system.GetHealth(), new DebugTag(ModuleIds.SystemManagement, 0x0010),
-          ServerJsonContext.Default.HealthResponse));
+      var health = await system.GetHealthAsync(ct);
+      return ApiResult.Success(health, new DebugTag(ModuleIds.SystemManagement, 0x0010),
+        ServerJsonContext.Default.HealthResponse);
     });
 
     dispatcher.Add("GET", "/api/v1/system/storage", async (req, ct) =>
@@ -267,6 +267,14 @@ public static class ApiRoutes
       var result = await system.UpdateSettingsAsync(
         req.Body(ServerJsonContext.Default.ServerSettings), ct);
       return ApiResult.Ok(result, new DebugTag(ModuleIds.SystemManagement, 0x0013));
+    });
+
+    dispatcher.Add("GET", "/api/v1/system/verify-remote-address", async (req, ct) =>
+    {
+      var system = req.Resolve<SystemService>();
+      var result = await system.VerifyRemoteAddressAsync(req.QueryString("host"), ct);
+      return ApiResult.Ok(result, new DebugTag(ModuleIds.SystemManagement, 0x0017),
+        ServerJsonContext.Default.VerifyRemoteAddressResponse);
     });
 
     dispatcher.Add("POST", "/api/v1/system/certs", (req, _) =>

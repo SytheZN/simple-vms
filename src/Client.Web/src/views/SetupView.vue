@@ -3,12 +3,14 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api, ApiError } from '@/api/client'
 import type { PluginListItem, SettingGroup } from '@/types/api'
+import StorageUnavailableBanner from '@/components/setup/StorageUnavailableBanner.vue'
 
 const router = useRouter()
 const step = ref<'provider' | 'configure' | 'confirm'>('provider')
 const generating = ref(false)
 const saving = ref(false)
 const error = ref('')
+const degraded = ref(false)
 
 const dataPlugins = ref<PluginListItem[]>([])
 const selectedPlugin = ref<PluginListItem | null>(null)
@@ -21,9 +23,19 @@ let pollTimer: ReturnType<typeof setInterval> | undefined
 async function checkHealth() {
   try {
     const health = await api.system.health()
-    if (health.status !== 'missing-certs') {
-      router.replace('/')
+    const status = health.status
+    degraded.value = status === 'degraded'
+
+    if (status === 'missing-certs' || status === 'degraded' || status === 'starting') return
+
+    if (health.missingSettings && health.missingSettings.length > 0) {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = undefined }
+      await router.replace('/setup/complete')
+      return
     }
+
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = undefined }
+    await router.replace('/')
   } catch {
     // server not ready yet
   }
@@ -107,7 +119,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  clearInterval(pollTimer)
+  if (pollTimer) clearInterval(pollTimer)
 })
 </script>
 
@@ -118,6 +130,8 @@ onUnmounted(() => {
         <i class="ph ph-shield-check icon-xl text-primary"></i>
         <h1 class="text-2xl font-bold text-text">Server Setup</h1>
       </div>
+
+      <StorageUnavailableBanner v-if="degraded" />
 
       <div class="toast toast-warning">
         <i class="ph ph-warning icon-xl"></i>

@@ -158,7 +158,7 @@ public sealed partial class EnrollmentViewModel : ViewModelBase
     }
     catch (Exception ex)
     {
-      SetError(Error.Create(ClientModuleIds.Enrollment, 0x0000, Result.InternalError, ex.Message));
+      SetError(Error.Create(ClientModuleIds.Enrollment, 0x000A, Result.InternalError, ex.Message));
     }
     finally
     {
