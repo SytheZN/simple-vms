@@ -489,7 +489,7 @@ jobs:
             --enable-decoder=h264_mediacodec,hevc_mediacodec,mjpeg_mediacodec \
             --enable-hwaccel=h264_vulkan,hevc_vulkan \
             --extra-cflags="-I/opt/vulkan-include" \
-            --extra-ldflags="-lvulkan"
+            --extra-ldflags="-lvulkan -Wl,-z,max-page-size=16384"
 
       - name: Dump config.log on failure
         if: failure()
