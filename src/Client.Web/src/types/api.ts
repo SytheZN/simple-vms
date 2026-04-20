@@ -159,6 +159,7 @@ export interface HealthResponse {
   uptime: number
   version: string
   tunnelPort: number
+  httpPort: number
   missingSettings?: string[]
 }
 

@@ -144,6 +144,156 @@ public class EnrollmentViewModelTests
 
   /// <summary>
   /// SCENARIO:
+  /// User pastes a lowercase token
+  ///
+  /// ACTION:
+  /// Assign lowercase alphabetic input to Token
+  ///
+  /// EXPECTED RESULT:
+  /// Value is normalized to uppercase with dash inserted
+  /// </summary>
+  [Test]
+  public void Token_LowercasePaste_UppercasesAndInsertsDash()
+  {
+    var vm = NewVm();
+
+    vm.Token = "abcd2345";
+
+    Assert.That(vm.Token, Is.EqualTo("ABCD-2345"));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// User pastes a token that already contains the canonical dash
+  ///
+  /// ACTION:
+  /// Assign "ABCD-2345" to Token
+  ///
+  /// EXPECTED RESULT:
+  /// Dash is stripped then reinserted at position 4; final value unchanged
+  /// </summary>
+  [Test]
+  public void Token_PasteWithDash_PreservesCanonicalForm()
+  {
+    var vm = NewVm();
+
+    vm.Token = "ABCD-2345";
+
+    Assert.That(vm.Token, Is.EqualTo("ABCD-2345"));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// User pastes a token copied from chat software with stray whitespace
+  ///
+  /// ACTION:
+  /// Assign "  abcd 2345\t" to Token
+  ///
+  /// EXPECTED RESULT:
+  /// Whitespace is stripped and the token is normalized
+  /// </summary>
+  [Test]
+  public void Token_PasteWithWhitespace_StripsAndNormalizes()
+  {
+    var vm = NewVm();
+
+    vm.Token = "  abcd 2345\t";
+
+    Assert.That(vm.Token, Is.EqualTo("ABCD-2345"));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// User pastes a token where characters outside the alphabet have been substituted
+  /// (0 for O, 1 for I, etc.)
+  ///
+  /// ACTION:
+  /// Assign an input mixing valid chars with 0, O, 1, I
+  ///
+  /// EXPECTED RESULT:
+  /// Disallowed characters are dropped; no silent substitution occurs
+  /// </summary>
+  [Test]
+  public void Token_PasteWithDisallowedChars_DropsThem()
+  {
+    var vm = NewVm();
+
+    vm.Token = "A0BO1IDC2345";
+
+    Assert.That(vm.Token, Is.EqualTo("ABDC-2345"));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// User types the token one character at a time
+  ///
+  /// ACTION:
+  /// Assign progressively longer strings mimicking keystrokes
+  ///
+  /// EXPECTED RESULT:
+  /// Dash appears once the fifth valid character is entered
+  /// </summary>
+  [Test]
+  public void Token_IncrementalTyping_InsertsDashAtFifthChar()
+  {
+    var vm = NewVm();
+
+    vm.Token = "A";     Assert.That(vm.Token, Is.EqualTo("A"));
+    vm.Token = "AB";    Assert.That(vm.Token, Is.EqualTo("AB"));
+    vm.Token = "ABC";   Assert.That(vm.Token, Is.EqualTo("ABC"));
+    vm.Token = "ABCD";  Assert.That(vm.Token, Is.EqualTo("ABCD"));
+    vm.Token = "ABCD2"; Assert.That(vm.Token, Is.EqualTo("ABCD-2"));
+    vm.Token = "ABCD23";Assert.That(vm.Token, Is.EqualTo("ABCD-23"));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// User pastes more than 8 valid characters
+  ///
+  /// ACTION:
+  /// Assign a 12-char all-valid string to Token
+  ///
+  /// EXPECTED RESULT:
+  /// Token is truncated to 8 valid characters with dash between positions 4 and 5
+  /// </summary>
+  [Test]
+  public void Token_OverLengthInput_TruncatesToEightValidChars()
+  {
+    var vm = NewVm();
+
+    vm.Token = "ABCDEFGHJKLM";
+
+    Assert.That(vm.Token, Is.EqualTo("ABCD-EFGH"));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Input containing only disallowed characters is assigned
+  ///
+  /// ACTION:
+  /// Assign "01OI!@#" to Token
+  ///
+  /// EXPECTED RESULT:
+  /// Token becomes empty string
+  /// </summary>
+  [Test]
+  public void Token_AllDisallowed_BecomesEmpty()
+  {
+    var vm = NewVm();
+    vm.Token = "ABCD";
+
+    vm.Token = "01OI!@#";
+
+    Assert.That(vm.Token, Is.EqualTo(""));
+    Assert.That(vm.EnrollCommand.CanExecute(null), Is.False);
+  }
+
+  private static EnrollmentViewModel NewVm() =>
+    new(new FakeEnrollmentClient(), new MockCredentialStore(), new FakeStreamTunnel(),
+      NullLogger<EnrollmentViewModel>.Instance, EmptyServices());
+
+  /// <summary>
+  /// SCENARIO:
   /// PropertyChanged fires for observable properties
   ///
   /// ACTION:
@@ -188,6 +338,7 @@ public class EnrollmentViewModelTests
   private sealed class FakeQrScanner : IQrScannerService
   {
     public string? Result { get; set; }
+    public bool IsAvailable => true;
 
     public Task<string?> ScanAsync(CancellationToken ct) =>
       Task.FromResult(Result);

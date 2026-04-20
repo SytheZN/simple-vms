@@ -1,0 +1,72 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Client.Core.ViewModels"
+             xmlns:controls="using:Client.Core.Controls"
+             x:Class="Client.Android.Views.SettingsPage"
+             x:DataType="vm:SettingsViewModel">
+  <ScrollViewer Background="Transparent">
+    <StackPanel Spacing="16" MaxWidth="640">
+
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <DockPanel>
+            <TextBlock Text="Server" Classes="section-heading" VerticalAlignment="Center" />
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8"
+                        HorizontalAlignment="Right" VerticalAlignment="Center">
+              <Ellipse Classes="status-dot" x:Name="StatusDot" />
+              <TextBlock x:Name="StatusLabel" Classes="text-muted"
+                         FontSize="{DynamicResource TextSm}" VerticalAlignment="Center" />
+            </StackPanel>
+          </DockPanel>
+
+          <TextBlock Text="CLIENT ID" Classes="section-subheading" Margin="0 8 0 0" />
+          <TextBlock Text="{Binding ClientId}" Classes="text-muted"
+                     FontSize="{DynamicResource TextSm}" />
+
+          <TextBlock Text="ADDRESSES" Classes="section-subheading" Margin="0 8 0 0" />
+          <ItemsControl ItemsSource="{Binding Addresses}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <TextBlock Text="{Binding}" Classes="text-muted"
+                           FontSize="{DynamicResource TextSm}" Margin="0 2" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <Button Classes="btn btn-danger btn-sm" x:Name="DisconnectButton" Margin="0 8 0 0">
+            <StackPanel Orientation="Horizontal" Spacing="4">
+              <controls:PhosphorIcon Kind="SignOut" Width="14" Height="14" />
+              <TextBlock Text="Disconnect" />
+            </StackPanel>
+          </Button>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <TextBlock Text="Background" Classes="section-heading" />
+          <DockPanel>
+            <ToggleButton Classes="toggle" x:Name="StartOnBootToggle" DockPanel.Dock="Right"
+                          VerticalAlignment="Center" />
+            <StackPanel Spacing="2">
+              <TextBlock Text="Start on boot" Classes="label" />
+              <TextBlock Text="Keep the tunnel and notifications running after device reboot"
+                         Classes="text-muted" FontSize="{DynamicResource TextXs}" />
+            </StackPanel>
+          </DockPanel>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="card" IsVisible="{Binding LogFilePath, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <StackPanel Spacing="12">
+          <TextBlock Text="Diagnostics" Classes="section-heading" />
+          <TextBlock Text="LOG FILE" Classes="section-subheading" Margin="0 8 0 0" />
+          <SelectableTextBlock Text="{Binding LogFilePath}"
+                               Foreground="{DynamicResource TextMutedBrush}"
+                               FontSize="{DynamicResource TextSm}" TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

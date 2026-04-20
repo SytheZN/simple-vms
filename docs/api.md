@@ -409,6 +409,7 @@ Server health check.
 | `uptime` | int | Seconds since server start (informational duration, not a timestamp) |
 | `version` | string | Server version |
 | `tunnelPort` | int | TCP port the server listens on for native client tunnel connections |
+| `httpPort` | int | TCP port the server listens on for the web UI and HTTP enrollment API |
 | `missingSettings` | string[]? | Non-empty when required settings are unset. See [Configuration Required](#configuration-required). |
 
 #### GET /api/v1/system/storage
@@ -443,7 +444,7 @@ Update server settings. Partial updates are allowed; omitted fields are left unc
 | Field | Type | Description |
 |-------|------|-------------|
 | `serverName` | string? | Display name for this server |
-| `internalEndpoint` | string? | LAN host or host:port other devices use to reach the server. Rejected for loopback, link-local, `localhost`, or `host.docker.internal`. |
+| `internalEndpoint` | string? | LAN address other devices use to reach the server. Accepts `host`, `host:port`, or a full `http(s)://host[:port]` URL. Rejected for loopback, link-local, `localhost`, or `host.docker.internal`. |
 | `mode` | string? | Remote access mode: `none`, `manual`, or `upnp`. Required when any remote-access field is set. |
 | `externalHost` | string? | External hostname or IP placed in enrollment payloads. Required in `manual` and `upnp`; rejected in `none`. |
 | `externalPort` | int? | External TCP port. 1-65535 in `manual`; 20000-60000 in `upnp`; rejected in `none`. |

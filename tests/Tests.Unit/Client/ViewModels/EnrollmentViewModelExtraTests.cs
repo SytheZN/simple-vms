@@ -14,14 +14,14 @@ public class EnrollmentViewModelExtraTests
 {
   /// <summary>
   /// SCENARIO:
-  /// EnrollCommand.CanExecute checks token validity (4-char dash 4-char from
-  /// the restricted alphabet)
+  /// EnrollCommand.CanExecute checks the stored (post-normalization) token
+  /// for 8 valid alphabet chars + dash
   ///
   /// ACTION:
-  /// Probe a range of token strings
+  /// Probe tokens whose normalized form is or isn't well-formed
   ///
   /// EXPECTED RESULT:
-  /// Only well-formed tokens with permissible characters return true
+  /// CanExecute reflects whether normalization produced a complete token
   /// </summary>
   [Test]
   public void EnrollCommand_CanExecute_HonoursTokenFormat()
@@ -34,17 +34,15 @@ public class EnrollmentViewModelExtraTests
       vm.Token = "ABCD-2345";
       Assert.That(vm.EnrollCommand.CanExecute(null), Is.True, "valid token");
 
-      vm.Token = "abcd-2345";
-      Assert.That(vm.EnrollCommand.CanExecute(null), Is.False, "lowercase rejected");
-
-      vm.Token = "ABCD2345";
-      Assert.That(vm.EnrollCommand.CanExecute(null), Is.False, "missing dash rejected");
-
       vm.Token = "ABCD-234";
       Assert.That(vm.EnrollCommand.CanExecute(null), Is.False, "too short rejected");
 
       vm.Token = "ABCD-1IO0";
-      Assert.That(vm.EnrollCommand.CanExecute(null), Is.False, "ambiguous chars rejected");
+      Assert.That(vm.EnrollCommand.CanExecute(null), Is.False,
+        "ambiguous chars dropped, leaves token incomplete");
+
+      vm.Token = "";
+      Assert.That(vm.EnrollCommand.CanExecute(null), Is.False, "empty rejected");
     });
   }
 
@@ -206,6 +204,7 @@ public class EnrollmentViewModelExtraTests
   private sealed class FakeQrScanner : IQrScannerService
   {
     public string? Result { get; set; }
+    public bool IsAvailable => true;
     public Task<string?> ScanAsync(CancellationToken ct) => Task.FromResult(Result);
   }
 

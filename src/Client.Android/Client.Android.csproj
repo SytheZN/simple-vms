@@ -1,8 +1,30 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
     <OutputType>Exe</OutputType>
+    <SupportedOSPlatformVersion>26</SupportedOSPlatformVersion>
+    <RuntimeIdentifiers>android-arm64;android-x64</RuntimeIdentifiers>
+    <ApplicationId>com.sythezn.simplevms</ApplicationId>
+    <ApplicationDisplayVersion Condition="'$(Version)' != ''">$(Version)</ApplicationDisplayVersion>
+    <ApplicationVersion Condition="'$(AndroidVersionCode)' != ''">$(AndroidVersionCode)</ApplicationVersion>
+    <ApplicationVersion Condition="'$(AndroidVersionCode)' == ''">1</ApplicationVersion>
+    <AndroidPackageFormat>apk</AndroidPackageFormat>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Client.Core/Client.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Android" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Serilog.Extensions.Logging" />
+    <PackageReference Include="Serilog.Sinks.File" />
+    <PackageReference Include="Xamarin.AndroidX.AppCompat" />
+    <PackageReference Include="Xamarin.AndroidX.Camera.Camera2" />
+    <PackageReference Include="Xamarin.AndroidX.Camera.Lifecycle" />
+    <PackageReference Include="Xamarin.AndroidX.Camera.View" />
+    <PackageReference Include="Xamarin.AndroidX.Core" />
+    <PackageReference Include="Xamarin.AndroidX.Security.SecurityCrypto" />
+    <PackageReference Include="ZXing.Net" />
   </ItemGroup>
 </Project>

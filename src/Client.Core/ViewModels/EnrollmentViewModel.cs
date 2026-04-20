@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Windows.Input;
@@ -39,9 +40,26 @@ public sealed partial class EnrollmentViewModel : ViewModelBase
     get => _token;
     set
     {
-      if (SetProperty(ref _token, value))
+      if (SetProperty(ref _token, NormalizeToken(value)))
         RaiseCommandsCanExecuteChanged();
     }
+  }
+
+  internal static string NormalizeToken(string? input)
+  {
+    if (string.IsNullOrEmpty(input)) return "";
+    var sb = new StringBuilder(9);
+    var accepted = 0;
+    foreach (var ch in input)
+    {
+      if (accepted == 8) break;
+      var upper = char.ToUpperInvariant(ch);
+      if (!TokenChars.Contains(upper)) continue;
+      if (accepted == 4) sb.Append('-');
+      sb.Append(upper);
+      accepted++;
+    }
+    return sb.ToString();
   }
 
   public bool IsScanning
@@ -53,7 +71,11 @@ public sealed partial class EnrollmentViewModel : ViewModelBase
   public bool IsBusy
   {
     get => _isBusy;
-    set => SetProperty(ref _isBusy, value);
+    set
+    {
+      if (SetProperty(ref _isBusy, value))
+        RaiseCommandsCanExecuteChanged();
+    }
   }
 
   public bool IsEnrolled
@@ -64,6 +86,8 @@ public sealed partial class EnrollmentViewModel : ViewModelBase
 
   public ICommand ScanQrCommand { get; }
   public ICommand EnrollCommand { get; }
+
+  public bool IsQrScannerAvailable => _qrScanner?.IsAvailable == true;
 
   public EnrollmentViewModel(
     IEnrollmentClient enrollment,
@@ -78,7 +102,7 @@ public sealed partial class EnrollmentViewModel : ViewModelBase
     _logger = logger;
     _qrScanner = services.GetService(typeof(IQrScannerService)) as IQrScannerService;
 
-    ScanQrCommand = new AsyncCommand(ScanQrAsync, () => _qrScanner != null && !IsBusy);
+    ScanQrCommand = new AsyncCommand(ScanQrAsync, () => _qrScanner is { IsAvailable: true } && !IsBusy);
     EnrollCommand = new AsyncCommand(EnrollAsync, () => !IsBusy && ServerAddress.Length > 0 && IsValidToken(Token));
   }
 
@@ -93,6 +117,7 @@ public sealed partial class EnrollmentViewModel : ViewModelBase
   private void RaiseCommandsCanExecuteChanged()
   {
     (EnrollCommand as AsyncCommand)?.RaiseCanExecuteChanged();
+    (ScanQrCommand as AsyncCommand)?.RaiseCanExecuteChanged();
   }
 
   private async Task ScanQrAsync()

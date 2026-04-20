@@ -31,7 +31,7 @@ public class ApiClientTests
   {
     var (client, tunnel) = CreateClient();
 
-    var health = new HealthResponse { Status = "healthy", Uptime = 60, Version = "1.0", TunnelPort = 4433 };
+    var health = new HealthResponse { Status = "healthy", Uptime = 60, Version = "1.0", TunnelPort = 4433, HttpPort = 8080 };
     tunnel.NextResponse = CreateResponse(Result.Success, health, Json.HealthResponse);
 
     var result = await client.GetHealthAsync(CancellationToken.None);
@@ -534,7 +534,7 @@ public class ApiClientTests
   {
     var tunnel = new RequestCapturingTunnel { GenerationValue = 1 };
     var client = new ApiClient(tunnel, NullLogger<ApiClient>.Instance);
-    tunnel.NextResponse = CreateResponse(Result.Success, new HealthResponse { Status = "healthy", Uptime = 0, Version = "1", TunnelPort = 4433 }, Json.HealthResponse);
+    tunnel.NextResponse = CreateResponse(Result.Success, new HealthResponse { Status = "healthy", Uptime = 0, Version = "1", TunnelPort = 4433, HttpPort = 8080 }, Json.HealthResponse);
     tunnel.IncrementGenerationOnRead = true;
 
     var result = await client.GetHealthAsync(CancellationToken.None);

@@ -132,10 +132,12 @@
   </ResourceDictionary.ThemeDictionaries>
 
   <!-- Theme-invariant tokens -->
-  <FontFamily x:Key="SansFont">avares://Client.Core/Assets/Rubik-Regular.ttf#Rubik</FontFamily>
-  <FontFamily x:Key="SansMediumFont">avares://Client.Core/Assets/Rubik-Medium.ttf#Rubik</FontFamily>
-  <FontFamily x:Key="SansSemiBoldFont">avares://Client.Core/Assets/Rubik-SemiBold.ttf#Rubik</FontFamily>
-  <FontFamily x:Key="SansBoldFont">avares://Client.Core/Assets/Rubik-Bold.ttf#Rubik</FontFamily>
+
+  <FontFamily x:Key="SansFont">avares://Client.Core/Assets/Rubik/Rubik-Regular.ttf#Rubik</FontFamily>
+  <FontFamily x:Key="SansMediumFont">avares://Client.Core/Assets/Rubik/Rubik-Medium.ttf#Rubik</FontFamily>
+  <FontFamily x:Key="SansSemiBoldFont">avares://Client.Core/Assets/Rubik/Rubik-SemiBold.ttf#Rubik</FontFamily>
+  <FontFamily x:Key="SansBoldFont">avares://Client.Core/Assets/Rubik/Rubik-Bold.ttf#Rubik</FontFamily>
+  <FontFamily x:Key="MonoFont">avares://Client.Core/Assets/Monaspace/MonaspaceNeonFrozen-Regular.ttf#Monaspace Neon Frozen</FontFamily>
 
   <x:Double x:Key="TextXs">12</x:Double>
   <x:Double x:Key="TextSm">14</x:Double>

@@ -32,4 +32,9 @@ public static class HostPort
     if (value.IndexOf(':') != value.LastIndexOf(':')) return $"[{value}]:{defaultPort}";
     return $"{value}:{defaultPort}";
   }
+
+  public static string ExtractHost(string endpoint) =>
+    endpoint.Contains("://") && Uri.TryCreate(endpoint, UriKind.Absolute, out var uri)
+      ? uri.Host
+      : SplitHost(endpoint);
 }

@@ -20,13 +20,15 @@ public sealed class PlaybackStatsOverlay : Control
     set => SetValue(DiagnosticsProperty, value);
   }
 
-  private const double Width_ = 320;
+  private const double Width_ = 340;
   private const double GraphHeight = 64;
-  private const double LineHeight = 14;
+  private const double LineHeight = 13;
   private const int LineCount = 7;
   private const double Padding = 8;
 
-  private static readonly Typeface MonoFace = new(new FontFamily("Menlo,Consolas,Courier New,monospace"));
+  private static Typeface? _monoFace;
+  private static Typeface MonoFace => _monoFace ??= new Typeface(new FontFamily(
+    "avares://Client.Core/Assets/Monaspace/MonaspaceNeonFrozen-Regular.ttf#Monaspace Neon Frozen"));
   private static readonly SolidColorBrush BgBrush = new(Color.FromArgb(180, 0, 0, 0));
   private static readonly SolidColorBrush TextBrush = new(Color.FromArgb(230, 230, 230, 230));
   private static readonly SolidColorBrush AxisBrush = new(Color.FromArgb(90, 255, 255, 255));
@@ -114,7 +116,7 @@ public sealed class PlaybackStatsOverlay : Control
         CultureInfo.InvariantCulture,
         FlowDirection.LeftToRight,
         MonoFace,
-        11,
+        10,
         TextBrush);
       dc.DrawText(ft, new Point(Padding, y));
       y += LineHeight;
@@ -127,13 +129,15 @@ public sealed class PlaybackStatsOverlay : Control
 
     if (count > 0)
     {
+      const double LabelReserve = 6;
+      var barArea = GraphHeight - LabelReserve;
       var scale = Math.Max(max * 1.15, 50);
       var barW = gw / FrameTimingRecorder.Capacity;
       for (var i = 0; i < FrameTimingRecorder.Capacity; i++)
       {
         var v = _samples[i];
         if (v <= 0) continue;
-        var barH = Math.Min(GraphHeight, v / scale * GraphHeight);
+        var barH = Math.Min(barArea, v / scale * barArea);
         var brush = v <= 45 ? OkBrush : v <= 80 ? WarnBrush : BadBrush;
         dc.FillRectangle(brush, new Rect(Padding + i * barW, gy + GraphHeight - barH, Math.Max(1, barW - 0.5), barH));
       }

@@ -136,10 +136,13 @@ jobs:
         env:
           BUILD_VERSION: ${{ steps.version.outputs.version }}
           BUILD_HASH: ${{ steps.version.outputs.hash }}
+          BUILD_SOLUTION_FILE: Solution.NoMobile.slnx
         run: ./build.sh build
 
       - name: Test
         id: test
+        env:
+          BUILD_SOLUTION_FILE: Solution.NoMobile.slnx
         run: ./build.sh test
 
       - name: Publish test results
@@ -283,7 +286,7 @@ jobs:
 
       - name: Install .NET (macOS)
         if: runner.os == 'macOS'
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
 
@@ -326,6 +329,63 @@ jobs:
         with:
           name: desktop-${{ matrix.rid }}
           path: out/simple-vms-desktop-${{ matrix.rid }}.*
+
+  android:
+    permissions:
+      contents: read
+      packages: read
+    needs: [build, changes]
+    if: needs.changes.outputs.android == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rid: [android-arm64, android-x64]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Configure git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install Android workload
+        run: dotnet workload install android
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-android-${{ hashFiles('**/*.csproj', 'Directory.Packages.props', 'Directory.Build.props') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-android-
+
+      - name: Authenticate GitHub NuGet feed
+        run: dotnet nuget update source github --username "${{ github.actor }}" --password "${{ secrets.GITHUB_TOKEN }}" --store-password-in-clear-text --configfile nuget.config
+
+      - name: Publish Android
+        env:
+          BUILD_VERSION: ${{ needs.build.outputs.version }}
+          BUILD_HASH: ${{ needs.build.outputs.hash }}
+          BUILD_RID: ${{ matrix.rid }}
+        run: ./scripts/publish/android.sh
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-${{ matrix.rid }}
+          path: out/simple-vms-${{ matrix.rid }}.apk
 
   docker:
     permissions:
@@ -393,8 +453,8 @@ jobs:
   release:
     permissions:
       contents: write
-    needs: [build, changes, docker, desktop]
-    if: always() && needs.changes.result == 'success' && (needs.docker.result == 'success' || needs.docker.result == 'skipped') && (needs.desktop.result == 'success' || needs.desktop.result == 'skipped')
+    needs: [build, changes, docker, desktop, android]
+    if: always() && needs.changes.result == 'success' && (needs.docker.result == 'success' || needs.docker.result == 'skipped') && (needs.desktop.result == 'success' || needs.desktop.result == 'skipped') && (needs.android.result == 'success' || needs.android.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -414,6 +474,14 @@ jobs:
         with:
           pattern: desktop-*
           path: out/desktop/
+          merge-multiple: true
+
+      - name: Download Android artifacts
+        if: needs.changes.outputs.android == 'true'
+        uses: actions/download-artifact@v8
+        with:
+          pattern: android-*
+          path: out/android/
           merge-multiple: true
 
       - name: Create tagged release
@@ -444,6 +512,7 @@ jobs:
             out/desktop/simple-vms-desktop-*.dmg \
             out/desktop/simple-vms-desktop-*.AppImage \
             out/desktop/simple-vms-desktop-*.exe \
+            out/android/simple-vms-android-*.apk \
           ; do
             [ -f "$asset" ] && args+=("$asset")
           done
@@ -474,6 +543,7 @@ jobs:
             out/desktop/simple-vms-desktop-*.dmg \
             out/desktop/simple-vms-desktop-*.AppImage \
             out/desktop/simple-vms-desktop-*.exe \
+            out/android/simple-vms-android-*.apk \
           ; do
             [ -f "$asset" ] && args+=("$asset")
           done

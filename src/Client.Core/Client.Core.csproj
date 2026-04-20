@@ -13,13 +13,16 @@
     <PackageReference Include="Avalonia" />
     <PackageReference Include="Avalonia.Skia" />
     <PackageReference Include="BouncyCastle.Cryptography" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
     <PackageReference Include="SkiaSharp" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="SimpleVms.FFmpeg.Native" />
   </ItemGroup>
   <ItemGroup>
-    <AvaloniaResource Include="Assets/*.ttf" />
+    <AvaloniaResource Include="Assets/Rubik/*.ttf" />
+    <AvaloniaResource Include="Assets/Monaspace/*.ttf" />
     <AvaloniaResource Include="Assets/Phosphor/*.svg" />
     <AvaloniaResource Include="../Client.Theme/logo/*.png" Link="Assets/logo/%(Filename)%(Extension)" />
   </ItemGroup>

@@ -46,6 +46,7 @@ public sealed class SystemService
       Uptime = _health.Uptime,
       Version = _health.Version,
       TunnelPort = _endpoints.TunnelPort,
+      HttpPort = _endpoints.HttpPort,
       MissingSettings = _health.MissingSettings
     });
 
@@ -363,8 +364,25 @@ public sealed class SystemService
     return missing.Count > 0 ? [.. missing] : null;
   }
 
-  internal static OneOf<Success, Error> ValidateInternalEndpoint(string endpoint) =>
-    ValidateHostOrIp(endpoint, allowPort: true, fieldLabel: "Internal endpoint");
+  internal static OneOf<Success, Error> ValidateInternalEndpoint(string endpoint)
+  {
+    if (string.IsNullOrWhiteSpace(endpoint))
+      return Error.Create(ModuleIds.SystemManagement, 0x0059, Result.BadRequest,
+        "Internal endpoint cannot be empty");
+
+    if (endpoint.Contains("://"))
+    {
+      if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri))
+        return Error.Create(ModuleIds.SystemManagement, 0x0058, Result.BadRequest,
+          "Internal endpoint is not a valid URL");
+      if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+        return Error.Create(ModuleIds.SystemManagement, 0x005A, Result.BadRequest,
+          "Internal endpoint scheme must be http or https");
+      return ValidateHostOrIp(uri.Host, allowPort: false, fieldLabel: "Internal endpoint");
+    }
+
+    return ValidateHostOrIp(endpoint, allowPort: true, fieldLabel: "Internal endpoint");
+  }
 
   internal static OneOf<Success, Error> ValidateExternalHost(string host) =>
     ValidateHostOrIp(host, allowPort: false, fieldLabel: "External host");

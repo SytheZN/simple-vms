@@ -31,10 +31,11 @@
 
   <ScrollViewer HorizontalScrollBarVisibility="Disabled">
   <ItemsControl x:Name="GridItems"
-                ItemsSource="{Binding Cameras}">
+                ItemsSource="{Binding Cameras}"
+                VerticalAlignment="Top">
     <ItemsControl.ItemsPanel>
       <ItemsPanelTemplate>
-        <UniformGrid x:Name="GridPanel" Columns="3" />
+        <UniformGrid x:Name="GridPanel" Columns="3" VerticalAlignment="Top" />
       </ItemsPanelTemplate>
     </ItemsControl.ItemsPanel>
     <ItemsControl.ItemTemplate>

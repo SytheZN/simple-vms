@@ -21,6 +21,7 @@ public static class ServiceCollectionExtensions
     services.AddSingleton<IPlaybackService, PlaybackService>();
     services.AddSingleton<IEventService, EventService>();
     services.AddSingleton<NotificationRouter>();
+    services.AddSingleton<ClientLifecycleService>();
     services.AddSingleton<DecodePipelineFactory>();
     services.AddSingleton<Decoding.Diagnostics.DiagnosticsSettings>();
     services.AddHttpClient();

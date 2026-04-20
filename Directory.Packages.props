@@ -4,6 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="Avalonia" Version="12.0.0" />
+    <PackageVersion Include="Avalonia.Android" Version="12.0.0" />
     <PackageVersion Include="Avalonia.Desktop" Version="12.0.0" />
     <PackageVersion Include="Avalonia.Headless.NUnit" Version="12.0.0" />
     <PackageVersion Include="Avalonia.Skia" Version="12.0.0" />
@@ -15,10 +16,12 @@
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.5" />
     <PackageVersion Include="MessagePack" Version="3.1.4" />
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.5" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.6" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="10.0.6" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.5" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.5" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.6" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.6" />
+    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.6" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.6" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.0" />
     <PackageVersion Include="OneOf" Version="3.0.271" />
     <PackageVersion Include="OneOf.Chaining" Version="1.5.0" />
@@ -27,9 +30,16 @@
     <PackageVersion Include="NUnit3TestAdapter" Version="6.1.0" />
     <PackageVersion Include="Serilog.Extensions.Logging" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
-    <PackageVersion Include="SimpleVms.FFmpeg.Native" Version="8.1.0-9047fa1.29" />
+    <PackageVersion Include="SimpleVms.FFmpeg.Native" Version="8.1.0-9047fa1.30" />
     <PackageVersion Include="SkiaSharp" Version="3.119.3-preview.1.1" />
     <PackageVersion Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
     <PackageVersion Include="Tmds.DBus.Protocol" Version="0.92.0" />
+    <PackageVersion Include="Xamarin.AndroidX.AppCompat" Version="1.7.1.3" />
+    <PackageVersion Include="Xamarin.AndroidX.Camera.Camera2" Version="1.5.3.1" />
+    <PackageVersion Include="Xamarin.AndroidX.Camera.Lifecycle" Version="1.5.3.1" />
+    <PackageVersion Include="Xamarin.AndroidX.Camera.View" Version="1.5.3.1" />
+    <PackageVersion Include="Xamarin.AndroidX.Core" Version="1.17.0.2" />
+    <PackageVersion Include="Xamarin.AndroidX.Security.SecurityCrypto" Version="1.1.0.2" />
+    <PackageVersion Include="ZXing.Net" Version="0.16.11" />
   </ItemGroup>
 </Project>

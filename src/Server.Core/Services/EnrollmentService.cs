@@ -111,7 +111,7 @@ public sealed class EnrollmentService
 
       var internalEndpoint = map.GetValueOrDefault("server.internalEndpoint");
       if (!string.IsNullOrWhiteSpace(internalEndpoint))
-        addresses.Add(HostPort.NormalizeEndpoint(internalEndpoint, port));
+        addresses.Add(HostPort.NormalizeEndpoint(HostPort.ExtractHost(internalEndpoint), port));
 
       var externalHost = map.GetValueOrDefault("server.externalHost");
       var externalPortStr = map.GetValueOrDefault("server.externalPort");

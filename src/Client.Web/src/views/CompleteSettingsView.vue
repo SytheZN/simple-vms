@@ -18,6 +18,8 @@ const remoteValid = ref(true)
 const needsInternal = computed(() =>
   health.value?.missingSettings?.includes('internalEndpoint') ?? false)
 
+const serverListenPort = computed(() => health.value!.httpPort)
+
 const needsLegacyMigration = computed(() =>
   health.value?.missingSettings?.includes('legacyExternalEndpoint') ?? false)
 
@@ -132,7 +134,11 @@ onMounted(load)
       <template v-else>
         <section v-if="needsInternal && !needsRemoteAccess">
           <h2 class="section-subheading mb-2">Network</h2>
-          <InternalAddressForm :saving="saving" @save="handleInternalSave" />
+          <InternalAddressForm
+            :saving="saving"
+            :server-listen-port="serverListenPort"
+            @save="handleInternalSave"
+          />
         </section>
 
         <template v-else>

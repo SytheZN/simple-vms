@@ -32,6 +32,7 @@ public static class AppSetup
     var config = builder.Configuration;
     var dataPath = config["data-path"]!;
     var tunnelPort = int.TryParse(config["tunnel-port"], out var tp) ? tp : 4433;
+    var httpPort = int.TryParse(config["http-port"], out var hp) ? hp : 8080;
 
     _loggerProvider = new HybridLoggerProvider();
 
@@ -51,7 +52,7 @@ public static class AppSetup
     builder.Services.AddSingleton(certManager);
     builder.Services.AddSingleton<ICertificateService>(certManager);
 
-    var endpoints = new ServerEndpoints { TunnelPort = tunnelPort };
+    var endpoints = new ServerEndpoints { TunnelPort = tunnelPort, HttpPort = httpPort };
     builder.Services.AddSingleton(endpoints);
 
     var eventBus = new EventBus();
@@ -90,9 +91,8 @@ public static class AppSetup
 
     builder.WebHost.ConfigureKestrel((ctx, kestrel) =>
     {
-      var httpPort = int.TryParse(ctx.Configuration["http-port"], out var hp) ? hp : 8080;
       var bind = ctx.Configuration["bind"] ?? "0.0.0.0";
-      kestrel.Listen(IPAddress.Parse(bind), httpPort, listen =>
+      kestrel.Listen(IPAddress.Parse(bind), endpoints.HttpPort, listen =>
       {
         listen.Protocols = HttpProtocols.Http1AndHttp2;
       });

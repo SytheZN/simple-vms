@@ -9,6 +9,7 @@ const token = ref('')
 const qrDataUrl = ref('')
 const enrolling = ref(false)
 const error = ref('')
+const internalEndpoint = ref<string | null>(null)
 const editingId = ref<string | null>(null)
 const editName = ref('')
 
@@ -23,18 +24,33 @@ async function loadClients() {
   }
 }
 
+async function loadSettings() {
+  try {
+    const s = await api.system.settings()
+    internalEndpoint.value = s.internalEndpoint ?? null
+  } catch (e) {
+    if (e instanceof ApiError) error.value = e.message
+  }
+}
+
 async function startEnrollment() {
   enrolling.value = true
   error.value = ''
   token.value = ''
   qrDataUrl.value = ''
   try {
+    if (!internalEndpoint.value) await loadSettings()
+    if (!internalEndpoint.value) {
+      error.value = 'Server internal address is not configured.'
+      enrolling.value = false
+      return
+    }
+
     const res = await api.enrollment.start()
     token.value = res.token
-
     const qrPayload = JSON.stringify({
       v: 1,
-      addresses: [window.location.host],
+      addresses: [internalEndpoint.value],
       token: res.token
     })
     qrDataUrl.value = await QRCode.toDataURL(qrPayload, {

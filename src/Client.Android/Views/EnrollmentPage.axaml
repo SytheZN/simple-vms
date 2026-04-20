@@ -1,0 +1,59 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Client.Core.ViewModels"
+             xmlns:controls="using:Client.Core.Controls"
+             x:Class="Client.Android.Views.EnrollmentPage"
+             x:DataType="vm:EnrollmentViewModel">
+  <ScrollViewer>
+    <Border Classes="card" HorizontalAlignment="Stretch" VerticalAlignment="Center" MaxWidth="640" Padding="24" Margin="16">
+      <StackPanel Spacing="16">
+        <TextBlock Text="Add Server" Classes="section-heading" />
+
+        <Button Classes="btn btn-primary"
+                Command="{Binding ScanQrCommand}"
+                IsVisible="{Binding IsQrScannerAvailable}"
+                HorizontalAlignment="Stretch">
+          <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+            <controls:PhosphorIcon Kind="VideoCamera"
+                                   Width="{DynamicResource IconSm}"
+                                   Height="{DynamicResource IconSm}" />
+            <TextBlock Text="Scan QR code" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+
+        <Border Background="{DynamicResource SurfaceSunkenBrush}" Padding="12"
+                CornerRadius="{DynamicResource RadiusSm}"
+                IsVisible="{Binding !IsQrScannerAvailable}">
+          <TextBlock Classes="text-muted"
+                     FontSize="{DynamicResource TextXs}"
+                     TextWrapping="Wrap"
+                     Text="No camera available on this device. Enter enrollment details manually below." />
+        </Border>
+
+        <Separator />
+
+        <StackPanel Spacing="4">
+          <TextBlock Text="Server address" Classes="label" />
+          <TextBox Classes="input" Text="{Binding ServerAddress, Mode=TwoWay}"
+                   PlaceholderText="192.168.1.50:8080" />
+        </StackPanel>
+
+        <StackPanel Spacing="4">
+          <TextBlock Text="Enrollment token" Classes="label" />
+          <TextBox Classes="input" Text="{Binding Token, Mode=TwoWay}"
+                   PlaceholderText="XXXX-XXXX" />
+        </StackPanel>
+
+        <controls:ErrorCard Message="{Binding ErrorMessage}"
+                            DebugTag="{Binding ErrorTag}"
+                            CopyData="{Binding ErrorJson}" />
+
+        <Button Classes="btn btn-primary"
+                Command="{Binding EnrollCommand}"
+                HorizontalAlignment="Stretch">
+          Enroll
+        </Button>
+      </StackPanel>
+    </Border>
+  </ScrollViewer>
+</UserControl>

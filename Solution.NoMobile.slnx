@@ -1,0 +1,30 @@
+<Solution>
+  <Project Path="src/Shared.Models/Shared.Models.csproj" />
+  <Project Path="src/Shared.Protocol/Shared.Protocol.csproj" />
+  <Project Path="src/Server/Server.csproj" />
+  <Project Path="src/Server.Core/Server.Core.csproj" />
+  <Project Path="src/Server.Api/Server.Api.csproj" />
+  <Project Path="src/Server.Streaming/Server.Streaming.csproj" />
+  <Project Path="src/Server.Recording/Server.Recording.csproj" />
+  <Project Path="src/Server.Tunnel/Server.Tunnel.csproj" />
+  <Project Path="src/Server.Plugins/Server.Plugins.csproj" />
+  <Folder Name="/plugins/capture/">
+    <Project Path="src/plugins/capture/Rtsp/Rtsp.csproj" />
+  </Folder>
+  <Folder Name="/plugins/format/">
+    <Project Path="src/plugins/format/Fmp4/Fmp4.csproj" />
+  </Folder>
+  <Folder Name="/plugins/cameras/">
+    <Project Path="src/plugins/cameras/Onvif/Onvif.csproj" />
+  </Folder>
+  <Folder Name="/plugins/storage/">
+    <Project Path="src/plugins/storage/Filesystem/Filesystem.csproj" />
+  </Folder>
+  <Folder Name="/plugins/data/">
+    <Project Path="src/plugins/data/Sqlite/Sqlite.csproj" />
+  </Folder>
+  <Project Path="src/Client.Core/Client.Core.csproj" />
+  <Project Path="src/Client.Desktop/Client.Desktop.csproj" />
+  <Project Path="tests/Tests.Unit/Tests.Unit.csproj" />
+  <Project Path="tests/Tests.Integration/Tests.Integration.csproj" />
+</Solution>

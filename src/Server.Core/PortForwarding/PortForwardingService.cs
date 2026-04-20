@@ -356,7 +356,7 @@ public sealed class PortForwardingService : IHostedService, IAsyncDisposable, IP
   private static async Task<IPAddress?> ResolveInternalIpv4Async(
     string endpoint, CancellationToken ct)
   {
-    var host = HostPort.SplitHost(endpoint);
+    var host = HostPort.ExtractHost(endpoint);
 
     if (IPAddress.TryParse(host, out var ip)
         && ip.AddressFamily == AddressFamily.InterNetwork)

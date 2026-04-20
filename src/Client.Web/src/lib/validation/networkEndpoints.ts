@@ -126,6 +126,83 @@ export function validateHostOrIp(
   return { valid: true }
 }
 
+export interface NormalizedServerAddress {
+  url: string
+  host: string
+  scheme: 'http' | 'https'
+  port: number
+}
+
+export function normalizeServerAddress(
+  input: string,
+  opts: { serverListenPort: number }
+): { value: NormalizedServerAddress } | { error: string } {
+  const trimmed = input.trim().replace(/\/+$/, '')
+  if (!trimmed) return { error: 'Address cannot be empty' }
+
+  let rest = trimmed
+  let scheme: 'http' | 'https' = 'http'
+  const schemeMatch = rest.match(/^(https?):\/\/(.*)$/i)
+  if (schemeMatch) {
+    scheme = schemeMatch[1].toLowerCase() as 'http' | 'https'
+    rest = schemeMatch[2]
+  } else if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(rest)) {
+    return { error: 'Only http:// and https:// schemes are supported' }
+  }
+
+  const pathAt = rest.indexOf('/')
+  if (pathAt >= 0) rest = rest.slice(0, pathAt)
+
+  if (!rest) return { error: 'Address must include a host' }
+
+  let host: string
+  let explicitPort: number | null = null
+
+  if (rest.startsWith('[')) {
+    const end = rest.indexOf(']')
+    if (end < 0) return { error: 'Malformed IPv6 literal' }
+    host = rest.slice(1, end)
+    const after = rest.slice(end + 1)
+    if (after) {
+      if (!after.startsWith(':')) return { error: 'Malformed address after IPv6 literal' }
+      const parsed = Number(after.slice(1))
+      if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535)
+        return { error: 'Port must be between 1 and 65535' }
+      explicitPort = parsed
+    }
+    if (!isValidIPv6(host)) return { error: 'Invalid IPv6 address' }
+  } else {
+    const colons = (rest.match(/:/g) ?? []).length
+    if (colons > 1) return { error: 'IPv6 addresses must be wrapped in [brackets]' }
+    if (colons === 1) {
+      const colon = rest.lastIndexOf(':')
+      host = rest.slice(0, colon)
+      const parsed = Number(rest.slice(colon + 1))
+      if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535)
+        return { error: 'Port must be between 1 and 65535' }
+      explicitPort = parsed
+    } else {
+      host = rest
+    }
+  }
+
+  if (!host) return { error: 'Address must include a host' }
+
+  const hostIsIp = isValidIPv4(host) || isValidIPv6(host)
+  if (!hostIsIp && !HOSTNAME_PATTERN.test(host))
+    return { error: `'${host}' is not a valid hostname or IP address` }
+
+  const port = explicitPort ?? (scheme === 'https' ? 443 : opts.serverListenPort)
+
+  const schemeDefaultPort = scheme === 'https' ? 443 : 80
+  const hostForUrl = host.includes(':') ? `[${host}]` : host
+  const url = port === schemeDefaultPort
+    ? `${scheme}://${hostForUrl}`
+    : `${scheme}://${hostForUrl}:${port}`
+
+  return { value: { url, host, scheme, port } }
+}
+
 export function validateExternalPort(
   value: number | undefined | null,
   mode: RemoteAccessMode

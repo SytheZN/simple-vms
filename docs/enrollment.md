@@ -69,7 +69,7 @@ The QR code is lightweight - it contains only what the client needs to reach the
 | Field | Type | Description |
 |-------|------|-------------|
 | `v` | int | Payload version (currently `1`) |
-| `addresses` | string[] | Server addresses to try, in order |
+| `addresses` | string[] | Server addresses to try, in order. Each entry is `host`, `host:port`, or a full `http(s)://host[:port]` URL. |
 | `token` | string | Enrollment token |
 
 The client tries each address in order until one responds, then calls the enrollment API.

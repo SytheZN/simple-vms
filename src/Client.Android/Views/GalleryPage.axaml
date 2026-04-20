@@ -1,0 +1,42 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Client.Core.ViewModels"
+             xmlns:controls="using:Client.Core.Controls"
+             x:Class="Client.Android.Views.GalleryPage"
+             x:DataType="vm:GalleryViewModel">
+  <DockPanel>
+    <TextBlock DockPanel.Dock="Top"
+               Text="Gallery"
+               Classes="section-heading"
+               Margin="0 0 0 12" />
+
+    <controls:ErrorCard DockPanel.Dock="Top"
+                        Message="{Binding ErrorMessage}"
+                        DebugTag="{Binding ErrorTag}"
+                        CopyData="{Binding ErrorJson}"
+                        Margin="0 0 0 12" />
+
+    <Panel IsVisible="{Binding IsLoading}" DockPanel.Dock="Top" Margin="0 48">
+      <controls:Spinner Size="32" HorizontalAlignment="Center" />
+    </Panel>
+
+    <StackPanel x:Name="EmptyState"
+                IsVisible="False"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Spacing="{DynamicResource Space3}"
+                Margin="0 48">
+      <controls:PhosphorIcon Kind="VideoCameraSlash"
+                             Width="{DynamicResource IconXl}"
+                             Height="{DynamicResource IconXl}"
+                             Foreground="{DynamicResource TextMutedBrush}"
+                             HorizontalAlignment="Center" />
+      <TextBlock Text="No cameras found."
+                 Classes="text-muted"
+                 HorizontalAlignment="Center" />
+    </StackPanel>
+
+    <controls:CameraGrid x:Name="Grid"
+                         Columns="{Binding Columns}" />
+  </DockPanel>
+</UserControl>

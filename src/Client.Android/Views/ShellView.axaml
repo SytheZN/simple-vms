@@ -1,0 +1,155 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Client.Android.ViewModels"
+             xmlns:corevm="using:Client.Core.ViewModels"
+             xmlns:views="using:Client.Android.Views"
+             xmlns:controls="using:Client.Core.Controls"
+             x:Class="Client.Android.Views.ShellView"
+             x:DataType="vm:MainShellViewModel"
+             Background="{Binding RootBackground}">
+  <UserControl.DataTemplates>
+    <DataTemplate DataType="corevm:GalleryViewModel">
+      <views:GalleryPage />
+    </DataTemplate>
+    <DataTemplate DataType="corevm:CameraViewModel">
+      <views:CameraPage />
+    </DataTemplate>
+    <DataTemplate DataType="corevm:SettingsViewModel">
+      <views:SettingsPage />
+    </DataTemplate>
+    <DataTemplate DataType="corevm:EnrollmentViewModel">
+      <views:EnrollmentPage />
+    </DataTemplate>
+  </UserControl.DataTemplates>
+
+  <DockPanel LastChildFill="True">
+    <Border DockPanel.Dock="Left"
+            Width="{DynamicResource NavSidebarWidth}"
+            Background="{DynamicResource SurfaceRaisedBrush}"
+            BorderBrush="{DynamicResource BorderBrush}"
+            BorderThickness="0 0 1 0"
+            Padding="12"
+            IsVisible="{Binding IsWideNavVisible}">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Bottom"
+                    Orientation="Horizontal"
+                    Spacing="8"
+                    Margin="0 8 0 0"
+                    IsVisible="{Binding IsChromeVisible}">
+          <Ellipse x:Name="StatusDot" Classes="status-dot" VerticalAlignment="Center" />
+          <TextBlock Classes="text-muted"
+                     FontSize="{DynamicResource TextXs}"
+                     Text="{Binding ConnectionState}"
+                     VerticalAlignment="Center" />
+        </StackPanel>
+
+        <StackPanel Spacing="4" IsVisible="{Binding IsChromeVisible}">
+          <DockPanel Margin="12 4 0 12">
+            <Button DockPanel.Dock="Right"
+                    Classes="btn btn-ghost btn-sm"
+                    Command="{Binding ToggleSidebarCommand}"
+                    ToolTip.Tip="Hide sidebar">
+              <controls:PhosphorIcon Kind="CaretLeft"
+                                     Width="{DynamicResource IconSm}"
+                                     Height="{DynamicResource IconSm}" />
+            </Button>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <controls:PhosphorIcon Kind="ShieldCheck"
+                                     Width="{DynamicResource IconMd}"
+                                     Height="{DynamicResource IconMd}"
+                                     Foreground="{DynamicResource PrimaryBrush}" />
+              <TextBlock Text="VMS" FontSize="{DynamicResource TextLg}"
+                         FontFamily="{DynamicResource SansBoldFont}"
+                         Foreground="{DynamicResource PrimaryBrush}"
+                         VerticalAlignment="Center" />
+            </StackPanel>
+          </DockPanel>
+          <Button Classes="nav-link"
+                  Classes.nav-link-active="{Binding IsGallery}"
+                  Command="{Binding NavGalleryCommand}">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <controls:PhosphorIcon Kind="SquaresFour"
+                                     Width="{DynamicResource IconSm}"
+                                     Height="{DynamicResource IconSm}" />
+              <TextBlock Text="Gallery" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button Classes="nav-link"
+                  Classes.nav-link-active="{Binding IsSettings}"
+                  Command="{Binding NavSettingsCommand}">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <controls:PhosphorIcon Kind="Gear"
+                                     Width="{DynamicResource IconSm}"
+                                     Height="{DynamicResource IconSm}" />
+              <TextBlock Text="Settings" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <Border DockPanel.Dock="Bottom"
+            Background="{DynamicResource SurfaceRaisedBrush}"
+            BorderBrush="{DynamicResource BorderBrush}"
+            BorderThickness="0 1 0 0"
+            Padding="4"
+            IsVisible="{Binding IsCompactNavVisible}">
+      <Grid IsVisible="{Binding IsChromeVisible}" ColumnDefinitions="*,*">
+        <Button Grid.Column="0"
+                Classes="nav-link"
+                Classes.nav-link-active="{Binding IsGallery}"
+                HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Center"
+                Command="{Binding NavGalleryCommand}">
+          <StackPanel Spacing="2">
+            <controls:PhosphorIcon Kind="SquaresFour"
+                                   HorizontalAlignment="Center"
+                                   Width="{DynamicResource IconMd}"
+                                   Height="{DynamicResource IconMd}" />
+            <TextBlock Text="Gallery"
+                       HorizontalAlignment="Center"
+                       FontSize="{DynamicResource TextXs}" />
+          </StackPanel>
+        </Button>
+        <Button Grid.Column="1"
+                Classes="nav-link"
+                Classes.nav-link-active="{Binding IsSettings}"
+                HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Center"
+                Command="{Binding NavSettingsCommand}">
+          <StackPanel Spacing="2">
+            <controls:PhosphorIcon Kind="Gear"
+                                   HorizontalAlignment="Center"
+                                   Width="{DynamicResource IconMd}"
+                                   Height="{DynamicResource IconMd}" />
+            <TextBlock Text="Settings"
+                       HorizontalAlignment="Center"
+                       FontSize="{DynamicResource TextXs}" />
+          </StackPanel>
+        </Button>
+      </Grid>
+    </Border>
+
+    <Border DockPanel.Dock="Left"
+            Padding="0 8 0 0"
+            IsVisible="{Binding IsSidebarRailVisible}">
+      <Button Command="{Binding ToggleSidebarCommand}"
+              VerticalAlignment="Top"
+              Padding="6 10"
+              Background="{DynamicResource SurfaceRaisedBrush}"
+              BorderBrush="{DynamicResource BorderBrush}"
+              BorderThickness="0 1 1 1"
+              CornerRadius="0 8 8 0"
+              ToolTip.Tip="Show sidebar">
+        <controls:PhosphorIcon Kind="CaretRight"
+                               Width="{DynamicResource IconSm}"
+                               Height="{DynamicResource IconSm}"
+                               Foreground="{DynamicResource TextBrush}" />
+      </Button>
+    </Border>
+
+    <ContentControl Content="{Binding CurrentViewModel}"
+                    Background="{Binding RootBackground}"
+                    Padding="{Binding ContentPadding}" />
+  </DockPanel>
+</UserControl>

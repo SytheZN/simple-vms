@@ -37,7 +37,6 @@ public static class Program
     services.AddLogging(b =>
     {
       b.SetMinimumLevel(LogLevel.Debug);
-      b.AddDebug();
       b.AddSerilog();
     });
     services.AddSingleton(new DiagnosticsInfo(logPath));
