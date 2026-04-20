@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
+using Avalonia.Input;
 using Client.Core.Tunnel;
 using Client.Desktop.ViewModels;
 using System.ComponentModel;
@@ -18,6 +19,25 @@ public partial class MainWindow : Window
     InitializeComponent();
     _statusDot = this.FindControl<Ellipse>("StatusDot")!;
     _statusLabel = this.FindControl<TextBlock>("StatusLabel")!;
+    if (OperatingSystem.IsMacOS()) RemapKeyBindingsForMac();
+  }
+
+  private void RemapKeyBindingsForMac()
+  {
+    foreach (var kb in KeyBindings)
+    {
+      kb.Gesture = kb.Gesture.Key switch
+      {
+        Key.F11 => new KeyGesture(Key.F, KeyModifiers.Meta),
+        Key.Left when kb.Gesture.KeyModifiers == KeyModifiers.Control
+          => new KeyGesture(Key.Left, KeyModifiers.Meta),
+        Key.Right when kb.Gesture.KeyModifiers == KeyModifiers.Control
+          => new KeyGesture(Key.Right, KeyModifiers.Meta),
+        Key.D when kb.Gesture.KeyModifiers == KeyModifiers.Control
+          => new KeyGesture(Key.D, KeyModifiers.Meta),
+        _ => kb.Gesture
+      };
+    }
   }
 
   protected override void OnDataContextChanged(EventArgs e)

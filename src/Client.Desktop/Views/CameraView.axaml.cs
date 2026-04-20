@@ -46,7 +46,9 @@ public partial class CameraView : UserControl
   private readonly PhosphorIcon _fullscreenIconBar;
   private readonly Avalonia.Threading.DispatcherTimer _idleTimer;
   private MainWindowViewModel? _mainVm;
+  private CameraViewModel? _boundVm;
   private bool _isFullscreen;
+  private bool _pointerOverControls;
 
   public CameraView()
   {
@@ -81,6 +83,8 @@ public partial class CameraView : UserControl
     _idleTimer = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
     _idleTimer.Tick += OnIdleTick;
     PointerMoved += OnAnyPointerMoved;
+    _controlsStrip.PointerEntered += (_, _) => { _pointerOverControls = true; _idleTimer.Stop(); _controlsStrip.Opacity = 1; };
+    _controlsStrip.PointerExited += (_, _) => { _pointerOverControls = false; if (_isFullscreen) { _idleTimer.Stop(); _idleTimer.Start(); } };
 
     _rateSlider.Maximum = RateSteps.Length - 1;
     _rateSlider.Value = Array.IndexOf(RateSteps, 1);
@@ -103,10 +107,6 @@ public partial class CameraView : UserControl
   {
     base.OnAttachedToVisualTree(e);
 
-    if (DataContext is not CameraViewModel vm) return;
-
-    vm.PropertyChanged += OnVmPropertyChanged;
-
     _mainVm = TopLevel.GetTopLevel(this)?.DataContext as MainWindowViewModel;
     if (_mainVm != null)
     {
@@ -114,17 +114,38 @@ public partial class CameraView : UserControl
       ApplyFullscreen(_mainVm.IsCameraFullscreen);
     }
 
-    var cameraId = _mainVm?.SelectedCameraId;
-    if (cameraId == null) return;
-
-    _ = InitAsync(vm, cameraId.Value);
+    BindViewModel();
+    if (_boundVm != null && _mainVm?.SelectedCameraId is { } id)
+      _ = InitAsync(_boundVm, id);
   }
 
   protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
   {
     base.OnDetachedFromVisualTree(e);
     if (_mainVm != null) _mainVm.PropertyChanged -= OnMainVmPropertyChanged;
+    if (_boundVm != null) _boundVm.PropertyChanged -= OnVmPropertyChanged;
+    _boundVm = null;
     _idleTimer.Stop();
+  }
+
+  protected override void OnDataContextChanged(EventArgs e)
+  {
+    base.OnDataContextChanged(e);
+    BindViewModel();
+  }
+
+  private void BindViewModel()
+  {
+    var vm = DataContext as CameraViewModel;
+    if (ReferenceEquals(vm, _boundVm)) return;
+    if (_boundVm != null) _boundVm.PropertyChanged -= OnVmPropertyChanged;
+    _boundVm = vm;
+    if (vm == null) return;
+    vm.PropertyChanged += OnVmPropertyChanged;
+
+    var cameraId = _mainVm?.SelectedCameraId;
+    if (cameraId == null) return;
+    _ = InitAsync(vm, cameraId.Value);
   }
 
   private void OnMainVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -169,7 +190,9 @@ public partial class CameraView : UserControl
   private void OnIdleTick(object? sender, EventArgs e)
   {
     _idleTimer.Stop();
-    if (_isFullscreen) _controlsStrip.Opacity = 0;
+    if (!_isFullscreen) return;
+    if (_pointerOverControls) { _idleTimer.Start(); return; }
+    _controlsStrip.Opacity = 0;
   }
 
   private async Task InitAsync(CameraViewModel vm, Guid cameraId)

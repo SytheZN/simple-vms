@@ -15,6 +15,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
 
   private ViewKind _currentView = ViewKind.Enrollment;
   private Guid? _selectedCameraId;
+  private List<Guid> _cameraOrder = [];
   private ViewModelBase? _currentViewModel;
   private ConnectionState _connectionState;
   private bool _isFullscreen;
@@ -150,32 +151,24 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
 
   public void NavigateToCamera(Guid cameraId)
   {
+    if (CurrentViewModel is GalleryViewModel gallery && gallery.Cameras.Count > 0)
+      _cameraOrder = gallery.Cameras.Select(c => c.Id).ToList();
     SelectedCameraId = cameraId;
     NavigateTo(ViewKind.Camera);
   }
 
   public void ToggleFullscreen() => IsFullscreen = !IsFullscreen;
 
-  public void NextCamera()
-  {
-    if (CurrentViewModel is GalleryViewModel gallery && gallery.Cameras.Count > 0)
-    {
-      var idx = SelectedCameraId == null ? 0
-        : gallery.Cameras.ToList().FindIndex(c => c.Id == SelectedCameraId);
-      idx = (idx + 1) % gallery.Cameras.Count;
-      NavigateToCamera(gallery.Cameras[idx].Id);
-    }
-  }
+  public void NextCamera() => StepCamera(1);
+  public void PrevCamera() => StepCamera(-1);
 
-  public void PrevCamera()
+  private void StepCamera(int delta)
   {
-    if (CurrentViewModel is GalleryViewModel gallery && gallery.Cameras.Count > 0)
-    {
-      var idx = SelectedCameraId == null ? 0
-        : gallery.Cameras.ToList().FindIndex(c => c.Id == SelectedCameraId);
-      idx = (idx - 1 + gallery.Cameras.Count) % gallery.Cameras.Count;
-      NavigateToCamera(gallery.Cameras[idx].Id);
-    }
+    if (_cameraOrder.Count == 0) return;
+    var idx = SelectedCameraId == null ? 0 : _cameraOrder.IndexOf(SelectedCameraId.Value);
+    if (idx < 0) idx = 0;
+    idx = ((idx + delta) % _cameraOrder.Count + _cameraOrder.Count) % _cameraOrder.Count;
+    NavigateToCamera(_cameraOrder[idx]);
   }
 
   public void GoBack()

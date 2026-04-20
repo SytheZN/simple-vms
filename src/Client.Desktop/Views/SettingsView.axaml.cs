@@ -16,18 +16,32 @@ namespace Client.Desktop.Views;
 [ExcludeFromCodeCoverage]
 public partial class SettingsView : UserControl
 {
-  private static readonly (string Keys, string Description)[] Shortcuts =
-  [
-    ("F11", "Toggle fullscreen"),
-    ("Ctrl + \u2192", "Next camera"),
-    ("Ctrl + \u2190", "Previous camera"),
-    ("Space", "Play / pause"),
-    ("Esc", "Back / exit fullscreen"),
-    ("1", "Gallery"),
-    ("2", "Camera"),
-    ("3", "Settings"),
-    ("Ctrl + D", "Toggle stats overlay"),
-  ];
+  private static (string Keys, string Description)[] Shortcuts =>
+    OperatingSystem.IsMacOS()
+      ?
+      [
+        ("\u2318 F", "Toggle fullscreen"),
+        ("\u2318 \u2192", "Next camera"),
+        ("\u2318 \u2190", "Previous camera"),
+        ("Space", "Play / pause"),
+        ("Esc", "Back / exit fullscreen"),
+        ("1", "Gallery"),
+        ("2", "Camera"),
+        ("3", "Settings"),
+        ("\u2318 D", "Toggle stats overlay"),
+      ]
+      :
+      [
+        ("F11", "Toggle fullscreen"),
+        ("Ctrl + \u2192", "Next camera"),
+        ("Ctrl + \u2190", "Previous camera"),
+        ("Space", "Play / pause"),
+        ("Esc", "Back / exit fullscreen"),
+        ("1", "Gallery"),
+        ("2", "Camera"),
+        ("3", "Settings"),
+        ("Ctrl + D", "Toggle stats overlay"),
+      ];
 
   private readonly Ellipse _statusDot;
   private readonly TextBlock _statusLabel;

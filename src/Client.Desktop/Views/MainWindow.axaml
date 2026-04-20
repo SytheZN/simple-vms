@@ -85,16 +85,6 @@
             </StackPanel>
           </Button>
           <Button Classes="nav-link"
-                  Classes.nav-link-active="{Binding IsCamera}"
-                  Command="{Binding NavCameraCommand}">
-            <StackPanel Orientation="Horizontal" Spacing="8">
-              <controls:PhosphorIcon Kind="VideoCamera"
-                                          Width="{DynamicResource IconSm}"
-                                          Height="{DynamicResource IconSm}" />
-              <TextBlock Text="Camera" VerticalAlignment="Center" />
-            </StackPanel>
-          </Button>
-          <Button Classes="nav-link"
                   Classes.nav-link-active="{Binding IsSettings}"
                   Command="{Binding NavSettingsCommand}">
             <StackPanel Orientation="Horizontal" Spacing="8">
