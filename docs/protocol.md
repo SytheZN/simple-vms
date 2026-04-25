@@ -196,35 +196,35 @@ The client sends one request message, then the server sends one response message
 
 ### 0x0300 - Live Subscribe
 
-Client opens a stream to subscribe to a camera's live video. The server sends a continuous sequence of fMP4 fragments until the client closes the stream.
+Client opens a stream to subscribe to a camera's live stream. The server sends a continuous sequence of mux fragments until the client closes the stream.
 
 **Subscribe message (client > server):**
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `cameraId` | Guid | Camera identifier |
-| `profile` | string | Stream profile name (e.g. `main`, `sub`) |
+| `profile` | string | Stream profile name (e.g. `main`, `sub`, `motion-grid-sub`) |
 
 **Fragment messages (server > client):**
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `timestamp` | ulong | PTS in Unix microseconds |
-| `data` | bytes | fMP4 fragment (`moof` + `mdat`) |
+| `data` | bytes | Mux fragment bytes per the stream's `IStreamFormat` (e.g. fMP4 `moof` + `mdat`, motion-grid fragment) |
 
 **Flags (fragment):**
 
 | Bit | Name | Description |
 |-----|------|-------------|
-| 0 | `KEYFRAME` | Fragment begins with a keyframe |
-| 1 | `INIT` | Fragment is an init segment (`ftyp` + `moov`); sent first |
+| 0 | `KEYFRAME` | Fragment is a sync point |
+| 1 | `INIT` | Fragment is an init segment (format-defined; sent first when the format requires one, e.g. fMP4 `ftyp` + `moov`) |
 | 2-13 | Reserved | |
 
-The server sends the init segment (flag `INIT`) as the first message, followed by a continuous sequence of fragment messages. The client can close the stream at any time to unsubscribe.
+When the format defines an init segment, the server sends it (flag `INIT`) as the first message. Continuous fragment messages follow. The client can close the stream at any time to unsubscribe.
 
 ### 0x0301 - Playback
 
-Client opens a stream to request recorded video starting from a timestamp. The server seeks to the nearest keyframe and streams fMP4 data.
+Client opens a stream to request recorded data starting from a timestamp. The server seeks to the nearest sync point and streams mux fragments.
 
 **Playback request (client > server):**
 
@@ -237,7 +237,7 @@ Client opens a stream to request recorded video starting from a timestamp. The s
 
 **Playback messages (server > client):**
 
-Same as live fragment messages. The server sends an init segment first, then fragments in chronological order.
+Same as live fragment messages. When the format defines an init segment, the server sends it first, then fragments in chronological order.
 
 **Flags (request):**
 

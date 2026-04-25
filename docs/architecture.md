@@ -57,7 +57,7 @@ Server                    > ASP.NET Core host, startup, DI composition
 Server.Core               > Domain services, orchestration, scheduling
 Server.Api                > HTTP endpoints (web UI, enrollment), middleware
 Server.Onvif              > ONVIF client (discovery, device, media, events, analytics)
-Server.Streaming          > Stream pipeline orchestration, data/video stream fan-out
+Server.Streaming          > Stream pipeline orchestration, data/mux stream fan-out
 Server.Recording          > Segment writer, keyframe indexer, retention engine
 Server.Tunnel             > TCP+TLS listener, mutual TLS, stream dispatch
 Server.Plugins            > Plugin host, discovery, lifecycle management
@@ -84,9 +84,15 @@ graph LR
     capture --> |"IDataStream&lt;T&gt;"| dfan["Data Stream<br/>Fan-out"]
     dfan --> |"IDataStream&lt;T&gt;"| muxer["Stream Format"]
     dfan --> |"IDataStream&lt;T&gt;"| tap["IStreamTap<br/>Subscribers"]
-    muxer --> |"IVideoStream&lt;T&gt;"| vfan["Video Stream<br/>Fan-out"]
-    vfan --> |"IVideoStream&lt;T&gt;"| rec["Recording"]
-    vfan --> |"IVideoStream&lt;T&gt;"| live["Live Streaming"]
+    dfan --> |"IDataStream&lt;T&gt;"| analyzer["Analyzer"]
+    analyzer --> |"IDataStream&lt;U&gt;"| dfan2["Data Stream<br/>Fan-out"]
+    dfan2 --> |"IDataStream&lt;U&gt;"| muxer2["Stream Format"]
+    muxer --> |"IMuxStream&lt;T&gt;"| vfan["Mux Stream<br/>Fan-out"]
+    muxer2 --> |"IMuxStream&lt;U&gt;"| vfan2["Mux Stream<br/>Fan-out"]
+    vfan --> |"IMuxStream&lt;T&gt;"| rec["Recording"]
+    vfan --> |"IMuxStream&lt;T&gt;"| live["Live Streaming"]
+    vfan2 --> |"IMuxStream&lt;U&gt;"| rec
+    vfan2 --> |"IMuxStream&lt;U&gt;"| live
     rec --> storage["Storage"]
     rec --> db["Database"]
 ```
@@ -94,9 +100,10 @@ graph LR
 1. The camera provider identifies available streams and their codecs
 2. The server matches an `ICaptureSource` plugin by protocol and connects
 3. The capture source handles all transport concerns (e.g. RTSP negotiation, RTP depacketization) and produces a typed data stream (`IDataStream<T>`)
-4. The data stream fans out to `IStreamTap` subscribers and to the matched `IStreamFormat` plugin
-5. The `IStreamFormat` muxes the data stream into a container format, producing a typed video stream (`IVideoStream<T>`)
-6. The video stream fans out to the recording pipeline and live stream handlers
+4. The data stream fans out to `IStreamTap` subscribers, to the matched `IStreamFormat` plugin, and to any `IDataStreamAnalyzer` plugins attached to this profile
+5. `IStreamFormat` muxes the data stream into a container format, producing a typed mux stream (`IMuxStream<T>`)
+6. The mux stream fans out to the recording pipeline and live stream handlers
+7. An analyzer producing a derived data stream (`IDataStream<U>`) feeds it through the same downstream stages: fan-out, format, mux-stream fan-out, recording, live streaming. The derived data stream's fan-out is itself a tap point, so further analyzers can chain off it on the same terms.
 
 ### Data Flow: Playback
 
@@ -139,22 +146,22 @@ A camera exposes multiple stream profiles, which fall into two categories:
 
 **Quality profiles** (`main`, `sub`, etc.) - video streams at different resolutions/bitrates. The client subscribes to one at a time, typically choosing based on network conditions (e.g. `sub` on cellular, `main` on LAN). Each quality profile has its own retention policy (e.g. keep `main` for 30 days, `sub` for 90 days).
 
-**Metadata profiles** (`motion`, etc.) - non-video data streams produced from camera analytics. These use the same subscription, recording, and playback pipeline as quality profiles but with a different `IStreamFormat` implementation suited to their data. The client subscribes to a metadata profile alongside a quality profile and renders it as an overlay.
+**Metadata profiles** (`motion-grid-sub`, etc.) - non-video data streams produced from camera analytics or analyzer plugins. These use the same subscription, recording, and playback pipeline as quality profiles but with a different `IStreamFormat` implementation suited to their data. The client subscribes to a metadata profile alongside a quality profile and renders it as an overlay.
+
+Metadata profiles may be source streams (declared by the camera provider, e.g. ONVIF on-device analytics) or derived streams (produced by an `IDataStreamAnalyzer` plugin from a parent quality profile, e.g. a motion grid extracted from the encoded video). Derived streams are reconciled against the producing plugin's declarations and follow soft-delete semantics so historical recordings remain queryable after a producer is disabled. See [data-model.md](data-model.md) for stream entity details.
 
 Metadata profiles do not have their own retention. A metadata segment is retained as long as any quality profile has a corresponding segment covering that time range - when the last overlapping quality segment is purged, the metadata segment is purged with it.
-
-The ONVIF provider registers a `motion` profile on cameras that support analytics metadata. The motion data (active cell grids, regions) is recorded as timestamped segments and can be played back in sync with video.
 
 ### Recording: Segments
 
 Recordings are stored as segments in the container format produced by the active `IStreamFormat` plugin:
 
-- No transcoding - data units from the capture source are muxed into a container format by the format plugin
+- No transcoding - data units from the producer (capture source or analyzer) are muxed into a container format by the format plugin
 - 5-minute segments by default (configurable per camera, actual duration rounds to the nearest sync point boundary)
 - Each segment is independently playable
 - Sync point byte offsets indexed in the database for sub-second seek
 
-The recording pipeline subscribes to the video stream fan-out. It accumulates muxed output into segment files via `IStorageProvider`, tracks sync point byte offsets as they are written, and finalizes the segment when the duration target is reached.
+The recording pipeline subscribes to the mux stream fan-out. It accumulates muxed output into segment files via `IStorageProvider`, tracks sync point byte offsets as they are written, and finalizes the segment when the duration target is reached.
 
 ### Storage Layout
 
@@ -195,7 +202,7 @@ Runs periodically (configurable interval, default 15 minutes). Per-camera retent
 
 Policies are evaluated in order: days first, then size/percent. Deletion is oldest-first within each camera's segments.
 
-Retention is configured per quality profile - different profiles can have different policies (e.g. keep `main` for 30 days, `sub` for 90 days). Metadata profiles (`motion`, etc.) do not have their own retention. A metadata segment is retained as long as any quality profile has a segment covering the same time range. When the last overlapping quality segment is purged, the metadata segment is purged with it.
+Retention is configured per quality profile - different profiles can have different policies (e.g. keep `main` for 30 days, `sub` for 90 days). Metadata profiles do not have their own retention. A metadata segment is retained as long as any quality profile has a segment covering the same time range. When the last overlapping quality segment is purged, the metadata segment is purged with it.
 
 ## Plugin System
 
@@ -206,11 +213,11 @@ See [plugins.md](plugins.md) for full specification.
 | Interface | Purpose | Included Plugins |
 |-----------|---------|-----------------|
 | `ICaptureSource` | Connect to a source, produce typed `IDataStream<T>` | RTSP (TCP interleaved) |
-| `IStreamFormat` | Consume `IDataStream<T>`, produce typed `IVideoStream<T>` | fMP4 (H.264/H.265) |
+| `IStreamFormat` | Consume `IDataStream<T>`, produce typed `IMuxStream<T>` | fMP4 (H.264/H.265), motion-grid |
 | `ICameraProvider` | Camera-specific behavior, discovery | ONVIF, Generic RTSP |
 | `IEventFilter` | Process and filter events | Motion zone filter |
 | `INotificationSink` | Deliver notifications | Client push (tunnel) |
-| `IVideoAnalyzer` | Analyze video frames (requires decode) | None (future) |
+| `IDataStreamAnalyzer` | Consume a data stream, produce a derived data stream and/or events | Motion grid (H.264, H.265) |
 | `IStorageProvider` | Read/write recordings | NFS/local filesystem |
 | `IDataProvider` | Metadata storage (cameras, segments, events, config, etc.) | SQLite |
 | `IAuthProvider` | Authenticate HTTP/web UI requests | None (unauthenticated by default) |

@@ -147,20 +147,18 @@ List all cameras.
 | `providerId` | string | Camera provider plugin (e.g. `onvif`, `rtsp`) |
 | `streams` | object[] | Available stream profiles (see below) |
 | `capabilities` | string[] | Camera capabilities (e.g. `ptz`, `audio`, `events`, `analytics`) |
-| `config` | object? | Provider-specific configuration (device URIs, serial number, etc.) |
-| `segmentDuration` | int? | Camera-specific segment duration override (null = server default) |
-| `retentionMode` | string? | Camera-specific retention mode (null = default/inherit) |
-| `retentionValue` | long? | Camera-specific retention value (null = default/inherit) |
+
+Configuration (segment duration, retention, per-stream recording, plugin-contributed fields) is exposed on the camera config endpoint; see [GET /api/v1/cameras/{id}/config](#get-apiv1camerasidconfig).
 
 Stream profile object:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `profile` | string | Profile name (e.g. `main`, `sub`) |
-| `codec` | string | `h264` or `h265` |
+| `profile` | string | Profile name (e.g. `main`, `sub`, `motion-grid-sub`) |
+| `kind` | string | `quality` or `metadata` |
+| `codec` | string | e.g. `h264`, `h265`, `motion-grid` |
 | `resolution` | string | e.g. `1920x1080` |
-| `fps` | int | Frames per second |
-| `recordingEnabled` | bool | Whether this profile is being recorded |
+| `fps` | number | Frames per second (e.g. `30`, `0.25`) |
 
 #### POST /api/v1/cameras
 
@@ -205,29 +203,63 @@ Get full camera details including configuration. Same shape as the list item.
 
 #### PUT /api/v1/cameras/{id}
 
-Update camera configuration.
+Update camera connection settings. Operational settings (segment duration, retention, per-stream recording, plugin-contributed fields) are managed via [PUT /api/v1/cameras/{id}/config](#put-apiv1camerasidconfig).
 
 **Request body:**
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `name` | string? | Display name |
+| `address` | string? | Camera address (e.g. `http://192.168.1.50/onvif/device_service`). Normalised by the active provider on save. |
+| `providerId` | string? | Reassign to a different camera provider plugin. The new provider's `ConfigureAsync` runs against the existing `address`/`credentials`; provider-specific config in the camera's `config` map may be reset. |
 | `credentials` | object? | Updated credentials |
-| `streams` | object[]? | Per-stream config (recording enabled/disabled) |
-| `segmentDuration` | int? | Target segment duration in seconds (null = use global default, actual duration rounds to the nearest sync point boundary) |
-| `retention` | object? | Retention policy override for this camera (see retention endpoint for shape) |
-| `rtspPortOverride` | int? | Override RTSP port in stream URIs |
+| `rtspPortOverride` | int? | Override RTSP port in stream URIs. Send `0` to clear an existing override; omit the field to leave it unchanged. |
 
-Retention override object:
+Omitted fields are left unchanged. When `address`, `providerId`, `credentials`, or `rtspPortOverride` change, the server re-runs `ConfigureAsync` against the camera (a "refresh") so capability detection and stream URIs are updated, and publishes a `CameraConfigChanged` event. Streaming and recording pipelines reconcile dynamically without a server restart.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `mode` | string | `days`, `bytes`, or `percent` |
-| `value` | number | Threshold value |
+#### OPTIONS /api/v1/cameras/{id}/config
 
-Omitting `retention` leaves the current policy unchanged. Setting it overrides the global default. To revert to the global default, delete the camera's retention override via a PUT with `retention` set to `null`.
+Return the schema for everything configurable about this camera and its streams. The schema combines built-in fields (segment duration, retention, per-stream recording, per-stream retention) and plugin-contributed fields from any plugin implementing `IPluginCameraSettings` or `IPluginStreamSettings`.
 
-When credentials or stream configuration changes, a `CameraConfigChanged` event is published. The streaming and recording pipelines reconcile dynamically without requiring a server restart.
+**Response body:**
+
+```
+{
+  "camera": {
+    "{pluginId}": [ SettingGroup, ... ]
+  },
+  "streams": {
+    "{profile}": {
+      "{pluginId}": [ SettingGroup, ... ]
+    }
+  }
+}
+```
+
+Built-in host settings (segment duration, retention, per-stream recording) are surfaced under a reserved `core` plugin id so all sections follow the same dispatch path. A plugin entry is present only when its `GetSchema(...)` returns a non-empty schema for that scope. `SettingGroup` and `SettingField` follow the shapes defined in [plugins.md](plugins.md).
+
+#### GET /api/v1/cameras/{id}/config
+
+Return current values for the same shape returned by `OPTIONS`. Each `SettingGroup[]` array is flattened to a `{ "{fieldKey}": value, ... }` map keyed by `SettingField.Key`.
+
+#### PUT /api/v1/cameras/{id}/config
+
+Apply config changes. Partial updates are allowed; omitted sections and fields are left unchanged. The body matches the `GET` shape:
+
+```
+{
+  "camera": {
+    "{pluginId}": { "{fieldKey}": value, ... }
+  },
+  "streams": {
+    "{profile}": {
+      "{pluginId}": { "{fieldKey}": value, ... }
+    }
+  }
+}
+```
+
+Each section is dispatched to the named plugin's `IPluginCameraSettings.ApplyValues` or `IPluginStreamSettings.ApplyValues`. A `CameraConfigChanged` event is published on changes that affect streaming or recording.
 
 #### DELETE /api/v1/cameras/{id}
 
@@ -391,7 +423,7 @@ Get the global default retention policy.
 
 Update the global default retention policy.
 
-Per-camera overrides are set via `PUT /api/v1/cameras/{id}`.
+Per-camera overrides are set via `PUT /api/v1/cameras/{id}/config`.
 
 ---
 
@@ -501,6 +533,8 @@ List discovered plugins, optionally filtered by extension point type (e.g. `data
 | `extensionPoints` | string[] | Which interfaces the plugin implements |
 | `userStartable` | bool | Whether the plugin supports user-initiated start/stop |
 | `hasSettings` | bool | Whether the plugin implements `IPluginSettings` (config schema available) |
+| `hasCameraSettings` | bool | Whether the plugin implements `IPluginCameraSettings` |
+| `hasStreamSettings` | bool | Whether the plugin implements `IPluginStreamSettings` |
 
 #### GET /api/v1/plugins/{id}
 
@@ -568,7 +602,7 @@ Stop a running plugin. Only available for plugins that implement `IUserStartable
 
 ## Streaming
 
-Live video and recording playback use a unified WebSocket endpoint with a binary protocol. The client sends commands (go-live, fetch) and the server pushes fMP4 data. See [protocol.md](protocol.md) for the tunnel protocol equivalent.
+Live and recording playback use a unified WebSocket endpoint with a binary protocol. The client sends commands (go-live, fetch) and the server pushes mux fragments. See [protocol.md](protocol.md) for the tunnel protocol equivalent.
 
 #### GET /api/v1/stream/{cameraId}
 
@@ -585,8 +619,8 @@ WebSocket upgrade. Opens a bidirectional streaming session for the specified cam
 
 | Type byte | Name | Fields |
 |-----------|------|--------|
-| `0x01` | Init | profile (length-prefixed UTF-8), data (fMP4 init segment) |
-| `0x02` | Gop | flags (byte), profile (length-prefixed UTF-8), timestamp (uint64 BE), data (fMP4 fragment) |
+| `0x01` | Init | profile (length-prefixed UTF-8), data (init segment, format-defined) |
+| `0x02` | Gop | flags (byte), profile (length-prefixed UTF-8), timestamp (uint64 BE), data (mux fragment) |
 | `0x03` | Status | status byte: Ack (0x00), FetchComplete (0x01), Gap (0x02 + from/to uint64 BE), Error (0x04), Live (0x05), Recording (0x06) |
 
-The client sends a `Live` command to start receiving live fMP4 fragments, or a `Fetch` command to request recorded data for a time range. The server responds with `Init` (codec initialization), followed by `Gop` messages (fMP4 fragments), and `Status` messages to signal mode, gaps, and fetch completion. The client can switch between live and playback at any time by sending a new command.
+The client sends a `Live` command to start receiving the live stream, or a `Fetch` command to request recorded data for a time range. The server responds with `Init` (when the format defines one), followed by `Gop` messages (mux fragments), and `Status` messages to signal mode, gaps, and fetch completion. The client can switch between live and playback at any time by sending a new command.

@@ -31,23 +31,28 @@ Represents a registered camera.
 
 ### Stream
 
-Represents a stream profile on a camera. A camera has one or more streams. Streams are either quality profiles (video at different resolutions) or metadata profiles (motion data, etc.).
+Represents a stream profile on a camera. A camera has one or more streams. Streams are either source streams (declared by the camera provider) or derived streams (produced by an analyzer plugin from a parent stream). Streams are also classified by `Kind`: quality profiles (video at different resolutions) or metadata profiles (motion data, etc.).
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `Id` | Guid | Primary key |
 | `CameraId` | Guid | Foreign key > Camera |
-| `Profile` | string | Profile name (e.g. `main`, `sub`, `motion`) |
+| `ParentStreamId` | Guid? | Foreign key > Stream. Null for source streams; non-null for derived streams. |
+| `ProducerId` | string? | Identifier of the plugin owning this stream's lifecycle. Null for source streams; for derived streams, the analyzer's `AnalyzerId`. |
+| `Profile` | string | Profile name (e.g. `main`, `sub`, `motion-grid-sub`) |
 | `Kind` | enum | `Quality` or `Metadata` |
 | `FormatId` | string | `IStreamFormat` identifier (e.g. `fmp4`, `motion-grid`) |
-| `Codec` | string? | Codec identifier (e.g. `h264`, `h265`); null for metadata profiles |
-| `Resolution` | string? | e.g. `1920x1080`; null for metadata profiles |
-| `Fps` | int? | Frames per second; null for metadata profiles |
+| `Codec` | string? | Codec identifier (e.g. `h264`, `h265`, `motion-grid`) |
+| `Resolution` | string? | e.g. `1920x1080` |
+| `Fps` | decimal? | Frames per second (e.g. `30`, `0.25` for one frame every four seconds) |
 | `Bitrate` | int? | Bitrate in kbps (if known) |
-| `Uri` | string | Source URI |
+| `Uri` | string? | Source URI; null for derived streams |
 | `RecordingEnabled` | bool | Whether this stream is being recorded |
 | `RetentionMode` | enum | `Default`, `Days`, `Bytes`, `Percent` - `Default` inherits from Camera, which in turn inherits from global |
 | `RetentionValue` | long | Threshold value (ignored when mode is `Default`) |
+| `DeletedAt` | ulong? | Unix microseconds. Null for active streams. Set when the producing plugin no longer declares the stream; cleared on resurrection. The retention engine hard-deletes the row once no segments remain. |
+
+Derived stream rows are reconciled against the producing plugin's declarations by `(CameraId, ProducerId, Profile)`: undeclared rows have `DeletedAt` set, redeclared rows have it cleared (preserving `Id` so historical segments stay attached). Standard read paths filter `DeletedAt IS NULL`; segment-side queries do not, so playback of historical data on a soft-deleted stream continues to work.
 
 ### Segment
 
@@ -104,6 +109,7 @@ An enrolled client device.
 ```mermaid
 erDiagram
     Camera ||--o{ Stream : has
+    Stream ||--o{ Stream : derives
     Stream ||--o{ Segment : recorded_as
     Segment ||--o{ Keyframe : indexed_by
     Camera ||--o{ Event : produces

@@ -39,6 +39,7 @@ public sealed class PluginContext
 {
     public required IConfig Config { get; init; }
     public required IServerEnvironment Environment { get; init; }
+    public required IPluginLoggerFactory LoggerFactory { get; init; }
     public IEventBus? EventBus { get; init; }
     public IDataStore? DataStore { get; init; }
     public ICameraRegistry? CameraRegistry { get; init; }
@@ -47,7 +48,9 @@ public sealed class PluginContext
 }
 ```
 
-`Config` and `Environment` are always provided. The remaining services are null during early initialization (e.g. the data provider plugin initializes before the event bus or camera registry exist) and populated once available.
+`Config`, `Environment`, and `LoggerFactory` are always provided. The remaining services are null during early initialization (e.g. the data provider plugin initializes before the event bus or camera registry exist) and populated once available.
+
+`LoggerFactory.CreateLogger(categoryName)` returns a `Microsoft.Extensions.Logging.ILogger` that routes through the host's logging pipeline (file sink, console, etc.). Plugins should use this rather than `Console.Write*` or `Debug.Write*` so log output reaches the configured sinks.
 
 ## Lifecycle
 
@@ -121,13 +124,13 @@ public interface IDataStream<T> : IDataStream where T : IDataUnit
     IAsyncEnumerable<T> ReadAsync(CancellationToken ct);
 }
 
-public interface IVideoStream
+public interface IMuxStream
 {
-    VideoStreamInfo Info { get; }
+    MuxStreamInfo Info { get; }
     Type FrameType { get; }
 }
 
-public interface IVideoStream<T> : IVideoStream where T : IDataUnit
+public interface IMuxStream<T> : IMuxStream where T : IDataUnit
 {
     IAsyncEnumerable<T> ReadAsync(CancellationToken ct);
 }
@@ -136,21 +139,21 @@ public sealed class StreamInfo
 {
     public required string DataFormat { get; init; }
     public object? FormatParameters { get; init; }
-    public int? Fps { get; init; }
+    public decimal? Fps { get; init; }
 }
 
-public sealed class VideoStreamInfo
+public sealed class MuxStreamInfo
 {
     public required string DataFormat { get; init; }
     public required string MimeType { get; init; }
     public required string Resolution { get; init; }
-    public required int Fps { get; init; }
+    public required decimal Fps { get; init; }
 }
 ```
 
-`IDataStream<T>` carries raw codec data from capture sources. `IVideoStream<T>` carries muxed container data from format plugins. The non-generic base interfaces (`IDataStream`, `IVideoStream`) allow the server core to wire the pipeline by matching `FrameType` without knowing the generic type parameter at compile time.
+`IDataStream<T>` carries producer-side typed data units (raw codec data from capture sources, derived data units from analyzers). `IMuxStream<T>` carries format-encoded container output. The non-generic base interfaces (`IDataStream`, `IMuxStream`) allow the server core to wire the pipeline by matching `FrameType` without knowing the generic type parameter at compile time.
 
-`StreamInfo` describes the raw data stream from a capture source. `VideoStreamInfo` describes the muxed video output from a format plugin.
+`StreamInfo` describes a producer's data stream. `MuxStreamInfo` describes a format plugin's output. `Resolution` and `Fps` are populated from inspection of the muxed output and may be refreshed from worker statistics over time.
 
 `StreamInfo.FormatParameters` is `object?` - plugins within the same assembly cast it to the expected type (e.g. `H264Parameters`). Plugins in different assemblies that handle the same format reference the shared type from `Shared.Models/Formats/`.
 
@@ -184,7 +187,7 @@ Plugins could implement capture from RTSP (TCP interleaved), files, RTMP, vendor
 
 ### IStreamFormat
 
-Consumes a data stream and produces a video stream in a container format. Declares which input types it accepts and what output type it produces. The server core matches capture source output types to format plugin input types when building the stream pipeline.
+Consumes a data stream and produces a format-encoded mux stream. Declares which input types it accepts and what output type it produces. The server core matches producer output types to format plugin input types when building the stream pipeline.
 
 A single plugin assembly can implement `IStreamFormat` multiple times for different input types (e.g. an fMP4 plugin that accepts both `H264NalUnit` and `H265NalUnit`). Since both the format plugin and the capture source reference the same data unit types from `Shared.Models/Formats/`, they interoperate without any knowledge of each other.
 
@@ -195,7 +198,7 @@ public interface IStreamFormat
     string FileExtension { get; }
     Type InputType { get; }
     Type OutputType { get; }
-    Task<OneOf<IVideoStream, Error>> CreatePipelineAsync(IDataStream input, StreamInfo info, CancellationToken ct);
+    Task<OneOf<IMuxStream, Error>> CreatePipelineAsync(IDataStream input, StreamInfo info, CancellationToken ct);
     OneOf<ISegmentReader, Error> CreateReader(Stream input);
 }
 
@@ -206,7 +209,7 @@ public interface ISegmentReader : IAsyncDisposable
 }
 ```
 
-The format plugin casts the `IDataStream` to its expected generic type (e.g. `IDataStream<H264NalUnit>`) - this cast is safe because the server core has already verified the type match. The returned `IVideoStream` produces typed muxed output (e.g. `IVideoStream<Fmp4Fragment>`).
+The format plugin casts the `IDataStream` to its expected generic type (e.g. `IDataStream<H264NalUnit>`) - this cast is safe because the server core has already verified the type match. The returned `IMuxStream` produces typed muxed output (e.g. `IMuxStream<Fmp4Fragment>`, `IMuxStream<MotionGridFragment>`).
 
 Plugins could implement fragmented MP4, MKV, or lightweight metadata formats (e.g. motion grid).
 
@@ -260,23 +263,63 @@ public interface INotificationSink
 
 Plugins could implement client push over the tunnel, email (SMTP), webhooks, Pushover, Telegram, etc.
 
-### IVideoAnalyzer
+### IDataStreamAnalyzer
 
-Extension point for features that require decoding and analyzing video (object detection, face recognition, license plate reading, etc.).
+Extension point for plugins that consume a data stream and produce derived outputs (motion grids, object detections, license plate reads, etc.). The analyzer's input is any `IDataStream`: a parent video stream's NAL units, or the output of another analyzer.
 
 ```csharp
-public interface IVideoAnalyzer
+public interface IDataStreamAnalyzer
 {
     string AnalyzerId { get; }
     IReadOnlyList<string> SupportedCodecs { get; }
-    Task<OneOf<Success, Error>> StartAsync(Guid cameraId, string profile, CancellationToken ct);
-    Task<OneOf<Success, Error>> StopAsync(Guid cameraId, string profile, CancellationToken ct);
 }
 ```
 
-The analyzer is responsible for its own pipeline: it subscribes to the raw data stream via `IStreamTap`, decodes the data units (CPU or GPU), performs analysis, and publishes results to `IEventBus`. The server never decodes video - that is entirely the analyzer plugin's concern.
+`IDataStreamAnalyzer` is the identity / applicability base. `SupportedCodecs` lists `StreamInfo.DataFormat` values the analyzer accepts as input - codec ids (`h264`, `h265`) for analyzers consuming source video, format ids (`motion-grid`, etc.) for analyzers chained off another analyzer's output. Output capabilities are opt-in via separate interfaces; a plugin implements one or both alongside `IDataStreamAnalyzer`. The plugin host probes for these via `is`-checks.
 
-Analysis results flow through the normal event filter > notification pipeline.
+#### IDataStreamAnalyzerStreamOutput
+
+The plugin produces a derived data stream (e.g. a motion grid stream from a video stream).
+
+```csharp
+public interface IDataStreamAnalyzerStreamOutput
+{
+    IReadOnlyList<DerivedStreamSpec> GetDerivedStreams(Guid cameraId);
+    Task<OneOf<IDataStream, Error>> StartStreamAsync(
+        Guid cameraId, string parentProfile, CancellationToken ct);
+}
+
+public sealed record DerivedStreamSpec
+{
+    public required string ParentProfile { get; init; }
+    public required string Profile { get; init; }
+    public required StreamKind Kind { get; init; }
+    public required string FormatId { get; init; }
+    public string? Codec { get; init; }
+}
+```
+
+`GetDerivedStreams` returns the derived streams the plugin's current configuration would produce for this camera. See [data-model.md](data-model.md) for derived stream lifecycle.
+
+`StartStreamAsync` returns the analyzer's output `IDataStream`. Lifecycle is consumer-driven via the iteration cancellation token: when the consumer cancels, the analyzer disposes its parent tap and tears down.
+
+Note: the host calls `StartStreamAsync` twice - a probe at construct time (cancelled immediately) and again on first demand - so implementations must be safe to call repeatedly and defer expensive work until the returned stream is first read.
+
+#### IDataStreamAnalyzerEventOutput
+
+The plugin emits events on `IEventBus` while running.
+
+```csharp
+public interface IDataStreamAnalyzerEventOutput
+{
+    Task<OneOf<Success, Error>> StartEventsAsync(
+        Guid cameraId, string parentProfile, CancellationToken ct);
+    Task<OneOf<Success, Error>> StopEventsAsync(
+        Guid cameraId, string parentProfile, CancellationToken ct);
+}
+```
+
+Lifecycle is explicit; the host invokes `StartAsync` and `StopAsync` directly. Plugins typically gate this on an `IPluginStreamSettings` toggle. The host invokes stream-output and event-output lifecycles independently; a plugin implementing both coordinates them internally if it shares state between the two.
 
 ### IStorageProvider
 
@@ -388,9 +431,9 @@ Plugins with user-facing settings implement `IPluginSettings`. The plugin advert
 public interface IPluginSettings
 {
     IReadOnlyList<SettingGroup> GetSchema();
-    IReadOnlyDictionary<string, object> GetValues();
-    OneOf<Success, Error> ValidateValue(string key, object value);
-    OneOf<Success, Error> ApplyValues(IReadOnlyDictionary<string, object> values);
+    IReadOnlyDictionary<string, string> GetValues();
+    OneOf<Success, Error> ValidateValue(string key, string value);
+    OneOf<Success, Error> ApplyValues(IReadOnlyDictionary<string, string> values);
 }
 
 public record SettingGroup
@@ -409,14 +452,48 @@ public record SettingField
     public required string Label { get; init; }
     public required string Type { get; init; }
     public string? Description { get; init; }
-    public object? DefaultValue { get; init; }
+    public string? DefaultValue { get; init; }
     public bool Required { get; init; }
+    public IReadOnlyList<SettingFieldOption>? Options { get; init; }
+}
+
+public record SettingFieldOption
+{
+    public required string Value { get; init; }
+    public required string Label { get; init; }
 }
 ```
 
 `GetSchema` returns groups of fields for the UI to render in order. `GetValues` returns the current values keyed by field key. `ValidateValue` validates a single field value before submission (for inline validation in the UI). `ApplyValues` validates and persists the full set. Plugins that have no user-facing settings do not implement `IPluginSettings`.
 
+For closed-set fields (`Type = "select"`), the plugin populates `Options` with the allowed `{ Value, Label }` pairs - the UI renders these as a dropdown. `Value` is the wire value persisted via `ApplyValues`; `Label` is the human-readable label shown in the dropdown. Open-set fields leave `Options` null.
+
 The API endpoints `OPTIONS/GET/PUT /api/v1/plugins/{id}/config` delegate to these methods. The host looks up the plugin by ID and calls the methods directly on the `IPlugin` instance.
+
+### IPluginCameraSettings
+
+Settings scoped to a single camera. Each method takes the camera's `Guid`. Implemented when a plugin's behavior is per-camera configurable (e.g. provider-specific options on an ONVIF camera).
+
+```csharp
+public interface IPluginCameraSettings
+{
+    IReadOnlyList<SettingGroup> GetSchema(Guid cameraId);
+    IReadOnlyDictionary<string, string> GetValues(Guid cameraId);
+    OneOf<Success, Error> ValidateValue(Guid cameraId, string key, string value);
+    OneOf<Success, Error> ApplyValues(Guid cameraId, IReadOnlyDictionary<string, string> values);
+    Task<OneOf<Success, Error>> OnRemovedAsync(Guid cameraId, CancellationToken ct);
+}
+```
+
+Returning an empty schema means "this plugin does not apply to this camera" - the UI renders nothing. `OnRemovedAsync` is invoked by the host when a camera is deleted; the plugin uses it to clean up its own keys.
+
+### IPluginStreamSettings
+
+Settings scoped to a single stream profile. Same shape as `IPluginCameraSettings` with the scope being a `Stream`'s `Guid`. Used for per-stream toggles like enabling an analyzer on a specific quality profile.
+
+`ApplyValues` is the plugin's responsibility to tear down and respawn its per-(camera, profile) worker if the new values warrant it. The plugin instance itself stays alive across settings changes.
+
+Scoped settings values live in `IConfigRepository` under the plugin's namespace. The plugin chooses internal key prefixes (typically `camera/{guid}/{key}` and `stream/{guid}/{key}`); the host does not interpret them.
 
 ## Plugin Services
 

@@ -11,12 +11,6 @@ Thank you for your interest in contributing.
 
 Keep pull requests focused on one logical change. If a refactor is needed to support a feature, split it into a separate PR.
 
-## Code of Conduct
-
-Be respectful, be constructive, assume good intent. Disagreements about code are welcome; personal attacks are not. Everyone contributing here is volunteering their time - treat them accordingly.
-
-Harassment, discrimination, and deliberately hostile behavior will not be tolerated. If something feels off, raise it with the maintainers.
-
 ## Reporting Issues
 
 Open an issue with a clear description, steps to reproduce (for bugs), expected vs. actual behavior, and your server version and OS.

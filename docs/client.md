@@ -182,9 +182,11 @@ On mobile, the client defaults to the lower quality profile over cellular and th
 
 ### Motion Overlay
 
-If the camera provides a `motion` metadata profile, the client subscribes to it alongside the selected quality profile. The motion stream delivers timestamped cell grid data which the `VideoPlayer` control renders as a translucent overlay on the video, synced by timestamp.
+A camera may have any number of motion grid streams (`Kind = Metadata`, `FormatId = motion-grid`) - one derived from each parent quality profile by an analyzer, plus any from camera-provided on-device analytics. The user selects one or none of them as the overlay source for the camera view. When a source is selected, the `VideoPlayer` control subscribes to that stream and renders it as a translucent overlay on the video, synced by timestamp. The same mechanism works for live and playback.
 
-The same mechanism works for both live and playback - motion data is recorded and played back like any other stream profile. The overlay can be toggled on/off by the user.
+Overlay source is independent of video source - the overlay can be rendered from `sub`'s grid while the video shown is `main`. Cell coordinates are normalised to the frame, so scaling across source resolutions is automatic.
+
+When no source is selected, the client holds no metadata subscription. Subscriptions drive producer activation, so the analyzer only runs while a viewer is rendering it.
 
 ## Timeline
 
