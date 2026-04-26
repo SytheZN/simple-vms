@@ -1,3 +1,5 @@
+using static Shared.Models.Formats.BitstreamHelpers;
+
 namespace Format.Fmp4;
 
 public record H265VpsInfo
@@ -31,16 +33,17 @@ public static class H265SpsParser
 {
   public static H265VpsInfo ParseVps(ReadOnlySpan<byte> rawNal)
   {
-    var rbsp = RbspExtractor.Extract(rawNal);
-    var reader = new BitReader(rbsp);
+    var rbsp = ExtractRbsp(rawNal);
+    var bitOffset = 0;
+    var data = (ReadOnlySpan<byte>)rbsp;
 
-    reader.Skip(16);
-    reader.Skip(4);
-    reader.Skip(2);
-    reader.Skip(6);
-    var maxSubLayersMinus1 = (byte)reader.ReadBits(3);
-    var temporalIdNesting = reader.ReadBit();
-    var ptl = ReadProfileTierLevel(ref reader, maxSubLayersMinus1);
+    Skip(ref bitOffset, 16);
+    Skip(ref bitOffset, 4);
+    Skip(ref bitOffset, 2);
+    Skip(ref bitOffset, 6);
+    var maxSubLayersMinus1 = (byte)ReadBits(data, ref bitOffset, 3);
+    var temporalIdNesting = ReadBit(data, ref bitOffset);
+    var ptl = ReadProfileTierLevel(data, ref bitOffset, maxSubLayersMinus1);
 
     return new H265VpsInfo
     {
@@ -52,30 +55,31 @@ public static class H265SpsParser
 
   public static H265SpsInfo ParseSps(ReadOnlySpan<byte> rawNal)
   {
-    var rbsp = RbspExtractor.Extract(rawNal);
-    var reader = new BitReader(rbsp);
+    var rbsp = ExtractRbsp(rawNal);
+    var bitOffset = 0;
+    var data = (ReadOnlySpan<byte>)rbsp;
 
-    reader.Skip(16);
-    reader.Skip(4);
-    var maxSubLayersMinus1 = (byte)reader.ReadBits(3);
-    reader.Skip(1);
-    var ptl = ReadProfileTierLevel(ref reader, maxSubLayersMinus1);
+    Skip(ref bitOffset, 16);
+    Skip(ref bitOffset, 4);
+    var maxSubLayersMinus1 = (byte)ReadBits(data, ref bitOffset, 3);
+    Skip(ref bitOffset, 1);
+    var ptl = ReadProfileTierLevel(data, ref bitOffset, maxSubLayersMinus1);
 
-    reader.ReadExpGolomb();
-    var chromaFormatIdc = (byte)reader.ReadExpGolomb();
+    ReadExpGolomb(data, ref bitOffset);
+    var chromaFormatIdc = (byte)ReadExpGolomb(data, ref bitOffset);
     if (chromaFormatIdc == 3)
-      reader.Skip(1);
+      Skip(ref bitOffset, 1);
 
-    var width = (int)reader.ReadExpGolomb();
-    var height = (int)reader.ReadExpGolomb();
+    var width = (int)ReadExpGolomb(data, ref bitOffset);
+    var height = (int)ReadExpGolomb(data, ref bitOffset);
 
-    var conformanceWindow = reader.ReadBit();
+    var conformanceWindow = ReadBit(data, ref bitOffset);
     if (conformanceWindow)
     {
-      var cropLeft = (int)reader.ReadExpGolomb();
-      var cropRight = (int)reader.ReadExpGolomb();
-      var cropTop = (int)reader.ReadExpGolomb();
-      var cropBottom = (int)reader.ReadExpGolomb();
+      var cropLeft = (int)ReadExpGolomb(data, ref bitOffset);
+      var cropRight = (int)ReadExpGolomb(data, ref bitOffset);
+      var cropTop = (int)ReadExpGolomb(data, ref bitOffset);
+      var cropBottom = (int)ReadExpGolomb(data, ref bitOffset);
 
       int subWidthC = chromaFormatIdc is 1 or 2 ? 2 : 1;
       int subHeightC = chromaFormatIdc == 1 ? 2 : 1;
@@ -84,8 +88,8 @@ public static class H265SpsParser
       height -= (cropTop + cropBottom) * subHeightC;
     }
 
-    var bitDepthLuma = (byte)(reader.ReadExpGolomb() + 8);
-    var bitDepthChroma = (byte)(reader.ReadExpGolomb() + 8);
+    var bitDepthLuma = (byte)(ReadExpGolomb(data, ref bitOffset) + 8);
+    var bitDepthChroma = (byte)(ReadExpGolomb(data, ref bitOffset) + 8);
 
     return new H265SpsInfo
     {
@@ -98,21 +102,22 @@ public static class H265SpsParser
     };
   }
 
-  private static H265ProfileTierLevel ReadProfileTierLevel(ref BitReader reader, byte maxSubLayersMinus1)
+  private static H265ProfileTierLevel ReadProfileTierLevel(
+    ReadOnlySpan<byte> data, ref int bitOffset, byte maxSubLayersMinus1)
   {
-    var generalProfileSpace = (byte)reader.ReadBits(2);
-    var generalTierFlag = reader.ReadBit();
-    var generalProfileIdc = (byte)reader.ReadBits(5);
+    var generalProfileSpace = (byte)ReadBits(data, ref bitOffset, 2);
+    var generalTierFlag = ReadBit(data, ref bitOffset);
+    var generalProfileIdc = (byte)ReadBits(data, ref bitOffset, 5);
 
     uint profileCompatFlags = 0;
     for (var i = 0; i < 32; i++)
-      profileCompatFlags = (profileCompatFlags << 1) | reader.ReadBits(1);
+      profileCompatFlags = (profileCompatFlags << 1) | ReadBits(data, ref bitOffset, 1);
 
     ulong constraintFlags = 0;
     for (var i = 0; i < 48; i++)
-      constraintFlags = (constraintFlags << 1) | reader.ReadBits(1);
+      constraintFlags = (constraintFlags << 1) | ReadBits(data, ref bitOffset, 1);
 
-    var generalLevelIdc = (byte)reader.ReadBits(8);
+    var generalLevelIdc = (byte)ReadBits(data, ref bitOffset, 8);
 
     if (maxSubLayersMinus1 > 0)
     {
@@ -120,17 +125,17 @@ public static class H265SpsParser
       var subLayerLevelPresent = new bool[maxSubLayersMinus1];
       for (var i = 0; i < maxSubLayersMinus1; i++)
       {
-        subLayerProfilePresent[i] = reader.ReadBit();
-        subLayerLevelPresent[i] = reader.ReadBit();
+        subLayerProfilePresent[i] = ReadBit(data, ref bitOffset);
+        subLayerLevelPresent[i] = ReadBit(data, ref bitOffset);
       }
       if (maxSubLayersMinus1 < 8)
-        reader.Skip(2 * (8 - maxSubLayersMinus1));
+        Skip(ref bitOffset, 2 * (8 - maxSubLayersMinus1));
       for (var i = 0; i < maxSubLayersMinus1; i++)
       {
         if (subLayerProfilePresent[i])
-          reader.Skip(88);
+          Skip(ref bitOffset, 88);
         if (subLayerLevelPresent[i])
-          reader.Skip(8);
+          Skip(ref bitOffset, 8);
       }
     }
 

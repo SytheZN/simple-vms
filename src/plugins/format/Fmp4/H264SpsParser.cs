@@ -1,3 +1,5 @@
+using static Shared.Models.Formats.BitstreamHelpers;
+
 namespace Format.Fmp4;
 
 public record H264SpsInfo
@@ -18,14 +20,15 @@ public static class H264SpsParser
 
   public static H264SpsInfo Parse(ReadOnlySpan<byte> rawNal)
   {
-    var rbsp = RbspExtractor.Extract(rawNal);
-    var reader = new BitReader(rbsp);
+    var rbsp = ExtractRbsp(rawNal);
+    var bitOffset = 0;
+    var data = (ReadOnlySpan<byte>)rbsp;
 
-    reader.Skip(8);
-    var profileIdc = (byte)reader.ReadBits(8);
-    var profileCompat = (byte)reader.ReadBits(8);
-    var levelIdc = (byte)reader.ReadBits(8);
-    reader.ReadExpGolomb();
+    Skip(ref bitOffset, 8);
+    var profileIdc = (byte)ReadBits(data, ref bitOffset, 8);
+    var profileCompat = (byte)ReadBits(data, ref bitOffset, 8);
+    var levelIdc = (byte)ReadBits(data, ref bitOffset, 8);
+    ReadExpGolomb(data, ref bitOffset);
 
     byte chromaFormatIdc = 1;
     byte bitDepthLuma = 8;
@@ -33,62 +36,62 @@ public static class H264SpsParser
 
     if (ExtendedProfiles.AsSpan().Contains(profileIdc))
     {
-      chromaFormatIdc = (byte)reader.ReadExpGolomb();
+      chromaFormatIdc = (byte)ReadExpGolomb(data, ref bitOffset);
       if (chromaFormatIdc == 3)
-        reader.Skip(1);
-      bitDepthLuma = (byte)(reader.ReadExpGolomb() + 8);
-      bitDepthChroma = (byte)(reader.ReadExpGolomb() + 8);
-      reader.Skip(1);
-      var seqScalingMatrixPresent = reader.ReadBit();
+        Skip(ref bitOffset, 1);
+      bitDepthLuma = (byte)(ReadExpGolomb(data, ref bitOffset) + 8);
+      bitDepthChroma = (byte)(ReadExpGolomb(data, ref bitOffset) + 8);
+      Skip(ref bitOffset, 1);
+      var seqScalingMatrixPresent = ReadBit(data, ref bitOffset);
       if (seqScalingMatrixPresent)
       {
         var count = chromaFormatIdc != 3 ? 8 : 12;
         for (var i = 0; i < count; i++)
         {
-          if (reader.ReadBit())
-            SkipScalingList(ref reader, i < 6 ? 16 : 64);
+          if (ReadBit(data, ref bitOffset))
+            SkipScalingList(data, ref bitOffset, i < 6 ? 16 : 64);
         }
       }
     }
 
-    reader.ReadExpGolomb();
-    var picOrderCntType = reader.ReadExpGolomb();
+    ReadExpGolomb(data, ref bitOffset);
+    var picOrderCntType = ReadExpGolomb(data, ref bitOffset);
     if (picOrderCntType == 0)
     {
-      reader.ReadExpGolomb();
+      ReadExpGolomb(data, ref bitOffset);
     }
     else if (picOrderCntType == 1)
     {
-      reader.Skip(1);
-      reader.ReadSignedExpGolomb();
-      reader.ReadSignedExpGolomb();
-      var numRefFrames = reader.ReadExpGolomb();
+      Skip(ref bitOffset, 1);
+      ReadSignedExpGolomb(data, ref bitOffset);
+      ReadSignedExpGolomb(data, ref bitOffset);
+      var numRefFrames = ReadExpGolomb(data, ref bitOffset);
       for (uint i = 0; i < numRefFrames; i++)
-        reader.ReadSignedExpGolomb();
+        ReadSignedExpGolomb(data, ref bitOffset);
     }
 
-    reader.ReadExpGolomb();
-    reader.Skip(1);
+    ReadExpGolomb(data, ref bitOffset);
+    Skip(ref bitOffset, 1);
 
-    var picWidthInMbs = (int)reader.ReadExpGolomb() + 1;
-    var picHeightInMapUnits = (int)reader.ReadExpGolomb() + 1;
-    var frameMbsOnly = reader.ReadBit();
+    var picWidthInMbs = (int)ReadExpGolomb(data, ref bitOffset) + 1;
+    var picHeightInMapUnits = (int)ReadExpGolomb(data, ref bitOffset) + 1;
+    var frameMbsOnly = ReadBit(data, ref bitOffset);
     if (!frameMbsOnly)
-      reader.Skip(1);
+      Skip(ref bitOffset, 1);
 
-    reader.Skip(1);
+    Skip(ref bitOffset, 1);
 
     var cropLeft = 0;
     var cropRight = 0;
     var cropTop = 0;
     var cropBottom = 0;
-    var frameCropping = reader.ReadBit();
+    var frameCropping = ReadBit(data, ref bitOffset);
     if (frameCropping)
     {
-      cropLeft = (int)reader.ReadExpGolomb();
-      cropRight = (int)reader.ReadExpGolomb();
-      cropTop = (int)reader.ReadExpGolomb();
-      cropBottom = (int)reader.ReadExpGolomb();
+      cropLeft = (int)ReadExpGolomb(data, ref bitOffset);
+      cropRight = (int)ReadExpGolomb(data, ref bitOffset);
+      cropTop = (int)ReadExpGolomb(data, ref bitOffset);
+      cropBottom = (int)ReadExpGolomb(data, ref bitOffset);
     }
 
     var subWidthC = chromaFormatIdc == 1 || chromaFormatIdc == 2 ? 2 : 1;
@@ -111,7 +114,7 @@ public static class H264SpsParser
     };
   }
 
-  private static void SkipScalingList(ref BitReader reader, int size)
+  private static void SkipScalingList(ReadOnlySpan<byte> data, ref int bitOffset, int size)
   {
     var lastScale = 8;
     var nextScale = 8;
@@ -119,7 +122,7 @@ public static class H264SpsParser
     {
       if (nextScale != 0)
       {
-        var delta = reader.ReadSignedExpGolomb();
+        var delta = ReadSignedExpGolomb(data, ref bitOffset);
         nextScale = (lastScale + delta + 256) % 256;
       }
       lastScale = nextScale == 0 ? lastScale : nextScale;
