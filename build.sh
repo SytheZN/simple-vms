@@ -10,13 +10,15 @@ if [ -n "${BUILD_VERSION:-}" ]; then
   VERSION_ARGS=(-p:Version="$BUILD_VERSION")
 fi
 
-COMMON_ARGS=(--tl:auto)
+COMMON_ARGS=()
 TEST_CONSOLE_LOGGER=()
 QUIET=0
 if [ "${BUILD_VERBOSITY:-}" = "quiet" ]; then
-  COMMON_ARGS+=(-v quiet)
+  COMMON_ARGS+=(-v quiet --tl:on)
   TEST_CONSOLE_LOGGER=(--logger "console;verbosity=quiet")
   QUIET=1
+else
+  COMMON_ARGS+=(--tl:auto)
 fi
 
 build() {

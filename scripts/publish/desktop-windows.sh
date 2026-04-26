@@ -43,8 +43,11 @@ esac
 
 out_installer="$OUT_DIR/simple-vms-${stage}.exe"
 rm -f "$out_installer"
+numeric_version="${BUILD_VERSION:-0.0.0}"
+numeric_version="${numeric_version%%-*}"
+numeric_version="${numeric_version%%+*}"
 makensis \
-  -DVERSION="${BUILD_VERSION:-0.0.0}" \
+  -DVERSION="${numeric_version}" \
   -DSTAGE_DIR="$stage_dir" \
   -DOUT_FILE="$out_installer" \
   -DICON_PATH="$SOLUTION_DIR/src/Client.Theme/logo/app.ico" \

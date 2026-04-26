@@ -15,7 +15,7 @@ esac
 
 for tool in create-dmg iconutil; do
   if ! command -v "$tool" >/dev/null 2>&1; then
-    echo "Error: $tool not found — requires macOS + \`brew install create-dmg\`"
+    echo "Error: $tool not found - requires macOS + \`brew install create-dmg\`"
     exit 1
   fi
 done
@@ -37,6 +37,8 @@ tar czf "$OUT_DIR/simple-vms-${stage}.tar.gz" -C "$OUT_DIR" "$stage"
 app_name="SimpleVMS"
 bundle_id="com.simplevms.desktop"
 version="${BUILD_VERSION:-0.0.0}"
+numeric_version="${version%%-*}"
+numeric_version="${numeric_version%%+*}"
 dmg_src="$OUT_DIR/dmg-src-${BUILD_RID}"
 app_path="$dmg_src/${app_name}.app"
 
@@ -79,9 +81,9 @@ cat > "$app_path/Contents/Info.plist" <<EOF
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleVersion</key>
-  <string>${version}</string>
+  <string>${numeric_version}</string>
   <key>CFBundleShortVersionString</key>
-  <string>${version}</string>
+  <string>${numeric_version}</string>
   <key>CFBundleIconFile</key>
   <string>AppIcon</string>
   <key>LSMinimumSystemVersion</key>

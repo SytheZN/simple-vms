@@ -97,17 +97,18 @@ jobs:
           is_tagged=false
           is_main=false
 
+          short_hash="$(git rev-parse --short=7 HEAD)"
+          run_number="${{ github.run_number }}"
+
           if [ "${{ github.ref_type }}" = "tag" ]; then
             version="${GITHUB_REF_NAME#v}"
             is_tagged=true
           elif git describe --tags --match 'v*' --abbrev=0 HEAD >/dev/null 2>&1; then
             base_version="$(git describe --tags --match 'v*' --abbrev=0 HEAD)"
             base_version="${base_version#v}"
-            short_hash="$(git rev-parse --short=7 HEAD)"
-            version="${base_version}-${short_hash}"
+            version="${base_version}-${run_number}+${short_hash}"
           else
-            short_hash="$(git rev-parse --short=7 HEAD)"
-            version="0.0.0-${short_hash}"
+            version="0.0.0-${run_number}+${short_hash}"
           fi
 
           if [ "${{ github.ref }}" = "refs/heads/main" ]; then
@@ -115,8 +116,6 @@ jobs:
           elif [ "${{ github.ref_type }}" = "tag" ] && git merge-base --is-ancestor HEAD origin/main 2>/dev/null; then
             is_main=true
           fi
-
-          short_hash="${short_hash:-$(git rev-parse --short=7 HEAD)}"
 
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "hash=${short_hash}" >> "$GITHUB_OUTPUT"
@@ -417,6 +416,7 @@ jobs:
         run: |
           image="ghcr.io/${GITHUB_REPOSITORY,,}"
           version="${{ needs.build.outputs.version }}"
+          version="${version//+/_}"
           hash="${{ needs.build.outputs.hash }}"
 
           tags="${image}:${version}"
