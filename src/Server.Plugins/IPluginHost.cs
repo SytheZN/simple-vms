@@ -12,7 +12,7 @@ public interface IPluginHost
   IReadOnlyList<ICameraProvider> CameraProviders { get; }
   IReadOnlyList<IEventFilter> EventFilters { get; }
   IReadOnlyList<INotificationSink> NotificationSinks { get; }
-  IReadOnlyList<IVideoAnalyzer> VideoAnalyzers { get; }
+  IReadOnlyList<IDataStreamAnalyzer> Analyzers { get; }
   IReadOnlyList<IStorageProvider> StorageProviders { get; }
   IReadOnlyList<IAuthProvider> AuthProviders { get; }
   IReadOnlyList<IAuthzProvider> AuthzProviders { get; }

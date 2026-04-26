@@ -1,3 +1,4 @@
+using System.Runtime.Loader;
 using Microsoft.Extensions.Logging.Abstractions;
 using Server.Plugins;
 using Server.Recording;
@@ -148,6 +149,77 @@ public class RetentionEngineTests
 
     Assert.That(storage.PurgedRefs, Has.Count.EqualTo(1));
     Assert.That(storage.PurgedRefs[0], Is.EqualTo(seg1.SegmentRef));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Soft-deleted stream has no remaining segments; an IPluginStreamSettings is registered
+  ///
+  /// ACTION:
+  /// Run retention evaluation
+  ///
+  /// EXPECTED RESULT:
+  /// Stream row is hard-deleted first, then plugin OnRemovedAsync is invoked.
+  /// (Plugins are notified only after the row delete succeeds, so a failed delete
+  /// does not leave plugins notified for a stream that still exists.)
+  /// </summary>
+  [Test]
+  public async Task SoftDeletedStream_NoSegments_HardDeletedThenPluginNotified()
+  {
+    var streamId = Guid.NewGuid();
+    var stream = MakeStream(RetentionMode.Default, 0, streamId);
+    stream.DeletedAt = (ulong)(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000);
+
+    var data = new FakeDataProvider();
+    var camera = MakeCamera(RetentionMode.Default, 0);
+    data.AddCamera(camera);
+    data.AddStream(stream);
+
+    var plugin = new RecordingPluginStreamSettings();
+    var host = new FakePluginHost(data, new FakeStorage(), plugin);
+    var engine = new RetentionEngine(host, NullLogger.Instance);
+
+    await engine.EvaluateAsync(CancellationToken.None);
+
+    Assert.That(plugin.OnRemovedCalls, Has.Count.EqualTo(1));
+    Assert.That(plugin.OnRemovedCalls[0], Is.EqualTo(streamId));
+    Assert.That(((FakeStreamRepo)data.Streams).DeletedIds, Does.Contain(streamId));
+    Assert.That(plugin.OnRemovedCalledBeforeDelete, Is.False,
+      "OnRemovedAsync must be invoked after the stream row is hard-deleted");
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Soft-deleted stream still has at least one segment
+  ///
+  /// ACTION:
+  /// Run retention evaluation
+  ///
+  /// EXPECTED RESULT:
+  /// Stream row is NOT hard-deleted; plugin not notified yet
+  /// </summary>
+  [Test]
+  public async Task SoftDeletedStream_HasSegments_NotDeleted()
+  {
+    var streamId = Guid.NewGuid();
+    var stream = MakeStream(RetentionMode.Default, 0, streamId);
+    stream.DeletedAt = (ulong)(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000);
+    var seg = MakeSegment(streamId, 1_000_000, 2_000_000, size: 100);
+
+    var data = new FakeDataProvider();
+    var camera = MakeCamera(RetentionMode.Default, 0);
+    data.AddCamera(camera);
+    data.AddStream(stream);
+    data.AddSegments(streamId, [seg]);
+
+    var plugin = new RecordingPluginStreamSettings();
+    var host = new FakePluginHost(data, new FakeStorage(), plugin);
+    var engine = new RetentionEngine(host, NullLogger.Instance);
+
+    await engine.EvaluateAsync(CancellationToken.None);
+
+    Assert.That(((FakeStreamRepo)data.Streams).DeletedIds, Does.Not.Contain(streamId));
+    Assert.That(plugin.OnRemovedCalls, Is.Empty);
   }
 
   /// <summary>
@@ -339,12 +411,19 @@ public class RetentionEngineTests
       return Task.FromResult<OneOf<IReadOnlyList<CameraStream>, Error>>(list.ToList());
     }
 
+    public List<Guid> DeletedIds { get; } = [];
+
     public Task<OneOf<CameraStream, Error>> GetByIdAsync(Guid id, CancellationToken ct) =>
       throw new NotImplementedException();
     public Task<OneOf<Success, Error>> UpsertAsync(CameraStream stream, CancellationToken ct) =>
       throw new NotImplementedException();
-    public Task<OneOf<Success, Error>> DeleteAsync(Guid id, CancellationToken ct) =>
-      throw new NotImplementedException();
+    public Task<OneOf<Success, Error>> DeleteAsync(Guid id, CancellationToken ct)
+    {
+      DeletedIds.Add(id);
+      foreach (var list in _streams.Values)
+        list.RemoveAll(s => s.Id == id);
+      return Task.FromResult<OneOf<Success, Error>>(new Success());
+    }
   }
 
   private sealed class FakeSegmentRepo : ISegmentRepository
@@ -443,24 +522,75 @@ public class RetentionEngineTests
       Task.FromResult<OneOf<Success, Error>>(new Success());
   }
 
+  private sealed class RecordingPluginStreamSettings : IPlugin, IPluginStreamSettings
+  {
+    public List<Guid> OnRemovedCalls { get; } = [];
+    public bool OnRemovedCalledBeforeDelete { get; private set; }
+    public Func<Guid, bool>? StreamExists { get; set; }
+
+    public PluginMetadata Metadata { get; } = new()
+    {
+      Id = "test-stream-settings",
+      Name = "Test",
+      Version = "1.0.0",
+      Description = ""
+    };
+    public OneOf<Success, Error> Initialize(PluginContext context) => new Success();
+    public Task<OneOf<Success, Error>> StartAsync(CancellationToken ct) =>
+      Task.FromResult<OneOf<Success, Error>>(new Success());
+    public Task<OneOf<Success, Error>> StopAsync(CancellationToken ct) =>
+      Task.FromResult<OneOf<Success, Error>>(new Success());
+
+    public IReadOnlyList<SettingGroup> GetSchema(Guid streamId) => [];
+    public IReadOnlyDictionary<string, string> GetValues(Guid streamId) =>
+      new Dictionary<string, string>();
+    public OneOf<Success, Error> ValidateValue(Guid streamId, string key, string value) =>
+      new Success();
+    public OneOf<Success, Error> ApplyValues(Guid streamId, IReadOnlyDictionary<string, string> values) =>
+      new Success();
+
+    public Task<OneOf<Success, Error>> OnRemovedAsync(Guid streamId, CancellationToken ct)
+    {
+      OnRemovedCalls.Add(streamId);
+      OnRemovedCalledBeforeDelete = StreamExists?.Invoke(streamId) ?? true;
+      return Task.FromResult<OneOf<Success, Error>>(new Success());
+    }
+  }
+
   private sealed class FakePluginHost : IPluginHost
   {
-    public IReadOnlyList<PluginEntry> Plugins => [];
+    public IReadOnlyList<PluginEntry> Plugins { get; }
     public IDataProvider DataProvider { get; }
     public IReadOnlyList<ICaptureSource> CaptureSources => [];
     public IReadOnlyList<IStreamFormat> StreamFormats => [];
     public IReadOnlyList<ICameraProvider> CameraProviders => [];
     public IReadOnlyList<IEventFilter> EventFilters => [];
     public IReadOnlyList<INotificationSink> NotificationSinks => [];
-    public IReadOnlyList<IVideoAnalyzer> VideoAnalyzers => [];
+    public IReadOnlyList<IDataStreamAnalyzer> Analyzers => [];
     public IReadOnlyList<IStorageProvider> StorageProviders { get; }
     public IReadOnlyList<IAuthProvider> AuthProviders => [];
     public IReadOnlyList<IAuthzProvider> AuthzProviders => [];
 
-    public FakePluginHost(IDataProvider data, IStorageProvider storage)
+    public FakePluginHost(IDataProvider data, IStorageProvider storage, IPlugin? plugin = null)
     {
       DataProvider = data;
       StorageProviders = [storage];
+      if (plugin != null)
+      {
+        if (plugin is RecordingPluginStreamSettings rp)
+          rp.StreamExists = id => ((FakeStreamRepo)data.Streams).DeletedIds.Contains(id) == false;
+        Plugins = [new PluginEntry
+        {
+          PluginType = plugin.GetType(),
+          LoadContext = AssemblyLoadContext.Default,
+          Plugin = plugin,
+          Metadata = plugin.Metadata
+        }];
+      }
+      else
+      {
+        Plugins = [];
+      }
     }
 
     public IStreamFormat? FindFormat(Type inputType) => null;

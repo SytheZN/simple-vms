@@ -18,10 +18,10 @@ public sealed class CameraListItem
 public sealed class StreamProfileDto
 {
   public required string Profile { get; init; }
+  public required StreamKind Kind { get; init; }
   public required string Codec { get; init; }
   public required string Resolution { get; init; }
-  public required int Fps { get; init; }
-  public required bool RecordingEnabled { get; init; }
+  public required decimal Fps { get; init; }
 }
 
 public sealed class CreateCameraRequest
@@ -51,17 +51,10 @@ public sealed class ProbeResponse
 public sealed class UpdateCameraRequest
 {
   public string? Name { get; init; }
+  public string? Address { get; init; }
+  public string? ProviderId { get; init; }
   public CredentialsDto? Credentials { get; init; }
-  public IReadOnlyList<UpdateStreamConfig>? Streams { get; init; }
-  public int? SegmentDuration { get; init; }
-  public RetentionOverride? Retention { get; init; }
   public int? RtspPortOverride { get; init; }
-}
-
-public sealed class UpdateStreamConfig
-{
-  public required string Profile { get; init; }
-  public required bool RecordingEnabled { get; init; }
 }
 
 public sealed class CredentialsDto
@@ -70,8 +63,14 @@ public sealed class CredentialsDto
   public required string Password { get; init; }
 }
 
-public sealed class RetentionOverride
+public sealed class CameraConfigSchema
 {
-  public required string Mode { get; init; }
-  public required long Value { get; init; }
+  public Dictionary<string, IReadOnlyList<SettingGroup>> Camera { get; init; } = new();
+  public Dictionary<string, Dictionary<string, IReadOnlyList<SettingGroup>>> Streams { get; init; } = new();
+}
+
+public sealed class CameraConfigValues
+{
+  public Dictionary<string, Dictionary<string, string>> Camera { get; init; } = new();
+  public Dictionary<string, Dictionary<string, Dictionary<string, string>>> Streams { get; init; } = new();
 }

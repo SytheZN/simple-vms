@@ -340,7 +340,7 @@ public class RecordingManagerTests
     public IReadOnlyList<ICameraProvider> CameraProviders => [];
     public IReadOnlyList<IEventFilter> EventFilters => [];
     public IReadOnlyList<INotificationSink> NotificationSinks => [];
-    public IReadOnlyList<IVideoAnalyzer> VideoAnalyzers => [];
+    public IReadOnlyList<IDataStreamAnalyzer> Analyzers => [];
     public IReadOnlyList<IStorageProvider> StorageProviders => [storage];
     public IReadOnlyList<IAuthProvider> AuthProviders => [];
     public IReadOnlyList<IAuthzProvider> AuthzProviders => [];

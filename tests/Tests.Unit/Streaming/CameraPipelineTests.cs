@@ -180,18 +180,18 @@ public class CameraPipelineTests
   /// Pipeline is constructed and video subscribe is called without format plugin
   ///
   /// ACTION:
-  /// Call SubscribeVideoAsync (no format plugin registered)
+  /// Call SubscribeMuxAsync (no format plugin registered)
   ///
   /// EXPECTED RESULT:
   /// Returns Unavailable error since no video pipeline exists
   /// </summary>
   [Test]
-  public async Task SubscribeVideo_NoFormatPlugin_ReturnsError()
+  public async Task SubscribeMux_NoFormatPlugin_ReturnsError()
   {
     var pipeline = CreatePipeline();
     await pipeline.ConstructAsync(CancellationToken.None);
 
-    var result = await pipeline.SubscribeVideoAsync(CancellationToken.None);
+    var result = await pipeline.SubscribeMuxAsync(CancellationToken.None);
 
     Assert.That(result.IsT1, Is.True);
     Assert.That(result.AsT1.Result, Is.EqualTo(Result.Unavailable));
@@ -201,7 +201,7 @@ public class CameraPipelineTests
 
   /// <summary>
   /// SCENARIO:
-  /// Pipeline is not constructed when SubscribeVideoAsync is called
+  /// Pipeline is not constructed when SubscribeMuxAsync is called
   ///
   /// ACTION:
   /// Subscribe to the video stream
@@ -210,11 +210,11 @@ public class CameraPipelineTests
   /// Returns Unavailable error
   /// </summary>
   [Test]
-  public async Task SubscribeVideo_WhenNotConstructed_ReturnsError()
+  public async Task SubscribeMux_WhenNotConstructed_ReturnsError()
   {
     var pipeline = CreatePipeline();
 
-    var result = await pipeline.SubscribeVideoAsync(CancellationToken.None);
+    var result = await pipeline.SubscribeMuxAsync(CancellationToken.None);
 
     Assert.That(result.IsT1, Is.True);
     Assert.That(result.AsT1.Result, Is.EqualTo(Result.Unavailable));
@@ -225,18 +225,18 @@ public class CameraPipelineTests
   /// Pipeline is disposed
   ///
   /// ACTION:
-  /// Call SubscribeVideoAsync
+  /// Call SubscribeMuxAsync
   ///
   /// EXPECTED RESULT:
   /// Returns Unavailable error
   /// </summary>
   [Test]
-  public async Task SubscribeVideo_WhenDisposed_ReturnsError()
+  public async Task SubscribeMux_WhenDisposed_ReturnsError()
   {
     var pipeline = CreatePipeline();
     await pipeline.DisposeAsync();
 
-    var result = await pipeline.SubscribeVideoAsync(CancellationToken.None);
+    var result = await pipeline.SubscribeMuxAsync(CancellationToken.None);
 
     Assert.That(result.IsT1, Is.True);
     Assert.That(result.AsT1.Result, Is.EqualTo(Result.Unavailable));
@@ -244,42 +244,42 @@ public class CameraPipelineTests
 
   /// <summary>
   /// SCENARIO:
-  /// Pipeline constructed, VideoInfo is null (no format plugin)
+  /// Pipeline constructed, MuxInfo is null (no format plugin)
   ///
   /// ACTION:
-  /// Read VideoInfo
+  /// Read MuxInfo
   ///
   /// EXPECTED RESULT:
   /// Returns null
   /// </summary>
   [Test]
-  public async Task VideoInfo_NoFormatPlugin_ReturnsNull()
+  public async Task MuxInfo_NoFormatPlugin_ReturnsNull()
   {
     var pipeline = CreatePipeline();
     await pipeline.ConstructAsync(CancellationToken.None);
 
-    Assert.That(pipeline.VideoInfo, Is.Null);
+    Assert.That(pipeline.MuxInfo, Is.Null);
 
     await pipeline.DisposeAsync();
   }
 
   /// <summary>
   /// SCENARIO:
-  /// Pipeline constructed, VideoHeader is empty (no format plugin)
+  /// Pipeline constructed, MuxHeader is empty (no format plugin)
   ///
   /// ACTION:
-  /// Read VideoHeader
+  /// Read MuxHeader
   ///
   /// EXPECTED RESULT:
   /// Returns empty
   /// </summary>
   [Test]
-  public async Task VideoHeader_NoFormatPlugin_ReturnsEmpty()
+  public async Task MuxHeader_NoFormatPlugin_ReturnsEmpty()
   {
     var pipeline = CreatePipeline();
     await pipeline.ConstructAsync(CancellationToken.None);
 
-    Assert.That(pipeline.VideoHeader.IsEmpty, Is.True);
+    Assert.That(pipeline.MuxHeader.IsEmpty, Is.True);
 
     await pipeline.DisposeAsync();
   }
@@ -396,7 +396,7 @@ public class CameraPipelineTests
     public IReadOnlyList<ICameraProvider> CameraProviders => [];
     public IReadOnlyList<IEventFilter> EventFilters => [];
     public IReadOnlyList<INotificationSink> NotificationSinks => [];
-    public IReadOnlyList<IVideoAnalyzer> VideoAnalyzers => [];
+    public IReadOnlyList<IDataStreamAnalyzer> Analyzers => [];
     public IReadOnlyList<IStorageProvider> StorageProviders => [];
     public IReadOnlyList<IAuthProvider> AuthProviders => [];
     public IReadOnlyList<IAuthzProvider> AuthzProviders => [];

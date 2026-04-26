@@ -4,9 +4,9 @@ using Shared.Models;
 
 namespace Server.Streaming;
 
-public sealed class VideoStreamFanOut<T> : IVideoStream<T>, IVideoStreamFanOut where T : IDataUnit
+public sealed class MuxStreamFanOut<T> : IMuxStream<T>, IMuxStreamFanOut where T : IDataUnit
 {
-  private readonly IVideoStream<T> _source;
+  private readonly IMuxStream<T> _source;
   private readonly List<Subscriber> _subscribers = [];
   private readonly Lock _lock = new();
   private Subscriber[]? _snapshot;
@@ -15,7 +15,7 @@ public sealed class VideoStreamFanOut<T> : IVideoStream<T>, IVideoStreamFanOut w
   private bool _disposed;
   private List<T> _currentGop = [];
 
-  public VideoStreamInfo Info => _source.Info;
+  public MuxStreamInfo Info => _source.Info;
   public ReadOnlyMemory<byte> Header => _source.Header;
   public Type FrameType => typeof(T);
   public int SubscriberCount { get { lock (_lock) return _subscribers.Count; } }
@@ -23,12 +23,12 @@ public sealed class VideoStreamFanOut<T> : IVideoStream<T>, IVideoStreamFanOut w
   public Action? OnEmpty { get; set; }
   public ILogger? Logger { get; set; }
 
-  public VideoStreamFanOut(IVideoStream<T> source)
+  public MuxStreamFanOut(IMuxStream<T> source)
   {
     _source = source;
   }
 
-  public IVideoStream<T> Subscribe(int capacity = 256)
+  public IMuxStream<T> Subscribe(int capacity = 256)
   {
     var channel = Channel.CreateBounded<T>(new BoundedChannelOptions(capacity)
     {
@@ -60,7 +60,7 @@ public sealed class VideoStreamFanOut<T> : IVideoStream<T>, IVideoStreamFanOut w
       onDemand.Invoke();
     }
 
-    return new ChannelVideoStream<T>(Info, channel.Reader, () =>
+    return new ChannelMuxStream<T>(Info, channel.Reader, () =>
     {
       Action? onEmpty = null;
       lock (_lock)
@@ -80,15 +80,15 @@ public sealed class VideoStreamFanOut<T> : IVideoStream<T>, IVideoStreamFanOut w
 
   private void StartReadLoop()
   {
+    CancellationTokenSource cts;
     lock (_lock)
     {
+      if (_disposed) return;
       if (_loopCts != null) return;
-      _loopCts = new CancellationTokenSource();
+      cts = _loopCts = new CancellationTokenSource();
     }
 
-    var cts = _loopCts!;
-
-    Logger?.LogDebug("VideoStreamFanOut<{Type}> starting read loop", typeof(T).Name);
+    Logger?.LogDebug("MuxStreamFanOut<{Type}> starting read loop", typeof(T).Name);
 
     _readLoop = Task.Run(async () =>
     {
@@ -99,10 +99,10 @@ public sealed class VideoStreamFanOut<T> : IVideoStream<T>, IVideoStreamFanOut w
         {
           count++;
           if (count == 1)
-            Logger?.LogDebug("VideoStreamFanOut<{Type}> received first item ({Bytes} bytes, sync={Sync})",
+            Logger?.LogDebug("MuxStreamFanOut<{Type}> received first item ({Bytes} bytes, sync={Sync})",
               typeof(T).Name, item.Data.Length, item.IsSyncPoint);
           else if (count % 500 == 0)
-            Logger?.LogDebug("VideoStreamFanOut<{Type}> received {Count} items, subscribers={Subs}",
+            Logger?.LogDebug("MuxStreamFanOut<{Type}> received {Count} items, subscribers={Subs}",
               typeof(T).Name, count, SubscriberCount);
 
           Subscriber[] snapshot;
@@ -128,17 +128,17 @@ public sealed class VideoStreamFanOut<T> : IVideoStream<T>, IVideoStreamFanOut w
           }
         }
 
-        Logger?.LogDebug("VideoStreamFanOut<{Type}> source completed after {Count} items",
+        Logger?.LogDebug("MuxStreamFanOut<{Type}> source completed after {Count} items",
           typeof(T).Name, count);
       }
       catch (OperationCanceledException)
       {
-        Logger?.LogDebug("VideoStreamFanOut<{Type}> read loop stopped after {Count} items",
+        Logger?.LogDebug("MuxStreamFanOut<{Type}> read loop stopped after {Count} items",
           typeof(T).Name, count);
       }
       catch (Exception ex)
       {
-        Logger?.LogError(ex, "VideoStreamFanOut<{Type}> read loop failed after {Count} items",
+        Logger?.LogError(ex, "MuxStreamFanOut<{Type}> read loop failed after {Count} items",
           typeof(T).Name, count);
       }
     });
@@ -162,7 +162,7 @@ public sealed class VideoStreamFanOut<T> : IVideoStream<T>, IVideoStreamFanOut w
     [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
   {
     var sub = Subscribe();
-    await foreach (var item in ((IVideoStream<T>)sub).ReadAsync(ct))
+    await foreach (var item in ((IMuxStream<T>)sub).ReadAsync(ct))
       yield return item;
   }
 
@@ -172,7 +172,7 @@ public sealed class VideoStreamFanOut<T> : IVideoStream<T>, IVideoStreamFanOut w
     public bool WaitingForKeyframe { get; set; } = waitingForKeyframe;
   }
 
-  IVideoStream IVideoStreamFanOut.Subscribe(int capacity) => Subscribe(capacity);
+  IMuxStream IMuxStreamFanOut.Subscribe(int capacity) => Subscribe(capacity);
 
   public async ValueTask DisposeAsync()
   {
@@ -193,16 +193,16 @@ public sealed class VideoStreamFanOut<T> : IVideoStream<T>, IVideoStreamFanOut w
   }
 }
 
-internal sealed class ChannelVideoStream<T> : IVideoStream<T> where T : IDataUnit
+internal sealed class ChannelMuxStream<T> : IMuxStream<T> where T : IDataUnit
 {
   private readonly ChannelReader<T> _reader;
   private readonly Action _onDispose;
 
-  public VideoStreamInfo Info { get; }
+  public MuxStreamInfo Info { get; }
   public ReadOnlyMemory<byte> Header => ReadOnlyMemory<byte>.Empty;
   public Type FrameType => typeof(T);
 
-  public ChannelVideoStream(VideoStreamInfo info, ChannelReader<T> reader, Action onDispose)
+  public ChannelMuxStream(MuxStreamInfo info, ChannelReader<T> reader, Action onDispose)
   {
     Info = info;
     _reader = reader;

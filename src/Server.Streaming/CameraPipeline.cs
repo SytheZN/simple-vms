@@ -6,7 +6,7 @@ using Shared.Models.Events;
 
 namespace Server.Streaming;
 
-public sealed class CameraPipeline : IAsyncDisposable
+public sealed class CameraPipeline : IPipeline
 {
   private readonly Guid _cameraId;
   private readonly string _profile;
@@ -18,7 +18,7 @@ public sealed class CameraPipeline : IAsyncDisposable
   private readonly Lock _lock = new();
 
   private IDataStreamFanOut? _dataFanOut;
-  private IVideoStreamFanOut? _videoFanOut;
+  private IMuxStreamFanOut? _muxFanOut;
   private IDisposable? _muxSubscription;
   private IStreamConnection? _connection;
   private CancellationTokenSource? _feedCts;
@@ -32,8 +32,8 @@ public sealed class CameraPipeline : IAsyncDisposable
   public string ConnectionUri => _connectionInfo.Uri;
   public bool IsConstructed { get { lock (_lock) return _constructed; } }
   public bool IsActive { get { lock (_lock) return _connection != null; } }
-  public VideoStreamInfo? VideoInfo { get { lock (_lock) return _videoFanOut?.Info; } }
-  public ReadOnlyMemory<byte> VideoHeader { get { lock (_lock) return _videoFanOut?.Header ?? ReadOnlyMemory<byte>.Empty; } }
+  public MuxStreamInfo? MuxInfo { get { lock (_lock) return _muxFanOut?.Info; } }
+  public ReadOnlyMemory<byte> MuxHeader { get { lock (_lock) return _muxFanOut?.Header ?? ReadOnlyMemory<byte>.Empty; } }
 
   public Action? OnParameterMismatch { get; set; }
 
@@ -91,18 +91,18 @@ public sealed class CameraPipeline : IAsyncDisposable
 
     StartFeeding(connection, fanOut, dataStream);
 
-    IVideoStreamFanOut? videoFanOut = null;
+    IMuxStreamFanOut? muxFanOut = null;
     var format = _pluginHost.FindFormat(dataStream.FrameType);
     if (format != null)
     {
       var pipelineResult = await format.CreatePipelineAsync(muxInput, connection.Info, ct);
       if (pipelineResult.IsT0)
       {
-        var videoStream = pipelineResult.AsT0;
-        videoFanOut = CreateVideoFanOut(videoStream);
+        var muxStream = pipelineResult.AsT0;
+        muxFanOut = CreateMuxFanOut(muxStream);
         _logger.LogInformation(
           "Pipeline constructed for camera {CameraId} profile '{Profile}', mime={MimeType}",
-          _cameraId, _profile, videoStream.Info.MimeType);
+          _cameraId, _profile, muxStream.Info.MimeType);
       }
       else
       {
@@ -122,7 +122,7 @@ public sealed class CameraPipeline : IAsyncDisposable
     lock (_lock)
     {
       _dataFanOut = fanOut;
-      _videoFanOut = videoFanOut;
+      _muxFanOut = muxFanOut;
       _muxSubscription = muxSub;
       _constructedFrameType = dataStream.FrameType;
       _constructed = true;
@@ -147,7 +147,7 @@ public sealed class CameraPipeline : IAsyncDisposable
       return OneOf<IDataStream, Error>.FromT0(_dataFanOut!.Subscribe(256));
   }
 
-  public async Task<OneOf<IVideoStream, Error>> SubscribeVideoAsync(CancellationToken ct)
+  public async Task<OneOf<IMuxStream, Error>> SubscribeMuxAsync(CancellationToken ct)
   {
     lock (_lock)
     {
@@ -157,11 +157,11 @@ public sealed class CameraPipeline : IAsyncDisposable
       if (!_constructed)
         return Error.Create(ModuleIds.Streaming, 0x0006, Result.Unavailable,
           "Pipeline not constructed");
-      if (_videoFanOut == null)
+      if (_muxFanOut == null)
         return Error.Create(ModuleIds.Streaming, 0x0007, Result.Unavailable,
           "No video pipeline available");
 
-      return OneOf<IVideoStream, Error>.FromT0(_videoFanOut.Subscribe(256));
+      return OneOf<IMuxStream, Error>.FromT0(_muxFanOut.Subscribe(256));
     }
   }
 
@@ -360,7 +360,7 @@ public sealed class CameraPipeline : IAsyncDisposable
       lock (_lock)
       {
         hasDemand = (_dataFanOut?.SubscriberCount ?? 0) > 0
-          || (_videoFanOut?.SubscriberCount ?? 0) > 0;
+          || (_muxFanOut?.SubscriberCount ?? 0) > 0;
       }
 
       if (!hasDemand)
@@ -413,10 +413,10 @@ public sealed class CameraPipeline : IAsyncDisposable
   }
 
   [RequiresDynamicCode("Fan-out generic type is constructed at runtime")]
-  private IVideoStreamFanOut CreateVideoFanOut(IVideoStream videoStream)
+  private IMuxStreamFanOut CreateMuxFanOut(IMuxStream muxStream)
   {
-    var fanOutType = typeof(VideoStreamFanOut<>).MakeGenericType(videoStream.FrameType);
-    var fanOut = (IVideoStreamFanOut)Activator.CreateInstance(fanOutType, videoStream)!;
+    var fanOutType = typeof(MuxStreamFanOut<>).MakeGenericType(muxStream.FrameType);
+    var fanOut = (IMuxStreamFanOut)Activator.CreateInstance(fanOutType, muxStream)!;
     fanOut.OnDemand = OnDemand;
     fanOut.OnEmpty = OnEmpty;
     fanOut.Logger = _logger;
@@ -433,8 +433,8 @@ public sealed class CameraPipeline : IAsyncDisposable
 
     await DisconnectSourceAsync();
 
-    if (_videoFanOut != null)
-      await _videoFanOut.DisposeAsync();
+    if (_muxFanOut != null)
+      await _muxFanOut.DisposeAsync();
     _muxSubscription?.Dispose();
     if (_dataFanOut != null)
       await _dataFanOut.DisposeAsync();

@@ -1,18 +1,18 @@
 namespace Shared.Models;
 
-public interface IVideoStream
+public interface IMuxStream
 {
-  VideoStreamInfo Info { get; }
+  MuxStreamInfo Info { get; }
   ReadOnlyMemory<byte> Header { get; }
   Type FrameType { get; }
   IAsyncEnumerable<IDataUnit> ReadAsync(CancellationToken ct);
 }
 
-public interface IVideoStream<out T> : IVideoStream where T : IDataUnit
+public interface IMuxStream<out T> : IMuxStream where T : IDataUnit
 {
   new IAsyncEnumerable<T> ReadAsync(CancellationToken ct);
 
-  IAsyncEnumerable<IDataUnit> IVideoStream.ReadAsync(CancellationToken ct) =>
+  IAsyncEnumerable<IDataUnit> IMuxStream.ReadAsync(CancellationToken ct) =>
     ReadAsDataUnits(ct);
 
   private async IAsyncEnumerable<IDataUnit> ReadAsDataUnits(

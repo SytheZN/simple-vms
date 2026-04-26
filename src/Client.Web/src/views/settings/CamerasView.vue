@@ -146,15 +146,6 @@ async function addCamera() {
   }
 }
 
-async function deleteCamera(id: string) {
-  try {
-    await api.cameras.delete(id)
-    await loadCameras()
-  } catch (e) {
-    if (e instanceof ApiError) error.value = e.message
-  }
-}
-
 onMounted(async () => {
   await Promise.all([loadCameras(), loadSettings(), loadOnvifCreds()])
 })
@@ -291,9 +282,6 @@ onMounted(async () => {
                 <button class="btn btn-ghost btn-sm" @click="router.push(`/settings/cameras/${cam.id}`)" title="Edit">
                   <i class="ph ph-gear icon-sm"></i>
                 </button>
-                <button class="btn btn-ghost btn-sm text-danger" @click="deleteCamera(cam.id)" title="Delete">
-                  <i class="ph ph-trash icon-sm"></i>
-                </button>
               </td>
             </tr>
           </tbody>
@@ -356,14 +344,30 @@ onMounted(async () => {
         </div>
 
         <div v-if="dialogProbe" class="space-y-3 border-t border-border pt-3">
-          <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-            <span class="text-text-muted">Serial</span>
-            <span class="font-mono text-text">{{ dialogProbe.config.serialNumber || '--' }}</span>
-            <span class="text-text-muted">Firmware</span>
-            <span class="font-mono text-text">{{ dialogProbe.config.firmwareVersion || '--' }}</span>
-            <span class="text-text-muted">Capabilities</span>
-            <span class="text-text">{{ dialogProbe.capabilities.join(', ') || '--' }}</span>
-          </div>
+          <table class="text-sm w-full">
+            <tbody>
+              <tr>
+                <td class="text-text-muted pr-4 py-0.5">Manufacturer</td>
+                <td class="text-text py-0.5">{{ dialogProbe.config.manufacturer || '--' }}</td>
+              </tr>
+              <tr>
+                <td class="text-text-muted pr-4 py-0.5">Model</td>
+                <td class="text-text py-0.5">{{ dialogProbe.config.model || '--' }}</td>
+              </tr>
+              <tr>
+                <td class="text-text-muted pr-4 py-0.5">Serial</td>
+                <td class="font-mono text-text py-0.5">{{ dialogProbe.config.serialNumber || '--' }}</td>
+              </tr>
+              <tr>
+                <td class="text-text-muted pr-4 py-0.5">Firmware</td>
+                <td class="font-mono text-text py-0.5">{{ dialogProbe.config.firmwareVersion || '--' }}</td>
+              </tr>
+              <tr>
+                <td class="text-text-muted pr-4 py-0.5">Capabilities</td>
+                <td class="text-text py-0.5">{{ dialogProbe.capabilities.join(', ') || '--' }}</td>
+              </tr>
+            </tbody>
+          </table>
           <div v-if="dialogProbe.streams.length > 0">
             <table class="table text-sm">
               <thead>

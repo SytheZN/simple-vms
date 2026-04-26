@@ -404,7 +404,7 @@ const portForwardingTitle = computed(() => {
       <div class="toast toast-info">
         <i class="ph ph-warning icon-xl"></i>
         <div>
-          <span class="font-medium">Heads up</span>
+          <span class="font-medium">Warning</span>
           <p>These values are baked into every enrolled client. Changes here require re-enrolling clients.</p>
         </div>
       </div>

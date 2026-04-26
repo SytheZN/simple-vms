@@ -1,5 +1,6 @@
 using Cameras.Onvif.Services;
 using Cameras.Onvif.Soap;
+using Microsoft.Extensions.Logging;
 using Shared.Models;
 
 namespace Cameras.Onvif;
@@ -14,6 +15,7 @@ public sealed partial class OnvifProvider : IPlugin
   private MediaService _media = null!;
   private EventService _events = null!;
   private AnalyticsService _analytics = null!;
+  private ILogger _logger = null!;
 
   public PluginMetadata Metadata { get; } = new()
   {
@@ -29,6 +31,7 @@ public sealed partial class OnvifProvider : IPlugin
     _eventBus = context.EventBus;
     _http = new HttpClient { Timeout = TimeSpan.FromSeconds(75) };
     _soap = new SoapClient(_http, context.LoggerFactory.CreateLogger("Soap"));
+    _logger = context.LoggerFactory.CreateLogger("OnvifProvider");
     _device = new DeviceService(_soap);
     _media = new MediaService(_soap);
     _events = new EventService(_soap);

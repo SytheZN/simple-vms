@@ -113,6 +113,30 @@ public static class ApiRoutes
       var result = await cameras.RestartAsync(req.RouteGuid("id"), ct);
       return ApiResult.Ok(result, new DebugTag(ModuleIds.CameraManagement, 0x0015));
     });
+
+    dispatcher.Add("OPTIONS", "/api/v1/cameras/{id:guid}/config", async (req, ct) =>
+    {
+      var config = req.Resolve<CameraConfigService>();
+      var result = await config.GetSchemaAsync(req.RouteGuid("id"), ct);
+      return ApiResult.Ok(result, new DebugTag(ModuleIds.CameraManagement, 0x0020),
+        ServerJsonContext.Default.CameraConfigSchema);
+    });
+
+    dispatcher.Add("GET", "/api/v1/cameras/{id:guid}/config", async (req, ct) =>
+    {
+      var config = req.Resolve<CameraConfigService>();
+      var result = await config.GetValuesAsync(req.RouteGuid("id"), ct);
+      return ApiResult.Ok(result, new DebugTag(ModuleIds.CameraManagement, 0x0021),
+        ServerJsonContext.Default.CameraConfigValues);
+    });
+
+    dispatcher.Add("PUT", "/api/v1/cameras/{id:guid}/config", async (req, ct) =>
+    {
+      var config = req.Resolve<CameraConfigService>();
+      var body = req.Body(ServerJsonContext.Default.CameraConfigValues);
+      var result = await config.ApplyAsync(req.RouteGuid("id"), body, ct);
+      return ApiResult.Ok(result, new DebugTag(ModuleIds.CameraManagement, 0x0022));
+    });
   }
 
   private static void RegisterClients(ApiDispatcher dispatcher)

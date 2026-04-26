@@ -271,7 +271,7 @@ public class EventManagerTests
     public IReadOnlyList<ICameraProvider> CameraProviders => [];
     public IReadOnlyList<IEventFilter> EventFilters { get; }
     public IReadOnlyList<INotificationSink> NotificationSinks { get; }
-    public IReadOnlyList<IVideoAnalyzer> VideoAnalyzers => [];
+    public IReadOnlyList<IDataStreamAnalyzer> Analyzers => [];
     public IReadOnlyList<IStorageProvider> StorageProviders => [];
     public IReadOnlyList<IAuthProvider> AuthProviders => [];
     public IReadOnlyList<IAuthzProvider> AuthzProviders => [];

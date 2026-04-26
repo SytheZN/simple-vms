@@ -20,6 +20,8 @@ import type {
   ServerSettings,
   PluginListItem,
   SettingGroup,
+  CameraConfigSchema,
+  CameraConfigValues,
 } from '@/types/api'
 
 import router from '@/router'
@@ -145,6 +147,9 @@ export const api = {
     refresh: (id: string) => post<CameraListItem>(`/api/v1/cameras/${id}/refresh`),
     restart: (id: string) => post<void>(`/api/v1/cameras/${id}/restart`),
     snapshot: (id: string) => `/api/v1/cameras/${id}/snapshot`,
+    configSchema: (id: string) => request<CameraConfigSchema>('OPTIONS', `/api/v1/cameras/${id}/config`),
+    configValues: (id: string) => get<CameraConfigValues>(`/api/v1/cameras/${id}/config`),
+    updateConfig: (id: string, body: CameraConfigValues) => put<void>(`/api/v1/cameras/${id}/config`, body),
   },
 
   discovery: {

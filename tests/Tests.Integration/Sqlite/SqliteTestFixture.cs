@@ -1,4 +1,5 @@
 using Data.Sqlite;
+using Microsoft.Extensions.Logging.Abstractions;
 using Shared.Models;
 
 namespace Tests.Integration.Sqlite;
@@ -9,12 +10,18 @@ public sealed class SqliteTestFixture
 
   public SqliteProvider Provider { get; private set; } = null!;
 
-  public async Task SetUp()
+  public Task SetUp()
   {
     _dbPath = Path.Combine(Path.GetTempPath(), $"vms-test-{Guid.NewGuid()}.db");
     Provider = new SqliteProvider();
+    Migrate();
     Provider.InitializeProvider(_dbPath);
-    (await Provider.MigrateAsync(CancellationToken.None)).Switch(
+    return Task.CompletedTask;
+  }
+
+  public void Migrate()
+  {
+    Provider.MigrateDatabase(_dbPath, NullLogger.Instance).Switch(
       _ => { },
       error => Assert.Fail($"Migration failed: {error.Message}"));
   }

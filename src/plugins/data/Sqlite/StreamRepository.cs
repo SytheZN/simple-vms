@@ -64,16 +64,21 @@ internal sealed class StreamRepository : IStreamRepository
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
           INSERT INTO streams (id, camera_id, profile, kind, format_id, codec, resolution,
-            fps, bitrate, uri, recording_enabled, retention_mode, retention_value)
+            fps, bitrate, uri, recording_enabled, retention_mode, retention_value,
+            parent_stream_id, producer_id, deleted_at)
           VALUES (@id, @cameraId, @profile, @kind, @formatId, @codec, @resolution,
-            @fps, @bitrate, @uri, @recordingEnabled, @retentionMode, @retentionValue)
+            @fps, @bitrate, @uri, @recordingEnabled, @retentionMode, @retentionValue,
+            @parentStreamId, @producerId, @deletedAt)
           ON CONFLICT(id) DO UPDATE SET
             camera_id = excluded.camera_id, profile = excluded.profile,
             kind = excluded.kind, format_id = excluded.format_id,
             codec = excluded.codec, resolution = excluded.resolution,
             fps = excluded.fps, bitrate = excluded.bitrate,
             uri = excluded.uri, recording_enabled = excluded.recording_enabled,
-            retention_mode = excluded.retention_mode, retention_value = excluded.retention_value
+            retention_mode = excluded.retention_mode, retention_value = excluded.retention_value,
+            parent_stream_id = excluded.parent_stream_id,
+            producer_id = excluded.producer_id,
+            deleted_at = excluded.deleted_at
           """;
         BindStream(cmd, stream);
         cmd.ExecuteNonQuery();
@@ -116,10 +121,13 @@ internal sealed class StreamRepository : IStreamRepository
     cmd.Parameters.AddWithValue("@resolution", (object?)stream.Resolution ?? DBNull.Value);
     cmd.Parameters.AddWithValue("@fps", (object?)stream.Fps ?? DBNull.Value);
     cmd.Parameters.AddWithValue("@bitrate", (object?)stream.Bitrate ?? DBNull.Value);
-    cmd.Parameters.AddWithValue("@uri", stream.Uri);
+    cmd.Parameters.AddWithValue("@uri", (object?)stream.Uri ?? DBNull.Value);
     cmd.Parameters.AddWithValue("@recordingEnabled", stream.RecordingEnabled ? 1 : 0);
     cmd.Parameters.AddWithValue("@retentionMode", (int)stream.RetentionMode);
     cmd.Parameters.AddWithValue("@retentionValue", (long)stream.RetentionValue);
+    cmd.Parameters.AddWithValue("@parentStreamId", (object?)stream.ParentStreamId?.ToString() ?? DBNull.Value);
+    cmd.Parameters.AddWithValue("@producerId", (object?)stream.ProducerId ?? DBNull.Value);
+    cmd.Parameters.AddWithValue("@deletedAt", (object?)(long?)stream.DeletedAt ?? DBNull.Value);
   }
 
   private static CameraStream ReadStream(SqliteDataReader reader)
@@ -136,13 +144,20 @@ internal sealed class StreamRepository : IStreamRepository
       Resolution = reader.IsDBNull(reader.GetOrdinal("resolution"))
         ? null : reader.GetString(reader.GetOrdinal("resolution")),
       Fps = reader.IsDBNull(reader.GetOrdinal("fps"))
-        ? null : reader.GetInt32(reader.GetOrdinal("fps")),
+        ? null : reader.GetDecimal(reader.GetOrdinal("fps")),
       Bitrate = reader.IsDBNull(reader.GetOrdinal("bitrate"))
         ? null : reader.GetInt32(reader.GetOrdinal("bitrate")),
-      Uri = reader.GetString(reader.GetOrdinal("uri")),
+      Uri = reader.IsDBNull(reader.GetOrdinal("uri"))
+        ? null : reader.GetString(reader.GetOrdinal("uri")),
       RecordingEnabled = reader.GetInt32(reader.GetOrdinal("recording_enabled")) != 0,
       RetentionMode = (RetentionMode)reader.GetInt32(reader.GetOrdinal("retention_mode")),
-      RetentionValue = reader.GetInt64(reader.GetOrdinal("retention_value"))
+      RetentionValue = reader.GetInt64(reader.GetOrdinal("retention_value")),
+      ParentStreamId = reader.IsDBNull(reader.GetOrdinal("parent_stream_id"))
+        ? null : Guid.Parse(reader.GetString(reader.GetOrdinal("parent_stream_id"))),
+      ProducerId = reader.IsDBNull(reader.GetOrdinal("producer_id"))
+        ? null : reader.GetString(reader.GetOrdinal("producer_id")),
+      DeletedAt = reader.IsDBNull(reader.GetOrdinal("deleted_at"))
+        ? null : (ulong)reader.GetInt64(reader.GetOrdinal("deleted_at"))
     };
   }
 }

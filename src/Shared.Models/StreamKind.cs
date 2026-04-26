@@ -1,7 +1,10 @@
+using System.Text.Json.Serialization;
+
 namespace Shared.Models;
 
+[JsonConverter(typeof(JsonStringEnumConverter<StreamKind>))]
 public enum StreamKind
 {
-  Quality,
-  Metadata
+  [JsonStringEnumMemberName("quality")] Quality,
+  [JsonStringEnumMemberName("metadata")] Metadata
 }

@@ -134,7 +134,7 @@ public class StreamTapRegistryTests
     public IReadOnlyList<ICameraProvider> CameraProviders => [];
     public IReadOnlyList<IEventFilter> EventFilters => [];
     public IReadOnlyList<INotificationSink> NotificationSinks => [];
-    public IReadOnlyList<IVideoAnalyzer> VideoAnalyzers => [];
+    public IReadOnlyList<IDataStreamAnalyzer> Analyzers => [];
     public IReadOnlyList<IStorageProvider> StorageProviders => [];
     public IReadOnlyList<IAuthProvider> AuthProviders => [];
     public IReadOnlyList<IAuthzProvider> AuthzProviders => [];

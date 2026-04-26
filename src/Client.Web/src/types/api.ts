@@ -16,12 +16,15 @@ export interface ResponseEnvelope<T = unknown> {
   body?: T
 }
 
+export type StreamKind = 'quality' | 'metadata'
+
 export interface StreamProfile {
   profile: string
+  kind: StreamKind
   codec: string
   resolution: string
   fps: number
-  recordingEnabled: boolean
+  bitrate?: number
 }
 
 export interface CameraListItem {
@@ -61,16 +64,10 @@ export interface ProbeResponse {
 
 export interface UpdateCameraRequest {
   name?: string
+  address?: string
+  providerId?: string
   credentials?: Credentials
-  streams?: UpdateStreamConfig[]
-  segmentDuration?: number
-  retention?: RetentionOverride | null
   rtspPortOverride?: number
-}
-
-export interface UpdateStreamConfig {
-  profile: string
-  recordingEnabled: boolean
 }
 
 export interface Credentials {
@@ -78,9 +75,14 @@ export interface Credentials {
   password: string
 }
 
-export interface RetentionOverride {
-  mode: string
-  value: number
+export interface CameraConfigSchema {
+  camera: Record<string, SettingGroup[]>
+  streams: Record<string, Record<string, SettingGroup[]>>
+}
+
+export interface CameraConfigValues {
+  camera: Record<string, Record<string, string>>
+  streams: Record<string, Record<string, Record<string, string>>>
 }
 
 export interface ClientListItem {
@@ -221,6 +223,8 @@ export interface PluginListItem {
   extensionPoints: string[]
   userStartable: boolean
   hasSettings: boolean
+  hasCameraSettings: boolean
+  hasStreamSettings: boolean
 }
 
 export interface SettingGroup {
@@ -240,6 +244,12 @@ export interface SettingField {
   defaultValue?: unknown
   required: boolean
   value?: unknown
+  options?: SettingFieldOption[]
+}
+
+export interface SettingFieldOption {
+  value: string
+  label: string
 }
 
 

@@ -6,7 +6,7 @@ public interface IStreamFormat
   string FileExtension { get; }
   Type InputType { get; }
   Type OutputType { get; }
-  Task<OneOf<IVideoStream, Error>> CreatePipelineAsync(IDataStream input, StreamInfo info, CancellationToken ct);
+  Task<OneOf<IMuxStream, Error>> CreatePipelineAsync(IDataStream input, StreamInfo info, CancellationToken ct);
   OneOf<ISegmentReader, Error> CreateReader(Stream input);
 }
 

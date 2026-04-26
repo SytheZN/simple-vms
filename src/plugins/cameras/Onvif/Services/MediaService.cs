@@ -37,7 +37,8 @@ public sealed class MediaService(SoapClient soap)
             ?.Element(XmlHelpers.NsSchema + "FrameRateLimit")?.Value, out var fps) ? fps : null,
         Bitrate = int.TryParse(
           videoEncoder?.Element(XmlHelpers.NsSchema + "RateControl")
-            ?.Element(XmlHelpers.NsSchema + "BitrateLimit")?.Value, out var br) ? br : null
+            ?.Element(XmlHelpers.NsSchema + "BitrateLimit")?.Value, out var br) ? br : null,
+        HasPtzBinding = HasMovablePtzConfiguration(p.Element(XmlHelpers.NsSchema + "PTZConfiguration"))
       });
     }
 
@@ -74,6 +75,60 @@ public sealed class MediaService(SoapClient soap)
       Bitrate = profile.Bitrate,
       Uri = streamUri
     };
+
+  public async Task<IReadOnlyList<OnvifProfile>> GetProfilesV2Async(
+    string media2Uri, Credentials credentials, CancellationToken ct)
+  {
+    var body = new XElement(XmlHelpers.NsMedia2 + "GetProfiles",
+      new XElement(XmlHelpers.NsMedia2 + "Type", "All"));
+    var response = await soap.SendAsync(media2Uri, body, credentials, ct);
+
+    var profilesEl = response.Element(XmlHelpers.NsMedia2 + "GetProfilesResponse");
+    if (profilesEl == null) return [];
+
+    var profiles = new List<OnvifProfile>();
+    foreach (var p in profilesEl.Elements(XmlHelpers.NsMedia2 + "Profiles"))
+    {
+      var token = p.Attribute("token")?.Value;
+      if (string.IsNullOrEmpty(token)) continue;
+
+      var configurations = p.Element(XmlHelpers.NsMedia2 + "Configurations");
+      var videoEncoder = configurations?.Element(XmlHelpers.NsMedia2 + "VideoEncoder");
+      var resolution = videoEncoder?.Element(XmlHelpers.NsSchema + "Resolution");
+
+      profiles.Add(new OnvifProfile
+      {
+        Token = token,
+        Name = p.Attribute("fixed")?.Value != "true"
+          ? p.Element(XmlHelpers.NsMedia2 + "Name")?.Value : null,
+        Codec = ParseCodec(videoEncoder?.Element(XmlHelpers.NsSchema + "Encoding")?.Value),
+        Width = int.TryParse(resolution?.Element(XmlHelpers.NsSchema + "Width")?.Value, out var w) ? w : null,
+        Height = int.TryParse(resolution?.Element(XmlHelpers.NsSchema + "Height")?.Value, out var h) ? h : null,
+        Fps = int.TryParse(
+          videoEncoder?.Element(XmlHelpers.NsSchema + "RateControl")
+            ?.Element(XmlHelpers.NsSchema + "FrameRateLimit")?.Value, out var fps) ? fps : null,
+        Bitrate = int.TryParse(
+          videoEncoder?.Element(XmlHelpers.NsSchema + "RateControl")
+            ?.Element(XmlHelpers.NsSchema + "BitrateLimit")?.Value, out var br) ? br : null,
+        HasPtzBinding = HasMovablePtzConfiguration(configurations?.Element(XmlHelpers.NsMedia2 + "PTZ"))
+      });
+    }
+
+    return profiles;
+  }
+
+  public async Task<string?> GetStreamUriV2Async(
+    string media2Uri, Credentials credentials, string profileToken, CancellationToken ct)
+  {
+    var body = new XElement(XmlHelpers.NsMedia2 + "GetStreamUri",
+      new XElement(XmlHelpers.NsMedia2 + "Protocol", "RTSP"),
+      new XElement(XmlHelpers.NsMedia2 + "ProfileToken", profileToken));
+    var response = await soap.SendAsync(media2Uri, body, credentials, ct);
+
+    return response
+      .Element(XmlHelpers.NsMedia2 + "GetStreamUriResponse")
+      ?.Element(XmlHelpers.NsMedia2 + "Uri")?.Value;
+  }
 
   public async Task<bool> HasVideoAnalyticsConfigurationAsync(
     string mediaUri, Credentials credentials, CancellationToken ct)
@@ -139,6 +194,25 @@ public sealed class MediaService(SoapClient soap)
     "MPEG4" => "mpeg4",
     _ => encoding?.ToLowerInvariant()
   };
+
+  private static bool HasMovablePtzConfiguration(XElement? ptzConfig)
+  {
+    if (ptzConfig == null) return false;
+    var limits = ptzConfig.Element(XmlHelpers.NsSchema + "PanTiltLimits");
+    if (limits == null) return true;
+    var range = limits.Element(XmlHelpers.NsSchema + "Range");
+    if (range == null) return true;
+    return HasNonDegenerateRange(range.Element(XmlHelpers.NsSchema + "XRange"))
+      && HasNonDegenerateRange(range.Element(XmlHelpers.NsSchema + "YRange"));
+  }
+
+  private static bool HasNonDegenerateRange(XElement? range)
+  {
+    if (range == null) return false;
+    if (!double.TryParse(range.Element(XmlHelpers.NsSchema + "Min")?.Value, out var min)) return false;
+    if (!double.TryParse(range.Element(XmlHelpers.NsSchema + "Max")?.Value, out var max)) return false;
+    return max > min;
+  }
 }
 
 public sealed class OnvifProfile
@@ -150,4 +224,5 @@ public sealed class OnvifProfile
   public int? Height { get; init; }
   public int? Fps { get; init; }
   public int? Bitrate { get; init; }
+  public bool HasPtzBinding { get; init; }
 }

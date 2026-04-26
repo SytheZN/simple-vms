@@ -68,7 +68,15 @@ export function validateHostOrIp(
   value: string,
   opts: { allowPort: boolean; fieldLabel: string }
 ): ValidationResult {
-  const trimmed = value.trim()
+  let trimmed = value.trim()
+  const schemeMatch = trimmed.match(/^(https?):\/\/(.*)$/i)
+  if (schemeMatch) {
+    trimmed = schemeMatch[2]
+  } else if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed)) {
+    return { valid: false, error: `${opts.fieldLabel} only http:// and https:// schemes are supported` }
+  }
+  const pathAt = trimmed.indexOf('/')
+  if (pathAt >= 0) trimmed = trimmed.slice(0, pathAt)
   if (!trimmed) return { valid: false, error: `${opts.fieldLabel} cannot be empty` }
 
   let host = trimmed

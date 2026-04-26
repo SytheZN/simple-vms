@@ -14,11 +14,11 @@ public interface IDataStreamFanOut : IAsyncDisposable
   IDataStream SubscribePassive(int capacity = 256);
 }
 
-public interface IVideoStreamFanOut : IVideoStream, IAsyncDisposable
+public interface IMuxStreamFanOut : IMuxStream, IAsyncDisposable
 {
   int SubscriberCount { get; }
   Action? OnDemand { get; set; }
   Action? OnEmpty { get; set; }
   ILogger? Logger { get; set; }
-  IVideoStream Subscribe(int capacity = 256);
+  IMuxStream Subscribe(int capacity = 256);
 }

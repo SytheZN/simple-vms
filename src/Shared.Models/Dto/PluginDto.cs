@@ -10,6 +10,8 @@ public sealed class PluginListItem
   public required string[] ExtensionPoints { get; init; }
   public required bool UserStartable { get; init; }
   public required bool HasSettings { get; init; }
+  public required bool HasCameraSettings { get; init; }
+  public required bool HasStreamSettings { get; init; }
 }
 
 public sealed class ValidateFieldRequest

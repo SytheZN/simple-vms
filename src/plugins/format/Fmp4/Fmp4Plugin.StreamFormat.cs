@@ -10,12 +10,12 @@ public sealed partial class Fmp4H264Plugin : IStreamFormat
   public Type InputType => typeof(H264NalUnit);
   public Type OutputType => typeof(Fmp4Fragment);
 
-  public async Task<OneOf<IVideoStream, Error>> CreatePipelineAsync(
+  public async Task<OneOf<IMuxStream, Error>> CreatePipelineAsync(
     IDataStream input, StreamInfo info, CancellationToken ct)
   {
     var muxer = new Fmp4Muxer(MuxerCodec.H264, input);
-    var outputInfo = await muxer.InitAsync(info.Fps ?? 0, ct);
-    return new Fmp4VideoStream(muxer, outputInfo);
+    var outputInfo = await muxer.InitAsync((int)Math.Round(info.Fps ?? 0m), ct);
+    return new Fmp4MuxStream(muxer, outputInfo);
   }
 
   public OneOf<ISegmentReader, Error> CreateReader(Stream input) =>
@@ -29,12 +29,12 @@ public sealed partial class Fmp4H265Plugin : IStreamFormat
   public Type InputType => typeof(H265NalUnit);
   public Type OutputType => typeof(Fmp4Fragment);
 
-  public async Task<OneOf<IVideoStream, Error>> CreatePipelineAsync(
+  public async Task<OneOf<IMuxStream, Error>> CreatePipelineAsync(
     IDataStream input, StreamInfo info, CancellationToken ct)
   {
     var muxer = new Fmp4Muxer(MuxerCodec.H265, input);
-    var outputInfo = await muxer.InitAsync(info.Fps ?? 0, ct);
-    return new Fmp4VideoStream(muxer, outputInfo);
+    var outputInfo = await muxer.InitAsync((int)Math.Round(info.Fps ?? 0m), ct);
+    return new Fmp4MuxStream(muxer, outputInfo);
   }
 
   public OneOf<ISegmentReader, Error> CreateReader(Stream input) =>

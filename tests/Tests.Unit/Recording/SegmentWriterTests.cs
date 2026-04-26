@@ -32,7 +32,7 @@ public class SegmentWriterTests
     var storage = new FakeStorage();
     var data = new FakeDataProvider();
     var bus = new FakeEventBus();
-    var source = new TestVideoStream(Header);
+    var source = new TestMuxStream(Header);
 
     var writer = CreateWriter(storage, data, bus, segmentDuration: 300);
 
@@ -67,7 +67,7 @@ public class SegmentWriterTests
     var storage = new FakeStorage();
     var data = new FakeDataProvider();
     var bus = new FakeEventBus();
-    var source = new TestVideoStream(Header);
+    var source = new TestMuxStream(Header);
 
     var writer = CreateWriter(storage, data, bus, segmentDuration: 10);
 
@@ -107,7 +107,7 @@ public class SegmentWriterTests
     var storage = new FakeStorage();
     var data = new FakeDataProvider();
     var bus = new FakeEventBus();
-    var source = new TestVideoStream(Header);
+    var source = new TestMuxStream(Header);
 
     var writer = CreateWriter(storage, data, bus, segmentDuration: 10);
 
@@ -140,7 +140,7 @@ public class SegmentWriterTests
     var storage = new FakeStorage();
     var data = new FakeDataProvider();
     var bus = new FakeEventBus();
-    var source = new TestVideoStream(Header);
+    var source = new TestMuxStream(Header);
 
     var writer = CreateWriter(storage, data, bus, segmentDuration: 300);
 
@@ -173,7 +173,7 @@ public class SegmentWriterTests
     var storage = new FakeStorage();
     var data = new FakeDataProvider();
     var bus = new FakeEventBus();
-    var source = new TestVideoStream(Header);
+    var source = new TestMuxStream(Header);
 
     var writer = CreateWriter(storage, data, bus, segmentDuration: 300);
 
@@ -203,7 +203,7 @@ public class SegmentWriterTests
     var storage = new FakeStorage();
     var data = new FakeDataProvider();
     var bus = new FakeEventBus();
-    var source = new TestVideoStream(Header);
+    var source = new TestMuxStream(Header);
 
     var writer = CreateWriter(storage, data, bus, segmentDuration: 300);
 
@@ -246,7 +246,7 @@ public class SegmentWriterTests
     var storage = new FakeStorage();
     var data = new FakeDataProvider();
     var bus = new FakeEventBus();
-    var source = new TestVideoStream(Header);
+    var source = new TestMuxStream(Header);
 
     var writer = CreateWriter(storage, data, bus, segmentDuration: 5);
 
@@ -279,11 +279,11 @@ public class SegmentWriterTests
     IsHeader = false
   };
 
-  private sealed class TestVideoStream : IVideoStream<Fmp4Fragment>
+  private sealed class TestMuxStream : IMuxStream<Fmp4Fragment>
   {
     private readonly Channel<Fmp4Fragment> _channel = Channel.CreateUnbounded<Fmp4Fragment>();
 
-    public VideoStreamInfo Info { get; } = new()
+    public MuxStreamInfo Info { get; } = new()
     {
       DataFormat = "fmp4",
       MimeType = "video/mp4; codecs=\"avc1.640029\"",
@@ -294,7 +294,7 @@ public class SegmentWriterTests
     public ReadOnlyMemory<byte> Header { get; }
     public Type FrameType => typeof(Fmp4Fragment);
 
-    public TestVideoStream(byte[] header) => Header = header;
+    public TestMuxStream(byte[] header) => Header = header;
 
     public void Emit(Fmp4Fragment fragment) => _channel.Writer.TryWrite(fragment);
     public void Complete() => _channel.Writer.TryComplete();

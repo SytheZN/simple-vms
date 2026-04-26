@@ -23,8 +23,8 @@ public class CameraViewModelTests
     Status = "online",
     ProviderId = "onvif",
     Streams = [
-      new StreamProfileDto { Profile = "main", Codec = "h264", Resolution = "1920x1080", Fps = 30, RecordingEnabled = true },
-      new StreamProfileDto { Profile = "sub", Codec = "h264", Resolution = "640x360", Fps = 15, RecordingEnabled = false }
+      new StreamProfileDto { Profile = "main", Kind = StreamKind.Quality, Codec = "h264", Resolution = "1920x1080", Fps = 30 },
+      new StreamProfileDto { Profile = "sub", Kind = StreamKind.Quality, Codec = "h264", Resolution = "640x360", Fps = 15 }
     ],
     Capabilities = ["events"]
   };

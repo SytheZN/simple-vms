@@ -81,6 +81,8 @@ public sealed class RetentionEngine : IAsyncDisposable
 
       foreach (var stream in streamsResult.AsT0)
       {
+        if (stream.DeletedAt != null)
+          continue;
         if (stream.Kind != StreamKind.Quality)
           continue;
         if (!stream.RecordingEnabled)
@@ -106,6 +108,38 @@ public sealed class RetentionEngine : IAsyncDisposable
               await PurgeByPercentAsync(data, storage, stream.Id, value, storageStats, ct);
             break;
         }
+      }
+
+      foreach (var stream in streamsResult.AsT0)
+      {
+        if (stream.DeletedAt == null)
+          continue;
+
+        var oldestResult = await data.Segments.GetOldestAsync(stream.Id, 1, ct);
+        if (oldestResult.IsT1 || oldestResult.AsT0.Count > 0)
+          continue;
+
+        var deleteResult = await data.Streams.DeleteAsync(stream.Id, ct);
+        if (deleteResult.IsT1)
+        {
+          _logger.LogWarning("Retention: failed to hard-delete soft-deleted stream {StreamId}: {Message}",
+            stream.Id, deleteResult.AsT1.Message);
+          continue;
+        }
+
+        foreach (var entry in _plugins.Plugins)
+        {
+          if (entry.Plugin is IPluginStreamSettings settings)
+          {
+            var cleanup = await settings.OnRemovedAsync(stream.Id, ct);
+            if (cleanup.IsT1)
+              _logger.LogWarning("Retention: plugin {Plugin} OnRemovedAsync failed for stream {Stream}: {Error}",
+                entry.Metadata.Id, stream.Id, cleanup.AsT1.Message);
+          }
+        }
+
+        _logger.LogInformation("Retention: hard-deleted soft-deleted stream {StreamId} (camera {CameraId}, profile '{Profile}')",
+          stream.Id, stream.CameraId, stream.Profile);
       }
     }
 

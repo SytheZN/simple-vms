@@ -44,20 +44,20 @@ public static class StreamSessionRunner
       return;
     }
 
-    var header = pipeline.VideoHeader;
+    var header = pipeline.MuxHeader;
     if (!header.IsEmpty)
       await sink.SendInitAsync(profile, header, ct);
 
-    var subscribeResult = await pipeline.SubscribeVideoAsync(ct);
+    var subscribeResult = await pipeline.SubscribeMuxAsync(ct);
     if (subscribeResult.IsT1)
     {
       await sink.SendStatusAsync(StreamStatus.Error, ct);
       return;
     }
 
-    var videoStream = subscribeResult.AsT0;
-    await using var _ = videoStream as IAsyncDisposable;
-    var enumerable = videoStream.ReadAsync(ct);
+    var muxStream = subscribeResult.AsT0;
+    await using var _ = muxStream as IAsyncDisposable;
+    var enumerable = muxStream.ReadAsync(ct);
     using var gopBuffer = new MemoryStream();
     var inGop = false;
     ulong gopTimestamp = 0;
@@ -212,7 +212,7 @@ public static class StreamSessionRunner
         if (!initSent)
         {
           var pipeline = tapRegistry.GetPipeline(cameraId, profile);
-          var header = pipeline?.VideoHeader ?? ReadOnlyMemory<byte>.Empty;
+          var header = pipeline?.MuxHeader ?? ReadOnlyMemory<byte>.Empty;
           if (header.IsEmpty)
             header = await ReadInitSegmentAsync(fileStream, ct);
           if (!header.IsEmpty)

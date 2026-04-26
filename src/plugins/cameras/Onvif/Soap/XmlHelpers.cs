@@ -20,6 +20,8 @@ public static class XmlHelpers
     "http://www.onvif.org/ver10/device/wsdl";
   public static readonly XNamespace NsMedia =
     "http://www.onvif.org/ver10/media/wsdl";
+  public static readonly XNamespace NsMedia2 =
+    "http://www.onvif.org/ver20/media/wsdl";
   public static readonly XNamespace NsEvent =
     "http://www.onvif.org/ver10/events/wsdl";
   public static readonly XNamespace NsSchema =

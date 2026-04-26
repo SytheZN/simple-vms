@@ -13,6 +13,7 @@ public sealed class StreamingService : IAsyncDisposable
   private readonly StreamTapRegistry _tapRegistry;
   private readonly IEventBus _eventBus;
   private readonly ILogger<StreamingService> _logger;
+  private readonly StreamReconciler _reconciler;
   private CancellationTokenSource? _eventCts;
 
   public StreamingService(
@@ -25,12 +26,15 @@ public sealed class StreamingService : IAsyncDisposable
     _tapRegistry = tapRegistry;
     _eventBus = eventBus;
     _logger = logger;
+    _reconciler = new StreamReconciler(pluginHost, logger);
   }
 
   [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]
   public async Task StartAsync(CancellationToken ct)
   {
     var dataProvider = _pluginHost.DataProvider;
+    await _reconciler.ReconcileAllAsync(ct);
+
     var camerasResult = await dataProvider.Cameras.GetAllAsync(ct);
     if (camerasResult.IsT1)
     {
@@ -44,23 +48,12 @@ public sealed class StreamingService : IAsyncDisposable
       if (streamsResult.IsT1)
         continue;
 
+      var byId = streamsResult.AsT0.ToDictionary(s => s.Id);
       foreach (var stream in streamsResult.AsT0)
       {
-        var captureSource = FindCaptureSource(stream.Uri);
-        if (captureSource == null)
-        {
-          _logger.LogWarning("No capture source for stream URI '{Uri}' on camera {CameraId}",
-            stream.Uri, camera.Id);
-          continue;
-        }
+        var pipeline = BuildPipeline(camera, stream, byId);
+        if (pipeline == null) continue;
 
-        var connectionInfo = BuildConnectionInfo(camera, stream);
-        var pipeline = new CameraPipeline(
-          camera.Id, stream.Profile, connectionInfo,
-          captureSource, _pluginHost,
-          _eventBus, _logger);
-
-        pipeline.OnParameterMismatch = () => _ = RebuildPipelineAsync(camera, stream);
         _tapRegistry.RegisterPipeline(pipeline);
 
         var constructResult = await pipeline.ConstructAsync(ct);
@@ -140,19 +133,15 @@ public sealed class StreamingService : IAsyncDisposable
     var streamsResult = await dataProvider.Streams.GetByCameraIdAsync(cameraId, ct);
     if (streamsResult.IsT1) return;
 
+    var byId = streamsResult.AsT0.ToDictionary(s => s.Id);
     foreach (var stream in streamsResult.AsT0)
     {
       if (_tapRegistry.GetPipeline(cameraId, stream.Profile) != null)
         continue;
 
-      var captureSource = FindCaptureSource(stream.Uri);
-      if (captureSource == null) continue;
+      var pipeline = BuildPipeline(camera, stream, byId);
+      if (pipeline == null) continue;
 
-      var connectionInfo = BuildConnectionInfo(camera, stream);
-      var pipeline = new CameraPipeline(
-        cameraId, stream.Profile, connectionInfo,
-        captureSource, _pluginHost, _eventBus, _logger);
-      pipeline.OnParameterMismatch = () => _ = RebuildPipelineAsync(camera, stream);
       _tapRegistry.RegisterPipeline(pipeline);
 
       var result = await pipeline.ConstructAsync(ct);
@@ -171,7 +160,7 @@ public sealed class StreamingService : IAsyncDisposable
   }
 
   [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]
-  private async Task RetryConstructAsync(CameraPipeline pipeline, CancellationToken ct)
+  private async Task RetryConstructAsync(IPipeline pipeline, CancellationToken ct)
   {
     int[] delays = [1, 2, 4, 8, 15];
     for (var attempt = 0; attempt < delays.Length; attempt++)
@@ -220,6 +209,8 @@ public sealed class StreamingService : IAsyncDisposable
     var cameraResult = await dataProvider.Cameras.GetByIdAsync(cameraId, ct);
     if (cameraResult.IsT1) return;
 
+    await _reconciler.ReconcileCameraAsync(cameraId, ct);
+
     var camera = cameraResult.AsT0;
     var streamsResult = await dataProvider.Streams.GetByCameraIdAsync(cameraId, ct);
     if (streamsResult.IsT1) return;
@@ -231,22 +222,35 @@ public sealed class StreamingService : IAsyncDisposable
 
     foreach (var pipeline in existingPipelines)
     {
-      if (!desiredStreams.TryGetValue(pipeline.Profile, out var stream))
+      if (!desiredStreams.TryGetValue(pipeline.Profile, out var stream) || stream.DeletedAt != null)
       {
         _tapRegistry.UnregisterPipeline(pipeline.CameraId, pipeline.Profile);
         await pipeline.DisposeAsync();
-        _logger.LogInformation("Removed pipeline for camera {CameraId} profile '{Profile}' (stream removed)",
+        _logger.LogInformation("Removed pipeline for camera {CameraId} profile '{Profile}' (stream removed or soft-deleted)",
           cameraId, pipeline.Profile);
         continue;
       }
 
-      var connectionInfo = BuildConnectionInfo(camera, stream);
-      if (pipeline.ConnectionUri != connectionInfo.Uri)
+      if (pipeline is CameraPipeline cameraPipeline && stream.Uri != null)
       {
-        _tapRegistry.UnregisterPipeline(pipeline.CameraId, pipeline.Profile);
-        await pipeline.DisposeAsync();
-        _logger.LogInformation("Rebuilding pipeline for camera {CameraId} profile '{Profile}' (URI changed: {Old} -> {New})",
-          cameraId, pipeline.Profile, pipeline.ConnectionUri, connectionInfo.Uri);
+        var connectionInfo = BuildConnectionInfo(camera, stream);
+        if (cameraPipeline.ConnectionUri != connectionInfo.Uri)
+        {
+          _tapRegistry.UnregisterPipeline(pipeline.CameraId, pipeline.Profile);
+          await pipeline.DisposeAsync();
+          _logger.LogInformation("Rebuilding pipeline for camera {CameraId} profile '{Profile}' (URI changed: {Old} -> {New})",
+            cameraId, pipeline.Profile, cameraPipeline.ConnectionUri, connectionInfo.Uri);
+        }
+      }
+      else if (pipeline is DerivedStreamPipeline derivedPipeline)
+      {
+        if (derivedPipeline.ProducerId != stream.ProducerId || derivedPipeline.FormatId != stream.FormatId)
+        {
+          _tapRegistry.UnregisterPipeline(pipeline.CameraId, pipeline.Profile);
+          await pipeline.DisposeAsync();
+          _logger.LogInformation("Rebuilding derived pipeline for camera {CameraId} profile '{Profile}' (producer/format changed)",
+            cameraId, pipeline.Profile);
+        }
       }
     }
 
@@ -272,6 +276,14 @@ public sealed class StreamingService : IAsyncDisposable
   [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]
   private async Task RebuildPipelineAsync(Camera camera, CameraStream stream)
   {
+    if (stream.ProducerId != null)
+    {
+      _logger.LogError(
+        "RebuildPipelineAsync invoked for derived stream {StreamId}; only source pipelines support parameter rebuild",
+        stream.Id);
+      return;
+    }
+
     _logger.LogInformation(
       "Rebuilding pipeline for camera {CameraId} profile '{Profile}' due to parameter mismatch",
       camera.Id, stream.Profile);
@@ -283,23 +295,10 @@ public sealed class StreamingService : IAsyncDisposable
       await old.DisposeAsync();
     }
 
-    var captureSource = FindCaptureSource(stream.Uri);
-    if (captureSource == null)
-    {
-      _logger.LogWarning("No capture source for stream URI '{Uri}' on camera {CameraId}",
-        stream.Uri, camera.Id);
-      return;
-    }
+    var pipeline = BuildPipeline(camera, stream, new Dictionary<Guid, CameraStream>());
+    if (pipeline == null) return;
 
-    var connectionInfo = BuildConnectionInfo(camera, stream);
-    var pipeline = new CameraPipeline(
-      camera.Id, stream.Profile, connectionInfo,
-      captureSource, _pluginHost,
-      _eventBus, _logger);
-
-    pipeline.OnParameterMismatch = () => _ = RebuildPipelineAsync(camera, stream);
     _tapRegistry.RegisterPipeline(pipeline);
-
     var result = await pipeline.ConstructAsync(CancellationToken.None);
     if (result.IsT1)
     {
@@ -307,6 +306,59 @@ public sealed class StreamingService : IAsyncDisposable
         "Failed to construct rebuilt pipeline for camera {CameraId} profile '{Profile}': {Message}",
         camera.Id, stream.Profile, result.AsT1.Message);
     }
+  }
+
+  [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]
+  private IPipeline? BuildPipeline(Camera camera, CameraStream stream, IDictionary<Guid, CameraStream> byId)
+  {
+    if (stream.DeletedAt != null) return null;
+
+    if (stream.ProducerId != null)
+    {
+      if (stream.ParentStreamId is not Guid parentId)
+      {
+        _logger.LogWarning("Derived stream {StreamId} has no ParentStreamId", stream.Id);
+        return null;
+      }
+      if (!byId.TryGetValue(parentId, out var parent))
+      {
+        _logger.LogWarning("Derived stream {StreamId} parent {ParentId} not found", stream.Id, parentId);
+        return null;
+      }
+      var analyzerIdentity = _pluginHost.Analyzers
+        .FirstOrDefault(a => a.AnalyzerId == stream.ProducerId);
+      if (analyzerIdentity is not IDataStreamAnalyzerStreamOutput streamOutput)
+      {
+        _logger.LogWarning("Analyzer '{ProducerId}' not loaded or has no stream output", stream.ProducerId);
+        return null;
+      }
+      var format = _pluginHost.StreamFormats.FirstOrDefault(f => f.FormatId == stream.FormatId);
+      if (format == null)
+      {
+        _logger.LogWarning("Format '{FormatId}' not loaded for derived stream {StreamId}",
+          stream.FormatId, stream.Id);
+        return null;
+      }
+      return new DerivedStreamPipeline(camera.Id, stream.Profile, parent.Profile,
+        analyzerIdentity, streamOutput, format, _logger);
+    }
+
+    if (stream.Uri == null) return null;
+
+    var captureSource = FindCaptureSource(stream.Uri);
+    if (captureSource == null)
+    {
+      _logger.LogWarning("No capture source for stream URI '{Uri}' on camera {CameraId}",
+        stream.Uri, camera.Id);
+      return null;
+    }
+
+    var connectionInfo = BuildConnectionInfo(camera, stream);
+    var sourcePipeline = new CameraPipeline(
+      camera.Id, stream.Profile, connectionInfo,
+      captureSource, _pluginHost, _eventBus, _logger);
+    sourcePipeline.OnParameterMismatch = () => _ = RebuildPipelineAsync(camera, stream);
+    return sourcePipeline;
   }
 
   private ICaptureSource? FindCaptureSource(string uri)
@@ -337,7 +389,7 @@ public sealed class StreamingService : IAsyncDisposable
 
     return new CameraConnectionInfo
     {
-      Uri = stream.Uri,
+      Uri = stream.Uri!,
       Credentials = credentials
     };
   }

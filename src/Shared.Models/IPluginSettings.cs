@@ -26,4 +26,11 @@ public record SettingField
   public string? Description { get; init; }
   public string? DefaultValue { get; init; }
   public bool Required { get; init; }
+  public IReadOnlyList<SettingFieldOption>? Options { get; init; }
+}
+
+public record SettingFieldOption
+{
+  public required string Value { get; init; }
+  public required string Label { get; init; }
 }

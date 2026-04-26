@@ -252,9 +252,9 @@ public sealed class RecordingManager : IAsyncDisposable
         continue;
       }
 
-      var header = pipeline.VideoHeader;
-      var videoResult = await _tapRegistry.SubscribeVideoAsync(cameraId, profile, ct);
-      if (videoResult.IsT1)
+      var header = pipeline.MuxHeader;
+      var muxResult = await _tapRegistry.SubscribeMuxAsync(cameraId, profile, ct);
+      if (muxResult.IsT1)
       {
         consecutiveFailures++;
         if (consecutiveFailures >= MaxConsecutiveFailures)
@@ -280,7 +280,7 @@ public sealed class RecordingManager : IAsyncDisposable
 
       try
       {
-        await entry.Writer.RunAsync(videoResult.AsT0, header, ct);
+        await entry.Writer.RunAsync(muxResult.AsT0, header, ct);
         return;
       }
       catch (OperationCanceledException)

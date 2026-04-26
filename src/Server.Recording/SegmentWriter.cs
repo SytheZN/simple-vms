@@ -55,9 +55,9 @@ public sealed class SegmentWriter : IAsyncDisposable
 
   public void Seal() => _sealTcs.TrySetResult();
 
-  public async Task RunAsync(IVideoStream videoStream, ReadOnlyMemory<byte> header, CancellationToken ct)
+  public async Task RunAsync(IMuxStream muxStream, ReadOnlyMemory<byte> header, CancellationToken ct)
   {
-    await using var enumerator = ReadAsDataUnits(videoStream, ct).GetAsyncEnumerator(ct);
+    await using var enumerator = ReadAsDataUnits(muxStream, ct).GetAsyncEnumerator(ct);
 
     while (!ct.IsCancellationRequested)
     {
@@ -250,8 +250,8 @@ public sealed class SegmentWriter : IAsyncDisposable
     _handle = null;
   }
 
-  private static IAsyncEnumerable<IDataUnit> ReadAsDataUnits(IVideoStream videoStream, CancellationToken ct) =>
-    videoStream.ReadAsync(ct);
+  private static IAsyncEnumerable<IDataUnit> ReadAsDataUnits(IMuxStream muxStream, CancellationToken ct) =>
+    muxStream.ReadAsync(ct);
 
   public async ValueTask DisposeAsync()
   {

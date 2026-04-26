@@ -39,7 +39,7 @@ public sealed class Fmp4Muxer
 
   public byte[]? InitSegment => _initSegment;
 
-  public async Task<VideoStreamInfo> InitAsync(int fps, CancellationToken ct)
+  public async Task<MuxStreamInfo> InitAsync(int fps, CancellationToken ct)
   {
     if (_codec == MuxerCodec.H264)
     {
@@ -77,7 +77,7 @@ public sealed class Fmp4Muxer
     throw new OperationCanceledException("Stream ended before SPS/PPS received");
   }
 
-  public (byte[] Segment, VideoStreamInfo Info) BuildInitSegment(
+  public (byte[] Segment, MuxStreamInfo Info) BuildInitSegment(
     ReadOnlySpan<byte> sps, ReadOnlySpan<byte> pps, ReadOnlySpan<byte> vps, int fps = 0)
   {
     var ftyp = FtypBuilder.Build();
@@ -114,7 +114,7 @@ public sealed class Fmp4Muxer
     _initSegment = init;
     _assembler.AddHeaderBytes(init.Length);
 
-    var info = new VideoStreamInfo
+    var info = new MuxStreamInfo
     {
       DataFormat = "fmp4",
       MimeType = mimeType,

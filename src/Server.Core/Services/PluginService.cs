@@ -150,6 +150,8 @@ public sealed class PluginService
       Status = entry.State.ToString().ToLowerInvariant(),
       ExtensionPoints = entry.ExtensionPoints,
       UserStartable = entry.Plugin is IUserStartable,
-      HasSettings = entry.Plugin is IPluginSettings
+      HasSettings = entry.Plugin is IPluginSettings,
+      HasCameraSettings = entry.Plugin is IPluginCameraSettings,
+      HasStreamSettings = entry.Plugin is IPluginStreamSettings
     };
 }

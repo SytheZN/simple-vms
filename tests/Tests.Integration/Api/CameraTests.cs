@@ -212,10 +212,11 @@ public sealed class CameraTests
   /// A camera is created directly via the data provider and then updated via the API
   ///
   /// ACTION:
-  /// Insert a camera via the data layer, then PUT /api/v1/cameras/{id} with name and retention changes
+  /// Insert a camera, PUT /api/v1/cameras/{id} for the name change, and
+  /// PUT /api/v1/cameras/{id}/config with core retention fields
   ///
   /// EXPECTED RESULT:
-  /// 200, and GET returns the updated name and retention
+  /// 200 on both calls; GET returns the new name; the data store reflects the new retention
   /// </summary>
   [Test]
   public async Task UpdateCamera_ChangesNameAndRetention()
@@ -232,18 +233,32 @@ public sealed class CameraTests
     };
     await pluginHost.DataProvider.Cameras.CreateAsync(camera, CancellationToken.None);
 
-    var updateResponse = await _client.PutAsJsonAsync($"/api/v1/cameras/{camera.Id}", new
+    var renameResponse = await _client.PutAsJsonAsync($"/api/v1/cameras/{camera.Id}", new
     {
-      name = "Renamed Camera",
-      retention = new { mode = "days", value = 14 }
+      name = "Renamed Camera"
     });
-    Assert.That(updateResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+    Assert.That(renameResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+
+    var configResponse = await _client.PutAsJsonAsync($"/api/v1/cameras/{camera.Id}/config", new
+    {
+      camera = new Dictionary<string, object>
+      {
+        ["core"] = new Dictionary<string, string>
+        {
+          ["retentionMode"] = "days",
+          ["retentionValue"] = "14"
+        }
+      }
+    });
+    Assert.That(configResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
 
     var getResponse = await _client.GetAsync($"/api/v1/cameras/{camera.Id}");
     var body = (await ApiTestFixture.Envelope<CameraListItem>(getResponse)).Body!;
     Assert.That(body.Name, Is.EqualTo("Renamed Camera"));
-    Assert.That(body.RetentionMode, Is.EqualTo("days"));
-    Assert.That(body.RetentionValue, Is.EqualTo(14));
+
+    var fetched = (await pluginHost.DataProvider.Cameras.GetByIdAsync(camera.Id, CancellationToken.None)).AsT0;
+    Assert.That(fetched.RetentionMode, Is.EqualTo(Shared.Models.RetentionMode.Days));
+    Assert.That(fetched.RetentionValue, Is.EqualTo(14));
 
     await _client.DeleteAsync($"/api/v1/cameras/{camera.Id}");
   }
@@ -282,16 +297,16 @@ public sealed class CameraTests
 
   /// <summary>
   /// SCENARIO:
-  /// A camera is created with a stream, then stream recording is toggled off via update
+  /// A camera is created with a stream, then stream recording is toggled off via the unified config endpoint
   ///
   /// ACTION:
-  /// Create camera + stream, PUT /api/v1/cameras/{id} with streams[].recordingEnabled=false
+  /// Create camera + stream, PUT /api/v1/cameras/{id}/config with streams.main.core.recordingEnabled="false"
   ///
   /// EXPECTED RESULT:
-  /// GET returns the stream with recordingEnabled=false
+  /// The stream's RecordingEnabled flag is false in the data store
   /// </summary>
   [Test]
-  public async Task UpdateCamera_TogglesStreamRecording()
+  public async Task UpdateCameraConfig_TogglesStreamRecording()
   {
     var pluginHost = ApiTestFixture.App.Services.GetRequiredService<IPluginHost>();
     var camera = new Shared.Models.Camera
@@ -319,15 +334,20 @@ public sealed class CameraTests
     };
     await pluginHost.DataProvider.Streams.UpsertAsync(stream, CancellationToken.None);
 
-    var updateResponse = await _client.PutAsJsonAsync($"/api/v1/cameras/{camera.Id}", new
+    var updateResponse = await _client.PutAsJsonAsync($"/api/v1/cameras/{camera.Id}/config", new
     {
-      streams = new[] { new { profile = "main", recordingEnabled = false } }
+      streams = new Dictionary<string, object>
+      {
+        ["main"] = new Dictionary<string, object>
+        {
+          ["core"] = new Dictionary<string, string> { ["recordingEnabled"] = "false" }
+        }
+      }
     });
     Assert.That(updateResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
 
-    var getResponse = await _client.GetAsync($"/api/v1/cameras/{camera.Id}");
-    var body = (await ApiTestFixture.Envelope<CameraListItem>(getResponse)).Body!;
-    Assert.That(body.Streams[0].RecordingEnabled, Is.False);
+    var fetched = (await pluginHost.DataProvider.Streams.GetByIdAsync(stream.Id, CancellationToken.None)).AsT0;
+    Assert.That(fetched.RecordingEnabled, Is.False);
 
     await _client.DeleteAsync($"/api/v1/cameras/{camera.Id}");
   }

@@ -40,7 +40,15 @@ function totalBytesPerHour(store: StorageResponse['stores'][0]): number {
   }, 0)
 }
 
-function estimateRemaining(store: StorageResponse['stores'][0]): string {
+function estimateMaxDuration(store: StorageResponse['stores'][0]): string {
+  const rate = totalBytesPerHour(store)
+  const available = store.freeBytes + store.recordingBytes
+  if (rate <= 0 || available <= 0) return '--'
+  const hours = available / rate
+  return formatDuration(hours * 3_600_000_000)
+}
+
+function estimateRemainingDuration(store: StorageResponse['stores'][0]): string {
   const rate = totalBytesPerHour(store)
   if (rate <= 0 || store.freeBytes <= 0) return '--'
   const hours = store.freeBytes / rate
@@ -78,9 +86,9 @@ onMounted(load)
         </div>
         <div class="progress-track relative">
           <div
+            v-if="store.totalBytes > 0 && store.usedBytes > 0"
             class="progress-fill absolute inset-y-0 left-0"
-            :class="store.totalBytes > 0 && store.usedBytes / store.totalBytes > 0.9 ? 'progress-fill-danger' : store.totalBytes > 0 && store.usedBytes / store.totalBytes > 0.75 ? 'progress-fill-warning' : ''"
-            :style="{ width: store.totalBytes > 0 ? (store.usedBytes / store.totalBytes * 100) + '%' : '0%' }"
+            :style="{ width: (store.usedBytes / store.totalBytes * 100) + '%' }"
           ></div>
           <div
             v-if="store.recordingBytes > 0 && store.totalBytes > 0"
@@ -131,11 +139,18 @@ onMounted(load)
               <span class="w-16"></span>
             </div>
             <div v-if="totalBytesPerHour(store) > 0" class="flex items-center text-text-muted font-medium pt-1 border-t border-border">
-              <span class="flex-1">Est. Max Duration</span>
-              <span class="w-20 text-right">{{ estimateRemaining(store) }}</span>
+              <span class="flex-1">Est. Remaining Duration</span>
+              <span class="w-20 text-right">{{ estimateRemainingDuration(store) }}</span>
               <span class="w-20"></span>
               <span class="w-14"></span>
               <span class="w-16 text-right">{{ (totalBytesPerHour(store) / 1024 / 1024).toFixed(1) }}</span>
+            </div>
+            <div v-if="totalBytesPerHour(store) > 0" class="flex items-center text-text-muted font-medium">
+              <span class="flex-1">Est. Max Duration</span>
+              <span class="w-20 text-right">{{ estimateMaxDuration(store) }}</span>
+              <span class="w-20"></span>
+              <span class="w-14"></span>
+              <span class="w-16"></span>
             </div>
           </div>
         </div>

@@ -1,42 +1,53 @@
+using Data.Sqlite;
+using Microsoft.Extensions.Logging.Abstractions;
+
 namespace Tests.Integration.Sqlite;
 
 [TestFixture]
 public sealed class MigrationTests
 {
-  private readonly SqliteTestFixture _fixture = new();
-
-  [SetUp]
-  public async Task SetUp() => await _fixture.SetUp();
-
-  [TearDown]
-  public void TearDown() => _fixture.TearDown();
-
   /// <summary>
   /// SCENARIO:
-  /// Database has already been migrated once during SetUp
+  /// A migrator is invoked repeatedly against the same database file
   ///
   /// ACTION:
-  /// Run MigrateAsync two more times
+  /// Call MigrateDatabase three times then InitializeProvider; insert and read a camera
   ///
   /// EXPECTED RESULT:
-  /// Both calls succeed without error; data written before the extra migrations is preserved
+  /// Each migrate call succeeds; data ops work after init
   /// </summary>
   [Test]
   public async Task Migrate_IsIdempotent()
   {
-    (await _fixture.Provider.MigrateAsync(CancellationToken.None)).Switch(
-      _ => { },
-      error => Assert.Fail($"Second migrate failed: {error.Message}"));
+    var path = Path.Combine(Path.GetTempPath(), $"vms-test-migrate-{Guid.NewGuid()}.db");
+    try
+    {
+      var provider = new SqliteProvider();
 
-    (await _fixture.Provider.MigrateAsync(CancellationToken.None)).Switch(
-      _ => { },
-      error => Assert.Fail($"Third migrate failed: {error.Message}"));
+      for (var i = 0; i < 3; i++)
+      {
+        provider.MigrateDatabase(path, NullLogger.Instance).Switch(
+          _ => { },
+          error => Assert.Fail($"Migrate {i + 1} failed: {error.Message}"));
+      }
 
-    var camera = SqliteTestFixture.MakeCamera();
-    await _fixture.Provider.Cameras.CreateAsync(camera);
+      provider.InitializeProvider(path);
 
-    (await _fixture.Provider.Cameras.GetByIdAsync(camera.Id)).Switch(
-      fetched => Assert.That(fetched, Is.Not.Null),
-      error => Assert.Fail($"GetById failed: {error.Message}"));
+      var camera = SqliteTestFixture.MakeCamera();
+      await provider.Cameras.CreateAsync(camera);
+
+      (await provider.Cameras.GetByIdAsync(camera.Id)).Switch(
+        fetched => Assert.That(fetched, Is.Not.Null),
+        error => Assert.Fail($"GetById failed: {error.Message}"));
+    }
+    finally
+    {
+      foreach (var suffix in new[] { "", "-wal", "-shm" })
+      {
+        var p = path + suffix;
+        if (File.Exists(p))
+          File.Delete(p);
+      }
+    }
   }
 }

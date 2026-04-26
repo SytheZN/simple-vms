@@ -59,6 +59,27 @@ public sealed class DeviceService(SoapClient soap)
     return streaming?.Element(XmlHelpers.NsSchema + "RTP_TCP") != null
       || streaming?.Element(XmlHelpers.NsSchema + "RTP_RTSP_TCP") != null;
   }
+
+  public async Task<IReadOnlyDictionary<string, string>> GetServicesAsync(
+    string deviceUri, Credentials credentials, CancellationToken ct)
+  {
+    var body = new XElement(XmlHelpers.NsDevice + "GetServices",
+      new XElement(XmlHelpers.NsDevice + "IncludeCapability", "false"));
+    var response = await soap.SendAsync(deviceUri, body, credentials, ct);
+
+    var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    var services = response.Element(XmlHelpers.NsDevice + "GetServicesResponse");
+    if (services == null) return result;
+
+    foreach (var service in services.Elements(XmlHelpers.NsDevice + "Service"))
+    {
+      var ns = service.Element(XmlHelpers.NsDevice + "Namespace")?.Value;
+      var addr = service.Element(XmlHelpers.NsDevice + "XAddr")?.Value;
+      if (!string.IsNullOrEmpty(ns) && !string.IsNullOrEmpty(addr))
+        result[ns] = addr;
+    }
+    return result;
+  }
 }
 
 public sealed class DeviceInfo

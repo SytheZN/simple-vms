@@ -17,7 +17,7 @@ public sealed class StreamProfile
   public required string FormatId { get; init; }
   public string? Codec { get; init; }
   public string? Resolution { get; init; }
-  public int? Fps { get; init; }
+  public decimal? Fps { get; init; }
   public int? Bitrate { get; init; }
   public required string Uri { get; init; }
 }

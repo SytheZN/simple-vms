@@ -27,7 +27,7 @@ public sealed class CameraRegistry : ICameraRegistry
     {
       var streams = await _dataProvider.Streams.GetByCameraIdAsync(camera.Id, ct);
       var profiles = streams.IsT0
-        ? streams.AsT0.Select(s => new StreamProfile
+        ? streams.AsT0.Where(s => s.Uri != null).Select(s => new StreamProfile
           {
             Profile = s.Profile,
             Kind = s.Kind,
@@ -36,7 +36,7 @@ public sealed class CameraRegistry : ICameraRegistry
             Resolution = s.Resolution,
             Fps = s.Fps,
             Bitrate = s.Bitrate,
-            Uri = s.Uri
+            Uri = s.Uri!
           }).ToList()
         : [];
 
@@ -63,7 +63,7 @@ public sealed class CameraRegistry : ICameraRegistry
     var camera = result.AsT0;
     var streams = await _dataProvider.Streams.GetByCameraIdAsync(camera.Id, ct);
     var profiles = streams.IsT0
-      ? streams.AsT0.Select(s => new StreamProfile
+      ? streams.AsT0.Where(s => s.Uri != null).Select(s => new StreamProfile
         {
           Profile = s.Profile,
           Kind = s.Kind,
@@ -72,7 +72,7 @@ public sealed class CameraRegistry : ICameraRegistry
           Resolution = s.Resolution,
           Fps = s.Fps,
           Bitrate = s.Bitrate,
-          Uri = s.Uri
+          Uri = s.Uri!
         }).ToList()
       : [];
 

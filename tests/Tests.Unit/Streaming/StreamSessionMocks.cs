@@ -131,7 +131,7 @@ internal sealed class SessionTestPluginHost(
   public IReadOnlyList<ICameraProvider> CameraProviders => [];
   public IReadOnlyList<IEventFilter> EventFilters => [];
   public IReadOnlyList<INotificationSink> NotificationSinks => [];
-  public IReadOnlyList<IVideoAnalyzer> VideoAnalyzers => [];
+  public IReadOnlyList<IDataStreamAnalyzer> Analyzers => [];
   public IReadOnlyList<IStorageProvider> StorageProviders =>
     storageProviders ?? [new StubStorageProvider()];
   public IReadOnlyList<IAuthProvider> AuthProviders => [];

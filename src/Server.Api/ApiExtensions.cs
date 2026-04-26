@@ -22,6 +22,7 @@ public static class ApiExtensions
     services.AddSingleton<RetentionService>();
     services.AddSingleton<SystemService>();
     services.AddSingleton<PluginService>();
+    services.AddSingleton<CameraConfigService>();
     services.AddHttpClient("upnp", c => c.Timeout = TimeSpan.FromSeconds(10));
     services.AddSingleton<PortForwardingService>();
     services.AddSingleton<IPortForwardingApplier>(sp => sp.GetRequiredService<PortForwardingService>());

@@ -28,7 +28,7 @@ public sealed class PluginHost : IPluginHost
   private readonly List<ICameraProvider> _cameraProviders = [];
   private readonly List<IEventFilter> _eventFilters = [];
   private readonly List<INotificationSink> _notificationSinks = [];
-  private readonly List<IVideoAnalyzer> _videoAnalyzers = [];
+  private readonly List<IDataStreamAnalyzer> _analyzers = [];
   private readonly List<IStorageProvider> _storageProviders = [];
   private readonly List<IAuthProvider> _authProviders = [];
   private readonly List<IAuthzProvider> _authzProviders = [];
@@ -38,7 +38,7 @@ public sealed class PluginHost : IPluginHost
   public IReadOnlyList<ICameraProvider> CameraProviders => _cameraProviders;
   public IReadOnlyList<IEventFilter> EventFilters => _eventFilters;
   public IReadOnlyList<INotificationSink> NotificationSinks => _notificationSinks;
-  public IReadOnlyList<IVideoAnalyzer> VideoAnalyzers => _videoAnalyzers;
+  public IReadOnlyList<IDataStreamAnalyzer> Analyzers => _analyzers;
   public IReadOnlyList<IStorageProvider> StorageProviders => _storageProviders;
   public IReadOnlyList<IAuthProvider> AuthProviders => _authProviders;
   public IReadOnlyList<IAuthzProvider> AuthzProviders => _authzProviders;
@@ -259,7 +259,7 @@ public sealed class PluginHost : IPluginHost
     if (plugin is ICameraProvider cp) _cameraProviders.Add(cp);
     if (plugin is IEventFilter ef) _eventFilters.Add(ef);
     if (plugin is INotificationSink ns) _notificationSinks.Add(ns);
-    if (plugin is IVideoAnalyzer va) _videoAnalyzers.Add(va);
+    if (plugin is IDataStreamAnalyzer ana) _analyzers.Add(ana);
     if (plugin is IStorageProvider sp) _storageProviders.Add(sp);
   }
 
@@ -271,7 +271,7 @@ public sealed class PluginHost : IPluginHost
     _cameraProviders.Clear();
     _eventFilters.Clear();
     _notificationSinks.Clear();
-    _videoAnalyzers.Clear();
+    _analyzers.Clear();
     _storageProviders.Clear();
     _authProviders.Clear();
     _authzProviders.Clear();
@@ -322,7 +322,7 @@ public sealed class PluginHost : IPluginHost
     [typeof(ICameraProvider)] = "camera",
     [typeof(IEventFilter)] = "event-filter",
     [typeof(INotificationSink)] = "notification-sink",
-    [typeof(IVideoAnalyzer)] = "video-analyzer",
+    [typeof(IDataStreamAnalyzer)] = "data-stream-analyzer",
     [typeof(IStorageProvider)] = "storage",
     [typeof(IDataProvider)] = "data",
     [typeof(IAuthProvider)] = "auth",

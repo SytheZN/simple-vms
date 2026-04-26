@@ -6,9 +6,9 @@ using Shared.Models.Formats;
 namespace Tests.Unit.Streaming;
 
 [TestFixture]
-public class VideoStreamFanOutTests
+public class MuxStreamFanOutTests
 {
-  private static VideoStreamInfo TestInfo => new()
+  private static MuxStreamInfo TestInfo => new()
   {
     DataFormat = "fmp4",
     MimeType = "video/mp4; codecs=\"avc1.640029\"",
@@ -38,8 +38,8 @@ public class VideoStreamFanOutTests
   [Test]
   public async Task Subscribe_FirstSubscriber_FiresOnDemand()
   {
-    var source = new TestVideoStream(TestInfo);
-    await using var fanOut = new VideoStreamFanOut<Fmp4Fragment>(source);
+    var source = new TestMuxStream(TestInfo);
+    await using var fanOut = new MuxStreamFanOut<Fmp4Fragment>(source);
 
     var demandFired = false;
     fanOut.OnDemand = () => demandFired = true;
@@ -61,8 +61,8 @@ public class VideoStreamFanOutTests
   [Test]
   public async Task Subscribe_SecondSubscriber_DoesNotFireOnDemand()
   {
-    var source = new TestVideoStream(TestInfo);
-    await using var fanOut = new VideoStreamFanOut<Fmp4Fragment>(source);
+    var source = new TestMuxStream(TestInfo);
+    await using var fanOut = new MuxStreamFanOut<Fmp4Fragment>(source);
 
     var demandCount = 0;
     fanOut.OnDemand = () => demandCount++;
@@ -86,8 +86,8 @@ public class VideoStreamFanOutTests
   [Test]
   public async Task LastSubscriberLeaves_FiresOnEmpty()
   {
-    var source = new TestVideoStream(TestInfo);
-    await using var fanOut = new VideoStreamFanOut<Fmp4Fragment>(source);
+    var source = new TestMuxStream(TestInfo);
+    await using var fanOut = new MuxStreamFanOut<Fmp4Fragment>(source);
 
     var emptyFired = false;
     fanOut.OnDemand = () => { };
@@ -98,7 +98,7 @@ public class VideoStreamFanOutTests
     using var cts = new CancellationTokenSource(50);
     try
     {
-      await foreach (var _ in ((IVideoStream<Fmp4Fragment>)sub).ReadAsync(cts.Token)) { }
+      await foreach (var _ in ((IMuxStream<Fmp4Fragment>)sub).ReadAsync(cts.Token)) { }
     }
     catch (OperationCanceledException) { }
 
@@ -118,8 +118,8 @@ public class VideoStreamFanOutTests
   [Test]
   public async Task OneOfTwoSubscribersLeaves_DoesNotFireOnEmpty()
   {
-    var source = new TestVideoStream(TestInfo);
-    await using var fanOut = new VideoStreamFanOut<Fmp4Fragment>(source);
+    var source = new TestMuxStream(TestInfo);
+    await using var fanOut = new MuxStreamFanOut<Fmp4Fragment>(source);
 
     var emptyFired = false;
     fanOut.OnDemand = () => { };
@@ -131,7 +131,7 @@ public class VideoStreamFanOutTests
     using var cts = new CancellationTokenSource(50);
     try
     {
-      await foreach (var _ in ((IVideoStream<Fmp4Fragment>)sub1).ReadAsync(cts.Token)) { }
+      await foreach (var _ in ((IMuxStream<Fmp4Fragment>)sub1).ReadAsync(cts.Token)) { }
     }
     catch (OperationCanceledException) { }
 
@@ -152,8 +152,8 @@ public class VideoStreamFanOutTests
   [Test]
   public async Task NewSubscriber_WaitsForKeyframe()
   {
-    var source = new TestVideoStream(TestInfo);
-    await using var fanOut = new VideoStreamFanOut<Fmp4Fragment>(source);
+    var source = new TestMuxStream(TestInfo);
+    await using var fanOut = new MuxStreamFanOut<Fmp4Fragment>(source);
     fanOut.OnDemand = () => { };
 
     var sub = fanOut.Subscribe();
@@ -169,7 +169,7 @@ public class VideoStreamFanOutTests
     using var cts = new CancellationTokenSource(100);
     try
     {
-      await foreach (var item in ((IVideoStream<Fmp4Fragment>)sub).ReadAsync(cts.Token))
+      await foreach (var item in ((IMuxStream<Fmp4Fragment>)sub).ReadAsync(cts.Token))
         received.Add(item.Timestamp);
     }
     catch (OperationCanceledException) { }
@@ -187,13 +187,13 @@ public class VideoStreamFanOutTests
   /// Read Info
   ///
   /// EXPECTED RESULT:
-  /// Returns source's VideoStreamInfo
+  /// Returns source's MuxStreamInfo
   /// </summary>
   [Test]
   public void Info_DelegatesToSource()
   {
-    var source = new TestVideoStream(TestInfo);
-    var fanOut = new VideoStreamFanOut<Fmp4Fragment>(source);
+    var source = new TestMuxStream(TestInfo);
+    var fanOut = new MuxStreamFanOut<Fmp4Fragment>(source);
 
     Assert.That(fanOut.Info.MimeType, Is.EqualTo(TestInfo.MimeType));
     Assert.That(fanOut.Info.Resolution, Is.EqualTo(TestInfo.Resolution));
@@ -214,21 +214,21 @@ public class VideoStreamFanOutTests
   public void Header_DelegatesToSource()
   {
     var headerBytes = new byte[] { 0x00, 0x00, 0x00, 0x24, 0x66, 0x74, 0x79, 0x70 };
-    var source = new TestVideoStream(TestInfo, headerBytes);
-    var fanOut = new VideoStreamFanOut<Fmp4Fragment>(source);
+    var source = new TestMuxStream(TestInfo, headerBytes);
+    var fanOut = new MuxStreamFanOut<Fmp4Fragment>(source);
 
     Assert.That(fanOut.Header.ToArray(), Is.EqualTo(headerBytes));
   }
 
-  private sealed class TestVideoStream : IVideoStream<Fmp4Fragment>
+  private sealed class TestMuxStream : IMuxStream<Fmp4Fragment>
   {
     private readonly Channel<Fmp4Fragment> _channel = Channel.CreateUnbounded<Fmp4Fragment>();
 
-    public VideoStreamInfo Info { get; }
+    public MuxStreamInfo Info { get; }
     public ReadOnlyMemory<byte> Header { get; }
     public Type FrameType => typeof(Fmp4Fragment);
 
-    public TestVideoStream(VideoStreamInfo info, byte[]? header = null)
+    public TestMuxStream(MuxStreamInfo info, byte[]? header = null)
     {
       Info = info;
       Header = header ?? ReadOnlyMemory<byte>.Empty;
