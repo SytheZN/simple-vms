@@ -2,7 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="using:Client.Core.Controls"
              xmlns:vm="using:Client.Core.ViewModels"
-             xmlns:dto="using:Shared.Models.Dto"
+             xmlns:dto="using:Shared.Api"
              x:Class="Client.Core.Controls.CameraGrid"
              x:DataType="vm:GalleryViewModel">
 
@@ -39,7 +39,7 @@
       </ItemsPanelTemplate>
     </ItemsControl.ItemsPanel>
     <ItemsControl.ItemTemplate>
-      <DataTemplate x:DataType="dto:CameraListItem">
+      <DataTemplate x:DataType="dto:CameraDto">
         <Border Margin="{DynamicResource MarginSpace1}"
                 Classes="card"
                 Padding="0"

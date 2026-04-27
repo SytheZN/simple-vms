@@ -2,6 +2,6 @@ namespace Shared.Models;
 
 public interface ICameraRegistry
 {
-  Task<IReadOnlyList<CameraInfo>> GetCamerasAsync(CancellationToken ct);
-  Task<CameraInfo?> GetCameraAsync(Guid cameraId, CancellationToken ct);
+  Task<OneOf<IReadOnlyList<CameraInfo>, Error>> GetCamerasAsync(CancellationToken ct);
+  Task<OneOf<CameraInfo, Error>> GetCameraAsync(Guid cameraId, CancellationToken ct);
 }

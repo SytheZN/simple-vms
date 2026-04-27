@@ -2,8 +2,7 @@ using System.Runtime.Loader;
 using Microsoft.Extensions.Logging.Abstractions;
 using Server.Plugins;
 using Server.Recording;
-using Shared.Models;
-using Shared.Models.Events;
+using Tests.Unit.Mocks;
 
 namespace Tests.Unit.Recording;
 
@@ -176,7 +175,7 @@ public class RetentionEngineTests
     data.AddStream(stream);
 
     var plugin = new RecordingPluginStreamSettings();
-    var host = new FakePluginHost(data, new FakeStorage(), plugin);
+    var host = MakeHost(data, new FakeStorage(), plugin);
     var engine = new RetentionEngine(host, NullLogger.Instance);
 
     await engine.EvaluateAsync(CancellationToken.None);
@@ -213,7 +212,7 @@ public class RetentionEngineTests
     data.AddSegments(streamId, [seg]);
 
     var plugin = new RecordingPluginStreamSettings();
-    var host = new FakePluginHost(data, new FakeStorage(), plugin);
+    var host = MakeHost(data, new FakeStorage(), plugin);
     var engine = new RetentionEngine(host, NullLogger.Instance);
 
     await engine.EvaluateAsync(CancellationToken.None);
@@ -258,8 +257,29 @@ public class RetentionEngineTests
 
   private static RetentionEngine CreateEngine(FakeDataProvider data, FakeStorage storage)
   {
-    var host = new FakePluginHost(data, storage);
+    var host = MakeHost(data, storage);
     return new RetentionEngine(host, NullLogger.Instance);
+  }
+
+  private static FakePluginHost MakeHost(FakeDataProvider data, IStorageProvider storage, IPlugin? plugin = null)
+  {
+    if (plugin is RecordingPluginStreamSettings rp)
+      rp.StreamExists = id => ((FakeStreamRepo)data.Streams).DeletedIds.Contains(id) == false;
+
+    return new FakePluginHost
+    {
+      DataProvider = data,
+      StorageProviders = [storage],
+      Plugins = plugin != null
+        ? [new PluginEntry
+          {
+            PluginType = plugin.GetType(),
+            LoadContext = AssemblyLoadContext.Default,
+            Plugin = plugin,
+            Metadata = plugin.Metadata
+          }]
+        : []
+    };
   }
 
   private static CameraStream MakeStream(
@@ -557,50 +577,4 @@ public class RetentionEngineTests
     }
   }
 
-  private sealed class FakePluginHost : IPluginHost
-  {
-    public IReadOnlyList<PluginEntry> Plugins { get; }
-    public IDataProvider DataProvider { get; }
-    public IReadOnlyList<ICaptureSource> CaptureSources => [];
-    public IReadOnlyList<IStreamFormat> StreamFormats => [];
-    public IReadOnlyList<ICameraProvider> CameraProviders => [];
-    public IReadOnlyList<IEventFilter> EventFilters => [];
-    public IReadOnlyList<INotificationSink> NotificationSinks => [];
-    public IReadOnlyList<IDataStreamAnalyzer> Analyzers => [];
-    public IReadOnlyList<IStorageProvider> StorageProviders { get; }
-    public IReadOnlyList<IAuthProvider> AuthProviders => [];
-    public IReadOnlyList<IAuthzProvider> AuthzProviders => [];
-
-    public FakePluginHost(IDataProvider data, IStorageProvider storage, IPlugin? plugin = null)
-    {
-      DataProvider = data;
-      StorageProviders = [storage];
-      if (plugin != null)
-      {
-        if (plugin is RecordingPluginStreamSettings rp)
-          rp.StreamExists = id => ((FakeStreamRepo)data.Streams).DeletedIds.Contains(id) == false;
-        Plugins = [new PluginEntry
-        {
-          PluginType = plugin.GetType(),
-          LoadContext = AssemblyLoadContext.Default,
-          Plugin = plugin,
-          Metadata = plugin.Metadata
-        }];
-      }
-      else
-      {
-        Plugins = [];
-      }
-    }
-
-    public IStreamFormat? FindFormat(Type inputType) => null;
-    public void SetStreamTap(IStreamTap streamTap) { }
-    public void SetCameraRegistry(ICameraRegistry cameraRegistry) { }
-    public void SetRecordingAccess(IRecordingAccess recordingAccess) { }
-    public void Discover(string pluginsPath) { }
-    public void Initialize(bool dataOnly = false) { }
-    public void ResetErrored() { }
-    public Task StartAsync(CancellationToken ct) => Task.CompletedTask;
-    public Task StopAsync() => Task.CompletedTask;
-  }
 }

@@ -146,6 +146,7 @@ public sealed class MuxStreamInfo
 {
     public required string DataFormat { get; init; }
     public required string MimeType { get; init; }
+    public required string FileExtension { get; init; }
     public required string Resolution { get; init; }
     public required decimal Fps { get; init; }
 }
@@ -160,6 +161,12 @@ public sealed class MuxStreamInfo
 ### Format Types
 
 Format-specific data unit and parameter types live in `Shared.Models/Formats/`. These are the typed interop contract between capture sources and format plugins - compatible pipeline stages reference the same types. Each data unit type implements `IDataUnit`. Each codec may also define a parameters type carried on `StreamInfo.FormatParameters` for out-of-band configuration (e.g. H.264 SPS/PPS).
+
+### Timestamp domains
+
+`IDataUnit.Timestamp` is wall-clock unix microseconds at wire arrival, stamped once by the capture source. Recorder, retention, client schedule, and cross-stream sync all read this.
+
+Concrete data unit types may carry an additional `MediaTimestamp` (codec-domain monotonic clock - 90 kHz RTP ticks for H.264/H.265). Consumed only inside format plugins that need internal container timing (e.g. fmp4 `tfdt`). Carried on `H264NalUnit`, `H265NalUnit`, `Fmp4Fragment`. Capture sources stamp both; downstream stages preserve `Timestamp` and may compute it from `MediaTimestamp` against a sync-point anchor when emitting derived units between syncs.
 
 ## Extension Points
 
@@ -225,6 +232,32 @@ public interface ICameraProvider
     Task<OneOf<CameraConfiguration, Error>> ConfigureAsync(string address, Credentials credentials, CancellationToken ct);
     Task<OneOf<IEventSubscription?, Error>> SubscribeEventsAsync(CameraConfiguration config, CancellationToken ct);
 }
+
+public sealed class CameraConfiguration
+{
+    public required string Address { get; init; }
+    public required string Name { get; init; }
+    public required IReadOnlyList<SourceStreamSpec> Streams { get; init; }
+    public required string[] Capabilities { get; init; }
+    public Dictionary<string, string> Config { get; init; } = [];
+    public Credentials? Credentials { get; init; }
+}
+
+public abstract record StreamSpec
+{
+    public required string Profile { get; init; }
+    public required StreamKind Kind { get; init; }
+    public required string FormatId { get; init; }
+    public string? Codec { get; init; }
+    public string? Resolution { get; init; }
+    public decimal? Fps { get; init; }
+    public int? Bitrate { get; init; }
+}
+
+public sealed record SourceStreamSpec : StreamSpec
+{
+    public required string Uri { get; init; }
+}
 ```
 
 Plugins could implement ONVIF (full discovery, events, analytics), generic RTSP (manual URI, no discovery), or vendor-specific providers (e.g. Amcrest, Reolink) that expose features not available through standard ONVIF.
@@ -289,13 +322,9 @@ public interface IDataStreamAnalyzerStreamOutput
         Guid cameraId, string parentProfile, CancellationToken ct);
 }
 
-public sealed record DerivedStreamSpec
+public sealed record DerivedStreamSpec : StreamSpec
 {
     public required string ParentProfile { get; init; }
-    public required string Profile { get; init; }
-    public required StreamKind Kind { get; init; }
-    public required string FormatId { get; init; }
-    public string? Codec { get; init; }
 }
 ```
 
@@ -349,6 +378,7 @@ public record SegmentMetadata
     public required string Profile { get; init; }
     public required ulong StartTime { get; init; }
     public required string Codec { get; init; }
+    public required string FileExtension { get; init; }
 }
 
 public record StorageStats

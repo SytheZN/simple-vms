@@ -1,4 +1,3 @@
-using System.Xml.Linq;
 using Cameras.Onvif.Services;
 using Cameras.Onvif.Soap;
 

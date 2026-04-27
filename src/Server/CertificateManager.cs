@@ -1,6 +1,5 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using Microsoft.Extensions.Configuration;
 using Shared.Models;
 
 namespace Server;
@@ -100,7 +99,7 @@ public sealed class CertificateManager : ICertificateService
   {
     using var key = RSA.Create(4096);
 
-    var subject = new X500DistinguishedName("CN=VMS Root CA");
+    var subject = new X500DistinguishedName("CN=SimpleVMS Root CA");
     var request = new CertificateRequest(subject, key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
 
     request.CertificateExtensions.Add(
@@ -126,7 +125,7 @@ public sealed class CertificateManager : ICertificateService
   {
     using var key = RSA.Create(2048);
 
-    var subject = new X500DistinguishedName("CN=VMS Server");
+    var subject = new X500DistinguishedName("CN=SimpleVMS Server");
     var request = new CertificateRequest(subject, key, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
 
     request.CertificateExtensions.Add(

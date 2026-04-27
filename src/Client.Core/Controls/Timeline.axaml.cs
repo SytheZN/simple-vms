@@ -140,7 +140,7 @@ public partial class Timeline : UserControl
   }
 
   private void RenderSpans(
-    System.Collections.ObjectModel.ObservableCollection<Shared.Models.Dto.TimelineSpan> spans,
+    System.Collections.ObjectModel.ObservableCollection<Shared.Api.TimelineSpanDto> spans,
     ulong from, double range, double width, int pixelCount)
   {
     var filled = new bool[pixelCount];
@@ -170,7 +170,7 @@ public partial class Timeline : UserControl
   }
 
   private void RenderMarkers(
-    System.Collections.ObjectModel.ObservableCollection<Shared.Models.Dto.TimelineEvent> events,
+    System.Collections.ObjectModel.ObservableCollection<Shared.Api.TimelineEventDto> events,
     ulong from, double range, double width, int pixelCount)
   {
     var marked = new bool[pixelCount];

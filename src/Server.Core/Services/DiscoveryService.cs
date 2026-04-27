@@ -1,6 +1,6 @@
 using Server.Plugins;
 using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
 
 namespace Server.Core.Services;
 

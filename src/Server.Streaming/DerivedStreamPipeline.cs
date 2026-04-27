@@ -1,6 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Logging;
-using Server.Plugins;
 using Shared.Models;
 
 namespace Server.Streaming;
@@ -31,6 +30,7 @@ public sealed class DerivedStreamPipeline : IPipeline
   public string FormatId => _format.FormatId;
   public bool IsConstructed { get { lock (_lock) return _constructed; } }
   public ReadOnlyMemory<byte> MuxHeader { get { lock (_lock) return _muxFanOut?.Header ?? ReadOnlyMemory<byte>.Empty; } }
+  public MuxStreamInfo? MuxInfo { get { lock (_lock) return _muxFanOut?.Info; } }
 
   public DerivedStreamPipeline(
     Guid cameraId,
@@ -70,6 +70,21 @@ public sealed class DerivedStreamPipeline : IPipeline
     var muxInput = fanOut.SubscribePassive(256);
     var muxSub = muxInput as IDisposable;
 
+    var probeFeed = Task.Run(async () =>
+    {
+      try
+      {
+        await foreach (var item in dataStream.ReadAsync(probeCts.Token))
+          fanOut.Write(item);
+      }
+      catch (OperationCanceledException) { }
+      catch (Exception ex)
+      {
+        _logger.LogWarning(ex, "Probe feed failed for derived stream {CameraId}/{Profile}",
+          _cameraId, _profile);
+      }
+    });
+
     IMuxStreamFanOut? muxFanOut = null;
     var pipelineResult = await _format.CreatePipelineAsync(muxInput, dataStream.Info, ct);
     if (pipelineResult.IsT0)
@@ -86,6 +101,7 @@ public sealed class DerivedStreamPipeline : IPipeline
     }
 
     probeCts.Cancel();
+    try { await probeFeed; } catch (OperationCanceledException) { }
 
     lock (_lock)
     {
@@ -218,7 +234,7 @@ public sealed class DerivedStreamPipeline : IPipeline
       if (loop != null)
       {
         try { await loop; }
-        catch { }
+        catch (OperationCanceledException) { }
       }
       cts.Dispose();
     }

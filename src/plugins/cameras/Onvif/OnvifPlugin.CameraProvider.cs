@@ -121,11 +121,11 @@ public sealed partial class OnvifProvider : ICameraProvider
     return null;
   }
 
-  private async Task<(List<StreamProfile> Streams, bool HasPtz)> ProbeProfilesAsync(
+  private async Task<(List<SourceStreamSpec> Streams, bool HasPtz)> ProbeProfilesAsync(
     string? media2Uri, string mediaUri, string address,
     Credentials credentials, CancellationToken ct)
   {
-    var streams = new List<StreamProfile>();
+    var streams = new List<SourceStreamSpec>();
     var hasPtz = false;
 
     if (media2Uri != null)
@@ -137,7 +137,7 @@ public sealed partial class OnvifProvider : ICameraProvider
         {
           var uri = await _media.GetStreamUriV2Async(media2Uri, credentials, profiles[i].Token, ct);
           if (uri == null) continue;
-          streams.Add(MediaService.ToStreamProfile(profiles[i], RewriteHostOnly(uri, address), i));
+          streams.Add(MediaService.ToSourceStreamSpec(profiles[i], RewriteHostOnly(uri, address), i));
           if (profiles[i].HasPtzBinding) hasPtz = true;
         }
         if (streams.Count > 0) return (streams, hasPtz);
@@ -153,7 +153,7 @@ public sealed partial class OnvifProvider : ICameraProvider
     {
       var uri = await _media.GetStreamUriAsync(mediaUri, credentials, v1[i].Token, ct);
       if (uri == null) continue;
-      streams.Add(MediaService.ToStreamProfile(v1[i], RewriteHostOnly(uri, address), i));
+      streams.Add(MediaService.ToSourceStreamSpec(v1[i], RewriteHostOnly(uri, address), i));
       if (v1[i].HasPtzBinding) hasPtz = true;
     }
     return (streams, hasPtz);
@@ -178,10 +178,12 @@ public sealed partial class OnvifProvider : ICameraProvider
 
     return new OnvifEventSubscription(
       _events,
+      eventsUri,
       pullPoint.SubscriptionUri,
       credentials,
       cameraId,
-      pullPoint.TerminationTime);
+      pullPoint.TerminationTime,
+      _logger);
   }
 
   private static string? ReverseLookup(string address)

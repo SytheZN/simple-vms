@@ -353,14 +353,29 @@ onMounted(load)
         <div v-for="stream in camera.streams" :key="stream.profile" class="card p-6 space-y-6">
           <div class="space-y-2">
             <h2 class="section-subheading">Stream: {{ stream.profile }}</h2>
-            <div class="text-sm flex flex-wrap gap-x-4 gap-y-1">
+            <div v-if="stream.kind !== 'metadata'" class="text-sm flex flex-wrap gap-x-4 gap-y-1">
               <div><span class="text-text-muted">Codec:</span> <span class="text-text">{{ stream.codec }}</span></div>
               <div><span class="text-text-muted">Resolution:</span> <span class="text-text">{{ stream.resolution }}</span></div>
               <div><span class="text-text-muted">FPS:</span> <span class="text-text">{{ stream.fps }}</span></div>
             </div>
           </div>
 
-          <template v-for="(groups, pluginId) in schema.streams[stream.profile] ?? {}" :key="`${stream.profile}-${pluginId}`">
+          <table v-if="stream.kind === 'metadata'" class="text-sm w-full">
+            <tbody>
+              <tr><td class="text-text-muted pr-4 py-0.5">Codec</td><td class="text-text py-0.5">{{ stream.codec }}</td></tr>
+              <tr><td class="text-text-muted pr-4 py-0.5">Resolution</td><td class="text-text py-0.5">{{ stream.resolution }}</td></tr>
+              <tr><td class="text-text-muted pr-4 py-0.5">FPS</td><td class="text-text py-0.5">{{ stream.fps }}</td></tr>
+              <tr>
+                <td class="text-text-muted pr-4 py-0.5">Recording</td>
+                <td class="text-text py-0.5">
+                  {{ stream.recordingEnabled ? 'Yes' : 'No' }}
+                  <span class="text-text-muted">(inherited from parent stream)</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <template v-if="stream.kind !== 'metadata'" v-for="(groups, pluginId) in schema.streams[stream.profile] ?? {}" :key="`${stream.profile}-${pluginId}`">
             <div
               v-for="group in groups"
               :key="`${stream.profile}-${pluginId}-${group.key}`"

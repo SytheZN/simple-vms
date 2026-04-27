@@ -1,7 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
 using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
 
 namespace Client.Core.Api;
 
@@ -9,16 +9,16 @@ namespace Client.Core.Api;
   PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(EnrollRequest))]
 [JsonSerializable(typeof(EnrollResponse))]
-[JsonSerializable(typeof(CameraListItem))]
-[JsonSerializable(typeof(IReadOnlyList<CameraListItem>))]
-[JsonSerializable(typeof(List<CameraListItem>))]
+[JsonSerializable(typeof(CameraDto))]
+[JsonSerializable(typeof(IReadOnlyList<CameraDto>))]
+[JsonSerializable(typeof(List<CameraDto>))]
 [JsonSerializable(typeof(CreateCameraRequest))]
 [JsonSerializable(typeof(UpdateCameraRequest))]
 [JsonSerializable(typeof(ProbeRequest))]
 [JsonSerializable(typeof(ProbeResponse))]
-[JsonSerializable(typeof(ClientListItem))]
-[JsonSerializable(typeof(IReadOnlyList<ClientListItem>))]
-[JsonSerializable(typeof(List<ClientListItem>))]
+[JsonSerializable(typeof(ClientDto))]
+[JsonSerializable(typeof(IReadOnlyList<ClientDto>))]
+[JsonSerializable(typeof(List<ClientDto>))]
 [JsonSerializable(typeof(UpdateClientRequest))]
 [JsonSerializable(typeof(StartEnrollmentResponse))]
 [JsonSerializable(typeof(DiscoveryRequest))]
@@ -36,9 +36,9 @@ namespace Client.Core.Api;
 [JsonSerializable(typeof(HealthResponse))]
 [JsonSerializable(typeof(StorageResponse))]
 [JsonSerializable(typeof(ServerSettings))]
-[JsonSerializable(typeof(PluginListItem))]
-[JsonSerializable(typeof(IReadOnlyList<PluginListItem>))]
-[JsonSerializable(typeof(List<PluginListItem>))]
+[JsonSerializable(typeof(PluginDto))]
+[JsonSerializable(typeof(IReadOnlyList<PluginDto>))]
+[JsonSerializable(typeof(List<PluginDto>))]
 [JsonSerializable(typeof(SettingGroup))]
 [JsonSerializable(typeof(IReadOnlyList<SettingGroup>))]
 [JsonSerializable(typeof(List<SettingGroup>))]
@@ -48,9 +48,9 @@ namespace Client.Core.Api;
 [JsonSerializable(typeof(CredentialsDto))]
 [JsonSerializable(typeof(StreamProfileDto))]
 [JsonSerializable(typeof(StorageStoreDto))]
-[JsonSerializable(typeof(StorageBreakdownItem))]
-[JsonSerializable(typeof(TimelineSpan))]
-[JsonSerializable(typeof(TimelineEvent))]
+[JsonSerializable(typeof(StorageBreakdownDto))]
+[JsonSerializable(typeof(TimelineSpanDto))]
+[JsonSerializable(typeof(TimelineEventDto))]
 [JsonSerializable(typeof(SettingField))]
 [JsonSerializable(typeof(SettingFieldOption))]
 [JsonSerializable(typeof(IReadOnlyList<SettingFieldOption>))]

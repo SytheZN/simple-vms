@@ -22,6 +22,12 @@ public static class BitstreamHelpers
   public static bool ReadBit(ReadOnlySpan<byte> data, ref int bitOffset) =>
     ReadBits(data, ref bitOffset, 1) != 0;
 
+  public static uint PeekBits(ReadOnlySpan<byte> data, int bitOffset, int count)
+  {
+    var tmp = bitOffset;
+    return ReadBits(data, ref tmp, count);
+  }
+
   public static uint ReadExpGolomb(ReadOnlySpan<byte> data, ref int bitOffset)
   {
     var bitLimit = data.Length << 3;

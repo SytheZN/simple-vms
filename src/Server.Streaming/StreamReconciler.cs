@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Server.Plugins;
 using Shared.Models;
+using Shared.Models.Entities;
 
 namespace Server.Streaming;
 

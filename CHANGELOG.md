@@ -6,29 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-First release of the Simple-VMS Server!
+First release of SimpleVMS (sVMS)!
 
 ### Added
 
-- Plugin system with isolated loading, lifecycle management, and per-plugin settings
-- ONVIF plugin for camera discovery, device management, events, and analytics
-- RTSP capture plugin with TCP interleaved transport and session sharing
-- Fragmented MP4 muxer plugin (H.264/H.265)
-- SQLite data provider plugin with schema migration
-- Filesystem storage plugin
-- Streaming pipeline with typed data/video streams and automatic plugin matching
-- Recording with configurable segment duration and keyframe indexing
-- Retention engine with per-stream policies
-- Event-driven camera lifecycle with probe/refresh and per-profile status tracking
-- Transport-agnostic API dispatcher with pattern matching and route constraints
-- Authentication and authorization middleware with plugin-based providers
-- TCP+TLS tunnel transport with stream multiplexing and keepalive
-- Client enrollment via QR code or short token
-- Web client with camera gallery, live/playback streaming, events, timeline, and settings
-- WebCodecs video player with MSE fallback
-- Native client core library with camera grid, video player, timeline, and notifications
-- Source-generated JSON serialization
-- Build script with code coverage collection and report merging
+- ONVIF camera discovery, setup, and event handling
+- RTSP camera capture for H.264 and H.265
+- Continuous recording with per-camera retention policies
+- Live and playback video with a scrubbable timeline
+- Camera events surfaced alongside the timeline
+- Per-stream storage breakdown showing size, duration, and rate
+- Web client with camera gallery, live and playback viewing, events, timeline, and settings
+- Native desktop apps for Windows, macOS, and Linux with system tray, gallery, camera view, and settings
+- Native Android app with background tunnel, encrypted credential storage, and QR enrollment
+- Hardware-accelerated video playback on every native platform
+- Light and dark themes shared across web and native clients
+- Encrypted credential storage using each platform's secure store
+- Encrypted client-server connections with certificate pinning
+- Remote access with automatic port forwarding (UPnP and NAT-PMP) and public address verification
+- Guided first-run setup
+- Client enrollment by QR code or short token
+- Plugin system for adding cameras, storage backends, muxers, analyzers, and authentication providers
+- Per-camera and per-stream settings contributed by plugins
+- Platform-native installers: macOS DMG, Linux AppImage, Windows installer
 
 <!-- link references -->
 [Unreleased]: https://github.com/SytheZN/simple-vms/compare/v0.0.0...HEAD

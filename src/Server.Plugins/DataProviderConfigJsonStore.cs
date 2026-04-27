@@ -15,6 +15,15 @@ public sealed class DataProviderConfigJsonStore
   {
     _path = Path.Combine(dataPath, "dataProviderConfig.json");
     _data = Load();
+    MigrateActiveFromSoleProvider();
+  }
+
+  private void MigrateActiveFromSoleProvider()
+  {
+    if (_data.Active != null) return;
+    if (_data.Providers.Count != 1) return;
+    _data.Active = _data.Providers.Keys.First();
+    Save();
   }
 
   public IReadOnlyDictionary<string, string> GetProviderSettings(string assemblyName)

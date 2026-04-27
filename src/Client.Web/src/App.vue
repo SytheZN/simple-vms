@@ -56,7 +56,7 @@ onMounted(async () => {
   <div v-else class="min-h-screen bg-surface font-sans flex">
     <nav class="nav-sidebar">
       <div class="text-lg font-bold text-primary px-3 py-3 mb-2">
-        <i class="ph ph-shield-check icon-md"></i> VMS
+        <i class="ph ph-shield-check icon-md"></i> sVMS
       </div>
       <router-link to="/gallery" class="nav-link" :class="{ 'nav-link-active': route.path.startsWith('/gallery') }">
         <i class="ph ph-squares-four icon-sm"></i> Gallery

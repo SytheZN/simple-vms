@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
 using Format.Fmp4;
-using Shared.Models;
 using Shared.Models.Formats;
 
 namespace Tests.Unit.Fmp4;
@@ -40,7 +39,7 @@ public class H265MuxerTests
     var nals = CreateH265NalSequence(2);
     var input = new TestDataStream<H265NalUnit>(nals);
 
-    var muxer = new Fmp4Muxer(MuxerCodec.H265, input);
+    var muxer = new Fmp4Muxer(MuxerCodec.H265, input, "mp4");
 
     var fragments = new List<Fmp4Fragment>();
     await foreach (var fragment in muxer.MuxAsync(CancellationToken.None))
@@ -68,7 +67,7 @@ public class H265MuxerTests
     var nals = CreateH265NalSequence(1);
     var input = new TestDataStream<H265NalUnit>(nals);
 
-    var muxer = new Fmp4Muxer(MuxerCodec.H265, input);
+    var muxer = new Fmp4Muxer(MuxerCodec.H265, input, "mp4");
 
     var fragments = new List<Fmp4Fragment>();
     await foreach (var fragment in muxer.MuxAsync(CancellationToken.None))
@@ -95,7 +94,7 @@ public class H265MuxerTests
     var nals = CreateH265NalSequence(2);
     var input = new TestDataStream<H265NalUnit>(nals);
 
-    var muxer = new Fmp4Muxer(MuxerCodec.H265, input);
+    var muxer = new Fmp4Muxer(MuxerCodec.H265, input, "mp4");
 
     var allData = new MemoryStream();
     await foreach (var fragment in muxer.MuxAsync(CancellationToken.None))
@@ -142,6 +141,7 @@ public class H265MuxerTests
   {
     Data = Prepend(data),
     Timestamp = ts,
+    MediaTimestamp = ts,
     IsSyncPoint = false,
     NalType = type
   };
@@ -150,6 +150,7 @@ public class H265MuxerTests
   {
     Data = Prepend([0x26, 0x01, 0xAF, 0x08, 0x44, 0x00, 0xFF, 0xBB]),
     Timestamp = ts,
+    MediaTimestamp = ts,
     IsSyncPoint = true,
     NalType = H265NalType.IdrWRadl
   };
@@ -158,6 +159,7 @@ public class H265MuxerTests
   {
     Data = Prepend([0x02, 0x01, 0xD0, 0x33, 0x24, 0xFF]),
     Timestamp = ts,
+    MediaTimestamp = ts,
     IsSyncPoint = false,
     NalType = H265NalType.TrailR
   };

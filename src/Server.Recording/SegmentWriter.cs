@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Shared.Models;
+using Shared.Models.Entities;
 using Shared.Models.Events;
 
 namespace Server.Recording;
@@ -10,6 +11,7 @@ public sealed class SegmentWriter : IAsyncDisposable
 
   private readonly Guid _cameraId;
   private readonly string _profile;
+  private readonly string _storageProfile;
   private readonly string _codec;
   private readonly Guid _streamId;
   private readonly int _segmentDurationSeconds;
@@ -27,6 +29,7 @@ public sealed class SegmentWriter : IAsyncDisposable
   private ulong _lastTimestamp;
   private ulong _lastFlushTimestamp;
   private int _totalKeyframeCount;
+  private string _fileExtension = "";
   private bool _disposed;
 
   public Action<Guid, long, ulong, ulong>? OnSegmentFinalized { get; set; }
@@ -34,6 +37,7 @@ public sealed class SegmentWriter : IAsyncDisposable
   public SegmentWriter(
     Guid cameraId,
     string profile,
+    string storageProfile,
     string codec,
     Guid streamId,
     int segmentDurationSeconds,
@@ -44,6 +48,7 @@ public sealed class SegmentWriter : IAsyncDisposable
   {
     _cameraId = cameraId;
     _profile = profile;
+    _storageProfile = storageProfile;
     _codec = codec;
     _streamId = streamId;
     _segmentDurationSeconds = segmentDurationSeconds;
@@ -57,6 +62,7 @@ public sealed class SegmentWriter : IAsyncDisposable
 
   public async Task RunAsync(IMuxStream muxStream, ReadOnlyMemory<byte> header, CancellationToken ct)
   {
+    _fileExtension = muxStream.Info.FileExtension;
     await using var enumerator = ReadAsDataUnits(muxStream, ct).GetAsyncEnumerator(ct);
 
     while (!ct.IsCancellationRequested)
@@ -122,9 +128,10 @@ public sealed class SegmentWriter : IAsyncDisposable
     var metadata = new SegmentMetadata
     {
       CameraId = _cameraId,
-      Profile = _profile,
+      Profile = _storageProfile,
       StartTime = timestamp,
-      Codec = _codec
+      Codec = _codec,
+      FileExtension = _fileExtension
     };
 
     _handle = await _storage.CreateSegmentAsync(metadata, ct);

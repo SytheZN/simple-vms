@@ -1,6 +1,5 @@
 using System.Text;
 using Microsoft.Data.Sqlite;
-using Shared.Models;
 namespace Data.Sqlite;
 
 internal sealed class EventRepository : IEventRepository

@@ -3,7 +3,7 @@ using System.Net.Http.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Server.Plugins;
 using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
 
 namespace Tests.Integration.Api;
 
@@ -31,7 +31,7 @@ public sealed class CameraTests
     var response = await _client.GetAsync("/api/v1/cameras");
     Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
 
-    var envelope = await ApiTestFixture.Envelope<CameraListItem[]>(response);
+    var envelope = await ApiTestFixture.Envelope<CameraDto[]>(response);
     Assert.That(envelope.Result, Is.EqualTo(Result.Success));
 
     foreach (var cam in envelope.Body!)
@@ -181,7 +181,7 @@ public sealed class CameraTests
     var response = await _client.GetAsync("/api/v1/cameras?status=online");
     Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
 
-    var envelope = await ApiTestFixture.Envelope<CameraListItem[]>(response);
+    var envelope = await ApiTestFixture.Envelope<CameraDto[]>(response);
     Assert.That(envelope.Body, Is.Empty);
   }
 
@@ -222,7 +222,7 @@ public sealed class CameraTests
   public async Task UpdateCamera_ChangesNameAndRetention()
   {
     var pluginHost = ApiTestFixture.App.Services.GetRequiredService<IPluginHost>();
-    var camera = new Shared.Models.Camera
+    var camera = new Camera
     {
       Id = Guid.NewGuid(),
       Name = "Test Update",
@@ -253,7 +253,7 @@ public sealed class CameraTests
     Assert.That(configResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
 
     var getResponse = await _client.GetAsync($"/api/v1/cameras/{camera.Id}");
-    var body = (await ApiTestFixture.Envelope<CameraListItem>(getResponse)).Body!;
+    var body = (await ApiTestFixture.Envelope<CameraDto>(getResponse)).Body!;
     Assert.That(body.Name, Is.EqualTo("Renamed Camera"));
 
     var fetched = (await pluginHost.DataProvider.Cameras.GetByIdAsync(camera.Id, CancellationToken.None)).AsT0;
@@ -277,7 +277,7 @@ public sealed class CameraTests
   public async Task DeleteCamera_RemovesCamera()
   {
     var pluginHost = ApiTestFixture.App.Services.GetRequiredService<IPluginHost>();
-    var camera = new Shared.Models.Camera
+    var camera = new Camera
     {
       Id = Guid.NewGuid(),
       Name = "Test Delete",
@@ -309,7 +309,7 @@ public sealed class CameraTests
   public async Task UpdateCameraConfig_TogglesStreamRecording()
   {
     var pluginHost = ApiTestFixture.App.Services.GetRequiredService<IPluginHost>();
-    var camera = new Shared.Models.Camera
+    var camera = new Camera
     {
       Id = Guid.NewGuid(),
       Name = "Test Stream Toggle",
@@ -320,7 +320,7 @@ public sealed class CameraTests
     };
     await pluginHost.DataProvider.Cameras.CreateAsync(camera, CancellationToken.None);
 
-    var stream = new Shared.Models.CameraStream
+    var stream = new CameraStream
     {
       Id = Guid.NewGuid(),
       CameraId = camera.Id,

@@ -1,7 +1,6 @@
 using Client.Core.ViewModels;
 using Microsoft.Extensions.Logging.Abstractions;
-using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
 using Shared.Protocol;
 using Tests.Unit.Client.Mocks;
 

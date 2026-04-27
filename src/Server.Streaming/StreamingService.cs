@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Server.Core;
 using Server.Plugins;
 using Shared.Models;
+using Shared.Models.Entities;
 using Shared.Models.Events;
 
 namespace Server.Streaming;
@@ -62,6 +63,10 @@ public sealed class StreamingService : IAsyncDisposable
           _logger.LogWarning(
             "Failed to construct pipeline for camera {CameraId} profile '{Profile}': {Message}",
             camera.Id, stream.Profile, constructResult.AsT1.Message);
+        }
+        else
+        {
+          await PersistMuxInfoAsync(pipeline, ct);
         }
       }
     }
@@ -153,6 +158,7 @@ public sealed class StreamingService : IAsyncDisposable
       }
       else
       {
+        await PersistMuxInfoAsync(pipeline, ct);
         _logger.LogInformation("Added pipeline for camera {CameraId} profile '{Profile}'",
           cameraId, stream.Profile);
       }
@@ -174,6 +180,7 @@ public sealed class StreamingService : IAsyncDisposable
       var result = await pipeline.ConstructAsync(ct);
       if (result.IsT0)
       {
+        await PersistMuxInfoAsync(pipeline, ct);
         _logger.LogInformation("Pipeline constructed for camera {CameraId} profile '{Profile}' (retry {Attempt})",
           pipeline.CameraId, pipeline.Profile, attempt + 1);
         return;
@@ -306,6 +313,29 @@ public sealed class StreamingService : IAsyncDisposable
         "Failed to construct rebuilt pipeline for camera {CameraId} profile '{Profile}': {Message}",
         camera.Id, stream.Profile, result.AsT1.Message);
     }
+    else
+    {
+      await PersistMuxInfoAsync(pipeline, CancellationToken.None);
+    }
+  }
+
+  private async Task PersistMuxInfoAsync(IPipeline pipeline, CancellationToken ct)
+  {
+    var info = pipeline.MuxInfo;
+    if (info == null) return;
+
+    var streams = await _pluginHost.DataProvider.Streams.GetByCameraIdAsync(pipeline.CameraId, ct);
+    if (streams.IsT1) return;
+
+    var row = streams.AsT0.FirstOrDefault(s => s.Profile == pipeline.Profile);
+    if (row == null) return;
+
+    var dirty = false;
+    if (row.Resolution != info.Resolution) { row.Resolution = info.Resolution; dirty = true; }
+    var fps = info.Fps == 0 ? (decimal?)null : info.Fps;
+    if (row.Fps != fps) { row.Fps = fps; dirty = true; }
+    if (dirty)
+      await _pluginHost.DataProvider.Streams.UpsertAsync(row, ct);
   }
 
   [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]

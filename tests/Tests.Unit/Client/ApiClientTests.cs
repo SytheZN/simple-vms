@@ -1,13 +1,11 @@
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using System.Threading.Channels;
-using Avalonia.Logging;
 using Client.Core.Api;
 using Client.Core.Tunnel;
 using MessagePack;
 using Microsoft.Extensions.Logging.Abstractions;
-using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
 using Shared.Protocol;
 
 namespace Tests.Unit.Client;
@@ -81,7 +79,7 @@ public class ApiClientTests
   {
     var (client, tunnel) = CreateClient();
 
-    var camera = new CameraListItem
+    var camera = new CameraDto
     {
       Id = Guid.NewGuid(),
       Name = "Test",
@@ -91,7 +89,7 @@ public class ApiClientTests
       Streams = [],
       Capabilities = []
     };
-    tunnel.NextResponse = CreateResponse(Result.Created, camera, Json.CameraListItem);
+    tunnel.NextResponse = CreateResponse(Result.Created, camera, Json.CameraDto);
 
     var request = new CreateCameraRequest { Address = "192.168.1.100" };
     var result = await client.CreateCameraAsync(request, CancellationToken.None);
@@ -366,8 +364,8 @@ public class ApiClientTests
   public async Task GetPlugins_IncludesTypeFilter()
   {
     var (client, tunnel) = CreateClient();
-    var plugins = new List<PluginListItem>();
-    tunnel.NextResponse = CreateResponse(Result.Success, plugins, Json.ListPluginListItem);
+    var plugins = new List<PluginDto>();
+    tunnel.NextResponse = CreateResponse(Result.Success, plugins, Json.ListPluginDto);
     await client.GetPluginsAsync("storage", CancellationToken.None);
     Assert.That(tunnel.LastRequest!.Path, Is.EqualTo("/api/v1/plugins?type=storage"));
   }
@@ -386,8 +384,8 @@ public class ApiClientTests
   public async Task GetClients_SendsGetToClientsPath()
   {
     var (client, tunnel) = CreateClient();
-    var clients = new List<ClientListItem>();
-    tunnel.NextResponse = CreateResponse(Result.Success, clients, Json.ListClientListItem);
+    var clients = new List<ClientDto>();
+    tunnel.NextResponse = CreateResponse(Result.Success, clients, Json.ListClientDto);
     await client.GetClientsAsync(CancellationToken.None);
     Assert.That(tunnel.LastRequest!.Method, Is.EqualTo("GET"));
     Assert.That(tunnel.LastRequest.Path, Is.EqualTo("/api/v1/clients"));

@@ -1,7 +1,5 @@
 using System.Threading.Channels;
-using Server.Plugins;
 using Server.Streaming;
-using Shared.Models;
 using Shared.Models.Events;
 using Shared.Models.Formats;
 using Shared.Protocol;
@@ -117,34 +115,6 @@ internal sealed class StubFmp4DataStream(ChannelReader<Fmp4Fragment> reader) : I
     await foreach (var item in reader.ReadAllAsync(ct))
       yield return item;
   }
-}
-
-internal sealed class SessionTestPluginHost(
-  IDataProvider? dataProvider = null,
-  IReadOnlyList<IStorageProvider>? storageProviders = null,
-  IReadOnlyList<IStreamFormat>? streamFormats = null) : IPluginHost
-{
-  public IReadOnlyList<PluginEntry> Plugins => [];
-  public IDataProvider DataProvider => dataProvider!;
-  public IReadOnlyList<ICaptureSource> CaptureSources => [];
-  public IReadOnlyList<IStreamFormat> StreamFormats => streamFormats ?? [];
-  public IReadOnlyList<ICameraProvider> CameraProviders => [];
-  public IReadOnlyList<IEventFilter> EventFilters => [];
-  public IReadOnlyList<INotificationSink> NotificationSinks => [];
-  public IReadOnlyList<IDataStreamAnalyzer> Analyzers => [];
-  public IReadOnlyList<IStorageProvider> StorageProviders =>
-    storageProviders ?? [new StubStorageProvider()];
-  public IReadOnlyList<IAuthProvider> AuthProviders => [];
-  public IReadOnlyList<IAuthzProvider> AuthzProviders => [];
-  public IStreamFormat? FindFormat(Type inputType) => null;
-  public void SetStreamTap(IStreamTap streamTap) { }
-  public void SetCameraRegistry(ICameraRegistry cameraRegistry) { }
-  public void SetRecordingAccess(IRecordingAccess recordingAccess) { }
-  public void Discover(string pluginsPath) { }
-  public void Initialize(bool dataOnly = false) { }
-  public void ResetErrored() { }
-  public Task StartAsync(CancellationToken ct) => Task.CompletedTask;
-  public Task StopAsync() => Task.CompletedTask;
 }
 
 internal sealed class StubDataProvider(

@@ -1,6 +1,5 @@
 using System.Threading.Channels;
 using Server.Streaming;
-using Shared.Models;
 using Shared.Models.Formats;
 
 namespace Tests.Unit.Streaming;
@@ -12,6 +11,7 @@ public class MuxStreamFanOutTests
   {
     DataFormat = "fmp4",
     MimeType = "video/mp4; codecs=\"avc1.640029\"",
+    FileExtension = "mp4",
     Resolution = "1920x1080",
     Fps = 30
   };

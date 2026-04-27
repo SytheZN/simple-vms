@@ -42,7 +42,7 @@ public sealed class TunnelForegroundService : Service
       PendingIntentFlags.UpdateCurrent | PendingIntentFlags.Immutable);
 
     var builder = new NotificationCompat.Builder(this, ChannelId);
-    builder.SetContentTitle("SimpleVMS");
+    builder.SetContentTitle("sVMS");
     builder.SetContentText("Tunnel active");
     builder.SetSmallIcon(Resource.Drawable.ic_notification);
     builder.SetOngoing(true);

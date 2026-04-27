@@ -1,6 +1,6 @@
 using Server.Plugins;
 using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
 using Shared.Models.Events;
 
 namespace Server.Core.Services;
@@ -20,7 +20,7 @@ public sealed class CameraConfigService
     _coreStream = new CoreStreamSettings(plugins);
   }
 
-  public async Task<OneOf<CameraConfigSchema, Error>> GetSchemaAsync(Guid cameraId, CancellationToken ct)
+  public async Task<OneOf<CameraConfigSchemaResponse, Error>> GetSchemaAsync(Guid cameraId, CancellationToken ct)
   {
     var streamsResult = await _plugins.DataProvider.Streams.GetByCameraIdAsync(cameraId, ct);
     if (streamsResult.IsT1) return streamsResult.AsT1;
@@ -47,7 +47,7 @@ public sealed class CameraConfigService
         streams[stream.Profile] = perProfile;
     }
 
-    return new CameraConfigSchema { Camera = camera, Streams = streams };
+    return new CameraConfigSchemaResponse { Camera = camera, Streams = streams };
   }
 
   public async Task<OneOf<CameraConfigValues, Error>> GetValuesAsync(Guid cameraId, CancellationToken ct)

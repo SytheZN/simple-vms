@@ -131,7 +131,7 @@ function toggleDark() {
     <header class="sticky top-0 z-50 bg-surface-raised border-b border-border px-8 py-6 flex items-center justify-between">
       <div>
         <h1 class="text-2xl font-bold text-text">Design Reference</h1>
-        <p class="text-sm text-text-muted mt-1">All UI elements for the VMS web and native clients.</p>
+        <p class="text-sm text-text-muted mt-1">All UI elements for the sVMS web and native clients.</p>
       </div>
       <button class="btn btn-secondary" @click="toggleDark">
         <i class="icon-sm" :class="darkMode ? 'ph ph-sun' : 'ph ph-moon'"></i>
@@ -804,7 +804,7 @@ function toggleDark() {
         <p class="text-sm text-text-muted">Full page mockup showing sidebar + content area with gallery grid.</p>
         <div class="card flex overflow-hidden h-[480px]">
           <nav class="nav-sidebar">
-            <div class="text-lg font-bold text-primary px-3 py-3 mb-2"><i class="ph ph-shield-check icon-md"></i> VMS</div>
+            <div class="text-lg font-bold text-primary px-3 py-3 mb-2"><i class="ph ph-shield-check icon-md"></i> sVMS</div>
             <a href="#" class="nav-link nav-link-active"><i class="ph ph-squares-four icon-sm"></i> Gallery</a>
             <a href="#" class="nav-link"><i class="ph ph-lightning icon-sm"></i> Events</a>
             <a href="#" class="nav-link"><i class="ph ph-devices icon-sm"></i> Clients</a>

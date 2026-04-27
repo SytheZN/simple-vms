@@ -71,7 +71,7 @@ public class NalTypeTests
   public void H264_IdrNalUnit_IsSyncPoint()
   {
     byte[] data = [0x65, 0xAA];
-    var nal = RtpH264Depacketizer.CreateH264NalUnit(data, 1000);
+    var nal = RtpH264Depacketizer.CreateH264NalUnit(data, 1000, 1000);
 
     Assert.That(nal.IsSyncPoint, Is.True);
     Assert.That(nal.NalType, Is.EqualTo(H264NalType.Idr));
@@ -176,7 +176,7 @@ public class NalTypeTests
   public void H265_IdrNalUnit_IsSyncPoint()
   {
     byte[] data = [0x26, 0x01, 0xAA];
-    var nal = RtpH265Depacketizer.CreateH265NalUnit(data, 1000);
+    var nal = RtpH265Depacketizer.CreateH265NalUnit(data, 1000, 1000);
 
     Assert.That(nal.IsSyncPoint, Is.True);
     Assert.That(nal.NalType, Is.EqualTo(H265NalType.IdrWRadl));

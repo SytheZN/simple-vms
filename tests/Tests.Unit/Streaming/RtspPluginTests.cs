@@ -1,5 +1,4 @@
 using Capture.Rtsp;
-using Shared.Models;
 
 namespace Tests.Unit.Streaming;
 

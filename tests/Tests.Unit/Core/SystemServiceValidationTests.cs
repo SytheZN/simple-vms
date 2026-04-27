@@ -1,5 +1,5 @@
 using Server.Core.Services;
-using Shared.Models.Dto;
+using Shared.Api;
 
 namespace Tests.Unit.Core;
 

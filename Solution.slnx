@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="src/Shared.Models/Shared.Models.csproj" />
+  <Project Path="src/Shared.Api/Shared.Api.csproj" />
   <Project Path="src/Shared.Protocol/Shared.Protocol.csproj" />
   <Project Path="src/Server/Server.csproj" />
   <Project Path="src/Server.Core/Server.Core.csproj" />

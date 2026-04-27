@@ -45,6 +45,11 @@ async function validateField(key: string) {
   }
 }
 
+function toggleBool(key: string) {
+  values.value[key] = values.value[key] === 'true' || values.value[key] === true ? 'false' : 'true'
+  validateField(key)
+}
+
 async function save() {
   saving.value = true
   error.value = ''
@@ -91,57 +96,71 @@ onMounted(load)
         <div v-for="group in schema" :key="group.key" class="card p-6 space-y-4">
           <h2 class="section-subheading">{{ group.label }}</h2>
           <p v-if="group.description" class="text-xs text-text-muted">{{ group.description }}</p>
-          <div v-for="field in group.fields" :key="field.key" class="space-y-1">
-            <label class="label">
-              {{ field.label }}
-              <span v-if="field.required" class="text-danger">*</span>
-            </label>
-            <p v-if="field.description" class="text-xs text-text-muted">{{ field.description }}</p>
-            <input
-              v-if="field.type === 'string' || field.type === 'path'"
-              class="input"
-              type="text"
-              v-model="values[field.key]"
-              :placeholder="field.defaultValue?.toString()"
-              autocomplete="off"
-              @blur="validateField(field.key)"
-            />
-            <input
-              v-else-if="field.type === 'password'"
-              class="input"
-              type="password"
-              v-model="values[field.key]"
-              autocomplete="new-password"
-              @blur="validateField(field.key)"
-            />
-            <input
-              v-else-if="field.type === 'int'"
-              class="input"
-              type="number"
-              v-model.number="values[field.key]"
-              :placeholder="field.defaultValue?.toString()"
-              autocomplete="off"
-              @blur="validateField(field.key)"
-            />
-            <select
-              v-else-if="field.type === 'bool'"
-              class="input"
-              v-model="values[field.key]"
-              @change="validateField(field.key)"
+          <template v-for="field in group.fields" :key="field.key">
+            <div
+              v-if="field.type === 'bool' || field.type === 'boolean' || field.type === 'boolean-enable-only'"
+              class="flex items-center justify-between gap-4"
             >
-              <option :value="true">Yes</option>
-              <option :value="false">No</option>
-            </select>
-            <input
-              v-else
-              class="input"
-              v-model="values[field.key]"
-              :placeholder="field.defaultValue?.toString()"
-              autocomplete="off"
-              @blur="validateField(field.key)"
-            />
-            <p v-if="fieldErrors[field.key]" class="text-xs text-danger">{{ fieldErrors[field.key] }}</p>
-          </div>
+              <div class="space-y-1">
+                <label class="label">
+                  {{ field.label }}
+                  <span v-if="field.required" class="text-danger">*</span>
+                </label>
+                <p v-if="field.description" class="text-xs text-text-muted">{{ field.description }}</p>
+                <p v-if="fieldErrors[field.key]" class="text-xs text-danger">{{ fieldErrors[field.key] }}</p>
+              </div>
+              <button
+                class="toggle-track" role="switch" type="button"
+                :aria-checked="values[field.key] === 'true' || values[field.key] === true"
+                :disabled="field.type === 'boolean-enable-only' && (values[field.key] === 'true' || values[field.key] === true)"
+                @click="toggleBool(field.key)"
+              >
+                <span class="toggle-knob"></span>
+              </button>
+            </div>
+            <div v-else class="space-y-1">
+              <label class="label">
+                {{ field.label }}
+                <span v-if="field.required" class="text-danger">*</span>
+              </label>
+              <p v-if="field.description" class="text-xs text-text-muted">{{ field.description }}</p>
+              <input
+                v-if="field.type === 'string' || field.type === 'path'"
+                class="input"
+                type="text"
+                v-model="values[field.key]"
+                :placeholder="field.defaultValue?.toString()"
+                autocomplete="off"
+                @blur="validateField(field.key)"
+              />
+              <input
+                v-else-if="field.type === 'password'"
+                class="input"
+                type="password"
+                v-model="values[field.key]"
+                autocomplete="new-password"
+                @blur="validateField(field.key)"
+              />
+              <input
+                v-else-if="field.type === 'int'"
+                class="input"
+                type="number"
+                v-model.number="values[field.key]"
+                :placeholder="field.defaultValue?.toString()"
+                autocomplete="off"
+                @blur="validateField(field.key)"
+              />
+              <input
+                v-else
+                class="input"
+                v-model="values[field.key]"
+                :placeholder="field.defaultValue?.toString()"
+                autocomplete="off"
+                @blur="validateField(field.key)"
+              />
+              <p v-if="fieldErrors[field.key]" class="text-xs text-danger">{{ fieldErrors[field.key] }}</p>
+            </div>
+          </template>
         </div>
 
         <div class="flex justify-end">

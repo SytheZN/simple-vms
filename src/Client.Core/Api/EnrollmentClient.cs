@@ -2,7 +2,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
 
 namespace Client.Core.Api;
 

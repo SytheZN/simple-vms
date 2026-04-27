@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Shared.Models;
 
 namespace Data.Sqlite;
 

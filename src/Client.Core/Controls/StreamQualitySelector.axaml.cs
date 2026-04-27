@@ -1,10 +1,8 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using Shared.Models.Dto;
-using System.Collections.Generic;
+using Shared.Api;
 using System.Diagnostics.CodeAnalysis;
-using System.Linq;
 
 namespace Client.Core.Controls;
 

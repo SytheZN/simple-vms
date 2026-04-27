@@ -11,7 +11,7 @@ using Server.Core;
 using Server.Core.Services;
 using Server.Plugins;
 using Shared.Models;
-using Dto = Shared.Models.Dto;
+using Dto = Shared.Api;
 
 namespace Tests.Integration;
 

@@ -1,9 +1,7 @@
 using DbUp;
-using DbUp.Engine;
 using DbUp.Engine.Output;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
-using Shared.Models;
 
 namespace Data.Sqlite;
 

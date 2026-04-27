@@ -9,6 +9,7 @@ public interface IPipeline : IAsyncDisposable
   string Profile { get; }
   bool IsConstructed { get; }
   ReadOnlyMemory<byte> MuxHeader { get; }
+  MuxStreamInfo? MuxInfo { get; }
   [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]
   Task<OneOf<Success, Error>> ConstructAsync(CancellationToken ct);
   Task<OneOf<IDataStream, Error>> SubscribeDataAsync(CancellationToken ct);

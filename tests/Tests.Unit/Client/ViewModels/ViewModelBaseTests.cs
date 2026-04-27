@@ -1,7 +1,5 @@
-using System.ComponentModel;
 using Client.Core.Api;
 using Client.Core.ViewModels;
-using Shared.Models;
 
 namespace Tests.Unit.Client.ViewModels;
 

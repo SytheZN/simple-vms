@@ -6,11 +6,3 @@ public sealed class StreamInfo
   public object? FormatParameters { get; init; }
   public decimal? Fps { get; init; }
 }
-
-public sealed class MuxStreamInfo
-{
-  public required string DataFormat { get; init; }
-  public required string MimeType { get; init; }
-  public required string Resolution { get; init; }
-  public required int Fps { get; init; }
-}

@@ -1,4 +1,4 @@
-# VMS
+# SimpleVMS
 
 [![CI](https://github.com/SytheZN/simple-vms/actions/workflows/ci.yml/badge.svg)](https://github.com/SytheZN/simple-vms/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/SytheZN/simple-vms?label=release)](https://github.com/SytheZN/simple-vms/releases/latest)

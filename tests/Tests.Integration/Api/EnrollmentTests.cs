@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
 
 namespace Tests.Integration.Api;
 
@@ -158,7 +158,7 @@ public sealed class EnrollmentTests
     var response = await _client.GetAsync($"/api/v1/clients/{clientId}");
     Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
 
-    var body = (await ApiTestFixture.Envelope<ClientListItem>(response)).Body!;
+    var body = (await ApiTestFixture.Envelope<ClientDto>(response)).Body!;
     Assert.That(body.Id.ToString(), Is.EqualTo(clientId));
     Assert.That(body.Name, Is.Not.Null.And.Not.Empty);
     Assert.That(body.EnrolledAt, Is.GreaterThan(0UL));

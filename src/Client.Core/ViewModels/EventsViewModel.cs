@@ -2,7 +2,7 @@ using System.Collections.ObjectModel;
 using Client.Core.Api;
 using Client.Core.Events;
 using Microsoft.Extensions.Logging;
-using Shared.Models.Dto;
+using Shared.Api;
 using Shared.Protocol;
 
 namespace Client.Core.ViewModels;

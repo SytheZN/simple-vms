@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging;
 using Server.Plugins;
-using Shared.Models;
 using Shared.Protocol;
 
 namespace Server.Streaming;

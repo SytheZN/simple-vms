@@ -17,6 +17,7 @@ public sealed class Fmp4Muxer
   private readonly FragmentAssembler _assembler;
   private readonly Action<KeyframeOffset>? _onKeyframe;
   private readonly uint _timescale;
+  private readonly string _fileExtension;
 
   private byte[]? _initSegment;
   private byte[]? _currentSps;
@@ -27,11 +28,13 @@ public sealed class Fmp4Muxer
   public Fmp4Muxer(
     MuxerCodec codec,
     IDataStream input,
+    string fileExtension,
     uint timescale = 90000,
     Action<KeyframeOffset>? onKeyframe = null)
   {
     _codec = codec;
     _input = input;
+    _fileExtension = fileExtension;
     _timescale = timescale;
     _assembler = new FragmentAssembler { Timescale = timescale };
     _onKeyframe = onKeyframe;
@@ -118,6 +121,7 @@ public sealed class Fmp4Muxer
     {
       DataFormat = "fmp4",
       MimeType = mimeType,
+      FileExtension = _fileExtension,
       Resolution = $"{width}x{height}",
       Fps = fps
     };
@@ -168,7 +172,8 @@ public sealed class Fmp4Muxer
     byte[]? pendingSps = null;
     byte[]? pendingPps = null;
     var accessUnit = new List<H264NalUnit>();
-    ulong? currentTimestamp = null;
+    ulong? currentMediaTimestamp = null;
+    ulong currentWallClockTimestamp = 0;
 
     await foreach (var nal in input.ReadAsync(ct))
     {
@@ -195,29 +200,30 @@ public sealed class Fmp4Muxer
           yield return new Fmp4Fragment
           {
             Data = init,
-            Timestamp = DateTimeOffset.UtcNow.ToUnixMicroseconds(),
-            MediaTimestamp = nal.Timestamp,
+            Timestamp = nal.Timestamp,
+            MediaTimestamp = nal.MediaTimestamp,
             IsSyncPoint = false,
             IsHeader = true
           };
         }
       }
 
-      if (currentTimestamp != null && nal.Timestamp != currentTimestamp)
+      if (currentMediaTimestamp != null && nal.MediaTimestamp != currentMediaTimestamp)
       {
-        var fragment = EmitAccessUnit(accessUnit, currentTimestamp.Value, nal.Timestamp);
+        var fragment = EmitAccessUnit(accessUnit, currentMediaTimestamp.Value, currentWallClockTimestamp, nal.MediaTimestamp);
         if (fragment != null)
           yield return fragment;
         accessUnit.Clear();
       }
 
       accessUnit.Add(nal);
-      currentTimestamp = nal.Timestamp;
+      currentMediaTimestamp = nal.MediaTimestamp;
+      currentWallClockTimestamp = nal.Timestamp;
     }
 
-    if (accessUnit.Count > 0 && currentTimestamp != null)
+    if (accessUnit.Count > 0 && currentMediaTimestamp != null)
     {
-      var fragment = EmitAccessUnit(accessUnit, currentTimestamp.Value, null);
+      var fragment = EmitAccessUnit(accessUnit, currentMediaTimestamp.Value, currentWallClockTimestamp, null);
       if (fragment != null)
         yield return fragment;
     }
@@ -231,7 +237,8 @@ public sealed class Fmp4Muxer
     byte[]? pendingSps = null;
     byte[]? pendingPps = null;
     var accessUnit = new List<H265NalUnit>();
-    ulong? currentTimestamp = null;
+    ulong? currentMediaTimestamp = null;
+    ulong currentWallClockTimestamp = 0;
 
     await foreach (var nal in input.ReadAsync(ct))
     {
@@ -263,35 +270,40 @@ public sealed class Fmp4Muxer
           yield return new Fmp4Fragment
           {
             Data = init,
-            Timestamp = DateTimeOffset.UtcNow.ToUnixMicroseconds(),
-            MediaTimestamp = nal.Timestamp,
+            Timestamp = nal.Timestamp,
+            MediaTimestamp = nal.MediaTimestamp,
             IsSyncPoint = false,
             IsHeader = true
           };
         }
       }
 
-      if (currentTimestamp != null && nal.Timestamp != currentTimestamp)
+      if (currentMediaTimestamp != null && nal.MediaTimestamp != currentMediaTimestamp)
       {
-        var fragment = EmitAccessUnit(accessUnit, currentTimestamp.Value, nal.Timestamp);
+        var fragment = EmitAccessUnit(accessUnit, currentMediaTimestamp.Value, currentWallClockTimestamp, nal.MediaTimestamp);
         if (fragment != null)
           yield return fragment;
         accessUnit.Clear();
       }
 
       accessUnit.Add(nal);
-      currentTimestamp = nal.Timestamp;
+      currentMediaTimestamp = nal.MediaTimestamp;
+      currentWallClockTimestamp = nal.Timestamp;
     }
 
-    if (accessUnit.Count > 0 && currentTimestamp != null)
+    if (accessUnit.Count > 0 && currentMediaTimestamp != null)
     {
-      var fragment = EmitAccessUnit(accessUnit, currentTimestamp.Value, null);
+      var fragment = EmitAccessUnit(accessUnit, currentMediaTimestamp.Value, currentWallClockTimestamp, null);
       if (fragment != null)
         yield return fragment;
     }
   }
 
-  private Fmp4Fragment? EmitAccessUnit<T>(List<T> accessUnit, ulong timestamp, ulong? nextTimestamp) where T : IDataUnit
+  private Fmp4Fragment? EmitAccessUnit<T>(
+    List<T> accessUnit,
+    ulong mediaTimestamp,
+    ulong wallClockTimestamp,
+    ulong? nextMediaTimestamp) where T : IDataUnit
   {
     if (accessUnit.Count == 0 || _initSegment == null)
       return null;
@@ -306,8 +318,8 @@ public sealed class Fmp4Muxer
       totalNalSize += NalConverter.LengthPrefixedSize(nal.Data.Span);
     }
 
-    var duration = nextTimestamp != null
-      ? (uint)(nextTimestamp.Value - timestamp)
+    var duration = nextMediaTimestamp != null
+      ? (uint)(nextMediaTimestamp.Value - mediaTimestamp)
       : _lastDuration > 0 ? _lastDuration : _timescale / 30;
     _lastDuration = duration;
 
@@ -322,7 +334,7 @@ public sealed class Fmp4Muxer
       }
     };
 
-    var (fragment, keyframe) = _assembler.Assemble(nalData, samples, timestamp, isKeyframe);
+    var (fragment, keyframe) = _assembler.Assemble(nalData, samples, mediaTimestamp, wallClockTimestamp, isKeyframe);
     if (keyframe != null)
       _onKeyframe?.Invoke(keyframe);
 

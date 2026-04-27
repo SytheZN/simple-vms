@@ -1,5 +1,5 @@
 using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
 
 namespace Client.Core.Api;
 

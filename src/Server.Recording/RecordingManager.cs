@@ -68,17 +68,17 @@ public sealed class RecordingManager : IAsyncDisposable
   }
 
   private void StartWriter(
-    Guid cameraId, string profile, string codec, Guid streamId,
+    Guid cameraId, string profile, string storageProfile, string codec, Guid streamId,
     int segmentDuration, IStorageProvider storage, CancellationToken ct)
   {
     var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
     var writer = new SegmentWriter(
-      cameraId, profile, codec, streamId,
+      cameraId, profile, storageProfile, codec, streamId,
       segmentDuration, storage, _plugins.DataProvider, _eventBus, _logger);
 
     _writers[(cameraId, profile)] = (writer, cts);
 
-    _ = RunWriterAsync(cameraId, profile, codec, streamId,
+    _ = RunWriterAsync(cameraId, profile, storageProfile, codec, streamId,
       segmentDuration, storage, cts.Token);
 
     _logger.LogInformation(
@@ -114,10 +114,16 @@ public sealed class RecordingManager : IAsyncDisposable
 
     var defaultDuration = await GetDefaultSegmentDurationAsync(ct);
     var desiredProfiles = new HashSet<string>();
+    var byId = streamsResult.AsT0.ToDictionary(s => s.Id);
 
     foreach (var stream in streamsResult.AsT0)
     {
-      if (!stream.RecordingEnabled)
+      var root = stream.Kind == StreamKind.Metadata
+        ? Server.Core.StreamHierarchy.ResolveRootStream(
+            stream, id => byId.TryGetValue(id, out var v) ? v : null, _logger)
+        : stream;
+
+      if (!root.RecordingEnabled)
         continue;
 
       desiredProfiles.Add(stream.Profile);
@@ -126,7 +132,7 @@ public sealed class RecordingManager : IAsyncDisposable
         continue;
 
       var duration = camera.SegmentDuration ?? defaultDuration;
-      StartWriter(cameraId, stream.Profile, stream.Codec ?? "unknown",
+      StartWriter(cameraId, stream.Profile, root.Profile, stream.Codec ?? "unknown",
         stream.Id, duration, storage, ct);
     }
 
@@ -229,7 +235,7 @@ public sealed class RecordingManager : IAsyncDisposable
   private static readonly int[] BackoffSeconds = [1, 2, 4, 8, 15];
 
   private async Task RunWriterAsync(
-    Guid cameraId, string profile, string codec, Guid streamId,
+    Guid cameraId, string profile, string storageProfile, string codec, Guid streamId,
     int segmentDuration, IStorageProvider storage, CancellationToken ct)
   {
     var consecutiveFailures = 0;
@@ -306,7 +312,7 @@ public sealed class RecordingManager : IAsyncDisposable
         catch (OperationCanceledException) { return; }
 
         var newWriter = new SegmentWriter(
-          cameraId, profile, codec, streamId,
+          cameraId, profile, storageProfile, codec, streamId,
           segmentDuration, storage, _plugins.DataProvider, _eventBus, _logger);
         if (_writers.TryGetValue((cameraId, profile), out var current))
         {

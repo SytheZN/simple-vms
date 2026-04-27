@@ -1,6 +1,5 @@
 using Server.Core;
 using Server.Streaming;
-using Shared.Models;
 
 namespace Tests.Unit.Streaming;
 
@@ -38,10 +37,12 @@ public class CameraRegistryTests
 
     var result = await registry.GetCamerasAsync(CancellationToken.None);
 
-    Assert.That(result, Has.Count.EqualTo(1));
-    Assert.That(result[0].Name, Is.EqualTo("Cam1"));
-    Assert.That(result[0].Streams, Has.Count.EqualTo(1));
-    Assert.That(result[0].Streams[0].Profile, Is.EqualTo("main"));
+    Assert.That(result.IsT0, Is.True);
+    var infos = result.AsT0;
+    Assert.That(infos, Has.Count.EqualTo(1));
+    Assert.That(infos[0].Name, Is.EqualTo("Cam1"));
+    Assert.That(infos[0].Streams, Has.Count.EqualTo(1));
+    Assert.That(infos[0].Streams[0].Profile, Is.EqualTo("main"));
   }
 
   /// <summary>
@@ -52,17 +53,18 @@ public class CameraRegistryTests
   /// GetCamerasAsync
   ///
   /// EXPECTED RESULT:
-  /// Returns empty list
+  /// Propagates the error
   /// </summary>
   [Test]
-  public async Task GetCameras_OnError_ReturnsEmpty()
+  public async Task GetCameras_OnError_PropagatesError()
   {
     var dp = new FakeDataProvider(error: true);
     var registry = new CameraRegistry(dp, new CameraStatusTracker());
 
     var result = await registry.GetCamerasAsync(CancellationToken.None);
 
-    Assert.That(result, Is.Empty);
+    Assert.That(result.IsT1, Is.True);
+    Assert.That(result.AsT1.Result, Is.EqualTo(Result.InternalError));
   }
 
   /// <summary>
@@ -90,8 +92,8 @@ public class CameraRegistryTests
 
     var result = await registry.GetCameraAsync(cameraId, CancellationToken.None);
 
-    Assert.That(result, Is.Not.Null);
-    Assert.That(result!.Name, Is.EqualTo("Cam2"));
+    Assert.That(result.IsT0, Is.True);
+    Assert.That(result.AsT0.Name, Is.EqualTo("Cam2"));
   }
 
   /// <summary>
@@ -102,17 +104,18 @@ public class CameraRegistryTests
   /// GetCameraAsync with unknown ID
   ///
   /// EXPECTED RESULT:
-  /// Returns null
+  /// Returns NotFound error
   /// </summary>
   [Test]
-  public async Task GetCamera_NotFound_ReturnsNull()
+  public async Task GetCamera_NotFound_ReturnsNotFoundError()
   {
     var dp = new FakeDataProvider([], []);
     var registry = new CameraRegistry(dp, new CameraStatusTracker());
 
     var result = await registry.GetCameraAsync(Guid.NewGuid(), CancellationToken.None);
 
-    Assert.That(result, Is.Null);
+    Assert.That(result.IsT1, Is.True);
+    Assert.That(result.AsT1.Result, Is.EqualTo(Result.NotFound));
   }
 
   private sealed class FakeDataProvider : IDataProvider

@@ -1,8 +1,7 @@
 using Avalonia.Headless.NUnit;
 using Client.Core.ViewModels;
 using Microsoft.Extensions.Logging.Abstractions;
-using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
 using Tests.Unit.Client.Mocks;
 
 namespace Tests.Unit.Client.ViewModels;
@@ -28,11 +27,11 @@ public class TimelineViewModelTests
       Response = new TimelineResponse
       {
         Spans = [
-          new TimelineSpan { StartTime = 1_000_000, EndTime = 2_000_000 },
-          new TimelineSpan { StartTime = 3_000_000, EndTime = 4_000_000 }
+          new TimelineSpanDto { StartTime = 1_000_000, EndTime = 2_000_000 },
+          new TimelineSpanDto { StartTime = 3_000_000, EndTime = 4_000_000 }
         ],
         Events = [
-          new TimelineEvent { Id = Guid.NewGuid(), Type = "motion", StartTime = 1_500_000 }
+          new TimelineEventDto { Id = Guid.NewGuid(), Type = "motion", StartTime = 1_500_000 }
         ]
       }
     };

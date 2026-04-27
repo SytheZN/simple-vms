@@ -1,6 +1,5 @@
 using Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
-using Shared.Models;
 
 namespace Tests.Integration.Sqlite;
 

@@ -7,6 +7,7 @@ namespace Server.Streaming;
 public sealed class DataStreamFanOut<T> : IDataStream<T>, IDataStreamFanOut where T : IDataUnit
 {
   private readonly List<Channel<T>> _subscribers = [];
+  private readonly List<T> _gopCache = [];
   private readonly Lock _lock = new();
   private Channel<T>[]? _snapshot;
   private int _demandCount;
@@ -27,7 +28,12 @@ public sealed class DataStreamFanOut<T> : IDataStream<T>, IDataStreamFanOut wher
   {
     Channel<T>[] snapshot;
     lock (_lock)
+    {
+      if (item.IsSyncPoint)
+        _gopCache.Clear();
+      _gopCache.Add(item);
       snapshot = _snapshot ??= [.. _subscribers];
+    }
 
     foreach (var channel in snapshot)
       channel.Writer.TryWrite(item);
@@ -40,6 +46,8 @@ public sealed class DataStreamFanOut<T> : IDataStream<T>, IDataStreamFanOut wher
     Action? onDemand = null;
     lock (_lock)
     {
+      foreach (var cached in _gopCache)
+        channel.Writer.TryWrite(cached);
       _subscribers.Add(channel);
       _snapshot = null;
       _demandCount++;
@@ -57,6 +65,8 @@ public sealed class DataStreamFanOut<T> : IDataStream<T>, IDataStreamFanOut wher
 
     lock (_lock)
     {
+      foreach (var cached in _gopCache)
+        channel.Writer.TryWrite(cached);
       _subscribers.Add(channel);
       _snapshot = null;
     }

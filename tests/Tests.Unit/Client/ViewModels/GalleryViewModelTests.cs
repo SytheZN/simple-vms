@@ -1,8 +1,7 @@
 using Client.Core.Tunnel;
 using Client.Core.ViewModels;
 using Microsoft.Extensions.Logging.Abstractions;
-using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
 using Tests.Unit.Client.Mocks;
 
 namespace Tests.Unit.Client.ViewModels;
@@ -23,7 +22,7 @@ public class GalleryViewModelTests
   [Test]
   public async Task Load_PopulatesCameras()
   {
-    var cameras = new List<CameraListItem>
+    var cameras = new List<CameraDto>
     {
       MakeCamera("Cam1", "192.168.1.1", "online"),
       MakeCamera("Cam2", "192.168.1.2", "offline")
@@ -77,7 +76,7 @@ public class GalleryViewModelTests
   [Test]
   public async Task Reconnect_RefreshesCameras()
   {
-    var cameras = new List<CameraListItem> { MakeCamera("Cam1", "192.168.1.1", "online") };
+    var cameras = new List<CameraDto> { MakeCamera("Cam1", "192.168.1.1", "online") };
     var api = new GalleryApi { CameraList = cameras };
     var tunnel = new FakeStreamTunnel();
     var vm = new GalleryViewModel(api, tunnel, new FakeEventService(), NullLogger<GalleryViewModel>.Instance);
@@ -88,7 +87,7 @@ public class GalleryViewModelTests
     Assert.That(vm.Cameras, Has.Count.EqualTo(1));
   }
 
-  private static CameraListItem MakeCamera(string name, string address, string status) => new()
+  private static CameraDto MakeCamera(string name, string address, string status) => new()
   {
     Id = Guid.NewGuid(), Name = name, Address = address,
     Status = status, ProviderId = "onvif", Streams = [], Capabilities = []
@@ -96,11 +95,11 @@ public class GalleryViewModelTests
 
   private sealed class GalleryApi : FakeApiClient
   {
-    public List<CameraListItem>? CameraList { get; set; }
+    public List<CameraDto>? CameraList { get; set; }
 
-    public override Task<OneOf<IReadOnlyList<CameraListItem>, Error>> GetCamerasAsync(
+    public override Task<OneOf<IReadOnlyList<CameraDto>, Error>> GetCamerasAsync(
       string? status, CancellationToken ct) =>
       Task.FromResult(
-        OneOf<IReadOnlyList<CameraListItem>, Error>.FromT0((CameraList ?? []).ToList()));
+        OneOf<IReadOnlyList<CameraDto>, Error>.FromT0((CameraList ?? []).ToList()));
   }
 }

@@ -33,7 +33,7 @@ graph TB
         cam2["Camera 2"] -- RTSP --> server
         camN["Camera N"] -- RTSP --> server
 
-        subgraph server["VMS Server"]
+        subgraph server["Server"]
             db["Database"]
         end
 
@@ -182,7 +182,7 @@ The recordings path layout is managed by the `IStorageProvider` plugin. The layo
   {camera_uuid}/
     {stream_profile}/                  # "main", "sub", etc.
       {year}/{month}/{day}/
-        {timestamp}.mp4                # e.g. 20260315T140000Z.mp4
+        {timestamp}.{ext}
 ```
 
 - Flat date directories for simple manual inspection

@@ -1,5 +1,4 @@
 using Server.Core.Services;
-using Shared.Models;
 
 namespace Server.Api.Endpoints;
 

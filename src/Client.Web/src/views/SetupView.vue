@@ -53,7 +53,8 @@ async function selectPlugin(plugin: PluginListItem) {
   selectedPlugin.value = plugin
   error.value = ''
   try {
-    schema.value = await api.plugins.configSchema(plugin.id)
+    const fullSchema = await api.plugins.configSchema(plugin.id)
+    schema.value = fullSchema.filter(g => g.key !== 'provider')
     for (const group of schema.value) {
       for (const field of group.fields) {
         if (field.value !== undefined) {
@@ -63,7 +64,12 @@ async function selectPlugin(plugin: PluginListItem) {
         }
       }
     }
-    step.value = schema.value.length > 0 ? 'configure' : 'confirm'
+    if (schema.value.length > 0) {
+      step.value = 'configure'
+    } else {
+      await api.plugins.updateConfig(plugin.id, { active: 'true' })
+      step.value = 'confirm'
+    }
   } catch (e) {
     if (e instanceof ApiError) error.value = e.message
   }
@@ -74,7 +80,7 @@ async function saveConfig() {
   saving.value = true
   error.value = ''
   try {
-    await api.plugins.updateConfig(selectedPlugin.value.id, configValues.value)
+    await api.plugins.updateConfig(selectedPlugin.value.id, { ...configValues.value, active: 'true' })
     step.value = 'confirm'
   } catch (e) {
     if (e instanceof ApiError) error.value = e.message

@@ -1,8 +1,7 @@
 using Microsoft.Extensions.Logging;
-using Server.Plugins;
 using Server.Streaming;
-using Shared.Models;
 using Shared.Models.Events;
+using Tests.Unit.Mocks;
 
 namespace Tests.Unit.Streaming;
 
@@ -34,9 +33,11 @@ public class StreamingServiceTests
       FormatId = "fmp4", Uri = "rtsp://192.168.1.10/main"
     };
 
-    var pluginHost = new TestPluginHost(
-      cameras: [camera], streams: [stream],
-      captureSources: [new FakeCaptureSource()]);
+    var pluginHost = new FakePluginHost
+    {
+      DataProvider = new FakeDataProvider([camera], [stream]),
+      CaptureSources = [new FakeCaptureSource()]
+    };
 
     var tapRegistry = new StreamTapRegistry();
     var service = new StreamingService(
@@ -75,9 +76,11 @@ public class StreamingServiceTests
       FormatId = "fmp4", Uri = "rtmp://192.168.1.10/main"
     };
 
-    var pluginHost = new TestPluginHost(
-      cameras: [camera], streams: [stream],
-      captureSources: [new FakeCaptureSource()]);
+    var pluginHost = new FakePluginHost
+    {
+      DataProvider = new FakeDataProvider([camera], [stream]),
+      CaptureSources = [new FakeCaptureSource()]
+    };
 
     var tapRegistry = new StreamTapRegistry();
     var service = new StreamingService(
@@ -105,7 +108,10 @@ public class StreamingServiceTests
   [Test]
   public async Task Start_CameraLoadFails_NoPipelines()
   {
-    var pluginHost = new TestPluginHost(error: true);
+    var pluginHost = new FakePluginHost
+    {
+      DataProvider = new FakeDataProvider([], [], error: true)
+    };
 
     var tapRegistry = new StreamTapRegistry();
     var service = new StreamingService(
@@ -145,9 +151,11 @@ public class StreamingServiceTests
       FormatId = "fmp4", Uri = "rtsp://192.168.1.10/main"
     };
 
-    var pluginHost = new TestPluginHost(
-      cameras: [camera], streams: [stream],
-      captureSources: [new FakeCaptureSource()]);
+    var pluginHost = new FakePluginHost
+    {
+      DataProvider = new FakeDataProvider([camera], [stream]),
+      CaptureSources = [new FakeCaptureSource()]
+    };
 
     var tapRegistry = new StreamTapRegistry();
     var service = new StreamingService(
@@ -160,43 +168,6 @@ public class StreamingServiceTests
     Assert.That(tapRegistry.GetPipeline(camera.Id, "main"), Is.Not.Null);
 
     await service.DisposeAsync();
-  }
-
-  private sealed class TestPluginHost : IPluginHost
-  {
-    private readonly FakeDataProvider _dataProvider;
-    private readonly IReadOnlyList<ICaptureSource> _captureSources;
-
-    public TestPluginHost(
-      IReadOnlyList<Camera>? cameras = null,
-      IReadOnlyList<CameraStream>? streams = null,
-      IReadOnlyList<ICaptureSource>? captureSources = null,
-      bool error = false)
-    {
-      _dataProvider = new FakeDataProvider(cameras ?? [], streams ?? [], error);
-      _captureSources = captureSources ?? [];
-    }
-
-    public IReadOnlyList<PluginEntry> Plugins => [];
-    public IDataProvider DataProvider => _dataProvider;
-    public IReadOnlyList<ICaptureSource> CaptureSources => _captureSources;
-    public IReadOnlyList<IStreamFormat> StreamFormats => [];
-    public IReadOnlyList<ICameraProvider> CameraProviders => [];
-    public IReadOnlyList<IEventFilter> EventFilters => [];
-    public IReadOnlyList<INotificationSink> NotificationSinks => [];
-    public IReadOnlyList<IDataStreamAnalyzer> Analyzers => [];
-    public IReadOnlyList<IStorageProvider> StorageProviders => [];
-    public IReadOnlyList<IAuthProvider> AuthProviders => [];
-    public IReadOnlyList<IAuthzProvider> AuthzProviders => [];
-    public IStreamFormat? FindFormat(Type inputType) => null;
-    public void SetStreamTap(IStreamTap streamTap) { }
-    public void SetCameraRegistry(ICameraRegistry cameraRegistry) { }
-    public void SetRecordingAccess(IRecordingAccess recordingAccess) { }
-    public void Discover(string pluginsPath) { }
-    public void Initialize(bool dataOnly = false) { }
-    public void ResetErrored() { }
-    public Task StartAsync(CancellationToken ct) => Task.CompletedTask;
-    public Task StopAsync() => Task.CompletedTask;
   }
 
   private sealed class FakeDataProvider : IDataProvider

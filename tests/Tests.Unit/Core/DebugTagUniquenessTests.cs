@@ -2,7 +2,6 @@ using System.Globalization;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using Client.Core;
-using Shared.Models;
 
 namespace Tests.Unit.Core;
 

@@ -1,10 +1,8 @@
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using Server.Plugins;
 using Server.Recording;
 using Server.Streaming;
-using Shared.Models;
 using Shared.Models.Events;
+using Tests.Unit.Mocks;
 
 namespace Tests.Unit.Recording;
 
@@ -35,7 +33,7 @@ public class RecordingManagerTests
     var storage = new FakeStorage();
     var eventBus = new FakeEventBus();
     var tapRegistry = new StreamTapRegistry();
-    var host = new FakePluginHost(data, storage);
+    var host = new FakePluginHost { DataProvider = data, StorageProviders = [storage] };
 
     var manager = new RecordingManager(host, tapRegistry, eventBus,
       NullLogger.Instance);
@@ -71,7 +69,7 @@ public class RecordingManagerTests
     var storage = new FakeStorage();
     var eventBus = new FakeEventBus();
     var tapRegistry = new StreamTapRegistry();
-    var host = new FakePluginHost(data, storage);
+    var host = new FakePluginHost { DataProvider = data, StorageProviders = [storage] };
 
     var manager = new RecordingManager(host, tapRegistry, eventBus,
       NullLogger.Instance);
@@ -111,7 +109,7 @@ public class RecordingManagerTests
     var storage = new FakeStorage();
     var eventBus = new FakeEventBus();
     var tapRegistry = new StreamTapRegistry();
-    var host = new FakePluginHost(data, storage);
+    var host = new FakePluginHost { DataProvider = data, StorageProviders = [storage] };
 
     var manager = new RecordingManager(host, tapRegistry, eventBus,
       NullLogger.Instance);
@@ -331,27 +329,4 @@ public class RecordingManagerTests
       throw new NotImplementedException();
   }
 
-  private sealed class FakePluginHost(FakeDataProvider data, FakeStorage storage) : IPluginHost
-  {
-    public IReadOnlyList<PluginEntry> Plugins => [];
-    public IDataProvider DataProvider => data;
-    public IReadOnlyList<ICaptureSource> CaptureSources => [];
-    public IReadOnlyList<IStreamFormat> StreamFormats => [];
-    public IReadOnlyList<ICameraProvider> CameraProviders => [];
-    public IReadOnlyList<IEventFilter> EventFilters => [];
-    public IReadOnlyList<INotificationSink> NotificationSinks => [];
-    public IReadOnlyList<IDataStreamAnalyzer> Analyzers => [];
-    public IReadOnlyList<IStorageProvider> StorageProviders => [storage];
-    public IReadOnlyList<IAuthProvider> AuthProviders => [];
-    public IReadOnlyList<IAuthzProvider> AuthzProviders => [];
-    public IStreamFormat? FindFormat(Type inputType) => null;
-    public void SetStreamTap(IStreamTap streamTap) { }
-    public void SetCameraRegistry(ICameraRegistry cameraRegistry) { }
-    public void SetRecordingAccess(IRecordingAccess recordingAccess) { }
-    public void Discover(string pluginsPath) { }
-    public void Initialize(bool dataOnly = false) { }
-    public void ResetErrored() { }
-    public Task StartAsync(CancellationToken ct) => Task.CompletedTask;
-    public Task StopAsync() => Task.CompletedTask;
-  }
 }

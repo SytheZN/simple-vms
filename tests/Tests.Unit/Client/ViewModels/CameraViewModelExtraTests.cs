@@ -5,8 +5,7 @@ using Client.Core.Streaming;
 using Client.Core.Tunnel;
 using Client.Core.ViewModels;
 using Microsoft.Extensions.Logging.Abstractions;
-using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
 using Shared.Protocol;
 using Tests.Unit.Client.Mocks;
 
@@ -15,7 +14,7 @@ namespace Tests.Unit.Client.ViewModels;
 [TestFixture]
 public class CameraViewModelExtraTests
 {
-  private static readonly CameraListItem TestCamera = new()
+  private static readonly CameraDto TestCamera = new()
   {
     Id = Guid.NewGuid(),
     Name = "Test Camera",
@@ -316,12 +315,12 @@ public class CameraViewModelExtraTests
 
   private sealed class CameraApi : FakeApiClient
   {
-    public CameraListItem? Camera { get; set; }
+    public CameraDto? Camera { get; set; }
 
-    public override Task<OneOf<CameraListItem, Error>> GetCameraAsync(Guid id, CancellationToken ct) =>
+    public override Task<OneOf<CameraDto, Error>> GetCameraAsync(Guid id, CancellationToken ct) =>
       Camera != null
-        ? Task.FromResult<OneOf<CameraListItem, Error>>(Camera)
-        : Task.FromResult<OneOf<CameraListItem, Error>>(new Error(Result.Unavailable, default, "not found"));
+        ? Task.FromResult<OneOf<CameraDto, Error>>(Camera)
+        : Task.FromResult<OneOf<CameraDto, Error>>(new Error(Result.Unavailable, default, "not found"));
   }
 
   private sealed class FakeLive : ILiveStreamService

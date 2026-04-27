@@ -183,13 +183,13 @@ public class FragmentTests
       new() { Duration = 3000, Size = 6, IsKeyframe = true, CompositionOffset = 0 }
     };
 
-    var (frag1, kf1) = assembler.Assemble(nals, samples, 0, true);
+    var (frag1, kf1) = assembler.Assemble(nals, samples, 0, 0, true);
     Assert.That(kf1, Is.Not.Null);
     Assert.That(kf1!.ByteOffset, Is.GreaterThanOrEqualTo(0));
     var moofType = System.Text.Encoding.ASCII.GetString(frag1.Data.Span.Slice((int)kf1.ByteOffset + 4, 4));
     Assert.That(moofType, Is.EqualTo("moof"));
 
-    var (frag2, kf2) = assembler.Assemble(nals, samples, 33333, false);
+    var (frag2, kf2) = assembler.Assemble(nals, samples, 33333, 33333, false);
     Assert.That(kf2, Is.Null);
     Assert.That(assembler.BytesWritten, Is.EqualTo(frag1.Data.Length + frag2.Data.Length));
   }

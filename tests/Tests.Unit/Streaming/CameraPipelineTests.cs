@@ -1,9 +1,8 @@
 using System.Threading.Channels;
-using Server.Plugins;
 using Server.Streaming;
-using Shared.Models;
 using Shared.Models.Events;
 using Shared.Models.Formats;
+using Tests.Unit.Mocks;
 
 namespace Tests.Unit.Streaming;
 
@@ -385,30 +384,6 @@ public class CameraPipelineTests
       await foreach (var item in _reader.ReadAllAsync(ct))
         yield return item;
     }
-  }
-
-  private sealed class FakePluginHost : IPluginHost
-  {
-    public IReadOnlyList<PluginEntry> Plugins => [];
-    public IDataProvider DataProvider => throw new NotImplementedException();
-    public IReadOnlyList<ICaptureSource> CaptureSources => [];
-    public IReadOnlyList<IStreamFormat> StreamFormats => [];
-    public IReadOnlyList<ICameraProvider> CameraProviders => [];
-    public IReadOnlyList<IEventFilter> EventFilters => [];
-    public IReadOnlyList<INotificationSink> NotificationSinks => [];
-    public IReadOnlyList<IDataStreamAnalyzer> Analyzers => [];
-    public IReadOnlyList<IStorageProvider> StorageProviders => [];
-    public IReadOnlyList<IAuthProvider> AuthProviders => [];
-    public IReadOnlyList<IAuthzProvider> AuthzProviders => [];
-    public IStreamFormat? FindFormat(Type inputType) => null;
-    public void SetStreamTap(IStreamTap streamTap) { }
-    public void SetCameraRegistry(ICameraRegistry cameraRegistry) { }
-    public void SetRecordingAccess(IRecordingAccess recordingAccess) { }
-    public void Discover(string pluginsPath) { }
-    public void Initialize(bool dataOnly = false) { }
-    public void ResetErrored() { }
-    public Task StartAsync(CancellationToken ct) => Task.CompletedTask;
-    public Task StopAsync() => Task.CompletedTask;
   }
 
   private sealed class RecordingEventBus : IEventBus

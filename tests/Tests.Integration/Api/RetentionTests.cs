@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
 
 namespace Tests.Integration.Api;
 

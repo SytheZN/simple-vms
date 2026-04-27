@@ -1,9 +1,7 @@
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Server.Core;
-using Server.Plugins;
-using Shared.Models;
 using Shared.Models.Events;
+using Tests.Unit.Mocks;
 
 namespace Tests.Unit.Core;
 
@@ -25,7 +23,7 @@ public class EventManagerTests
   {
     var data = new FakeDataProvider();
     var eventBus = new FakeEventBus();
-    var host = new FakePluginHost(data, eventFilters: [new PassFilter()]);
+    var host = new FakePluginHost { DataProvider = data, EventFilters = [new PassFilter()] };
     var manager = new EventManager(host, eventBus, NullLogger.Instance);
 
     var evt = new CameraEvent
@@ -59,7 +57,7 @@ public class EventManagerTests
   {
     var data = new FakeDataProvider();
     var eventBus = new FakeEventBus();
-    var host = new FakePluginHost(data, eventFilters: [new SuppressFilter()]);
+    var host = new FakePluginHost { DataProvider = data, EventFilters = [new SuppressFilter()] };
     var manager = new EventManager(host, eventBus, NullLogger.Instance);
 
     var evt = new CameraEvent
@@ -91,7 +89,7 @@ public class EventManagerTests
   {
     var data = new FakeDataProvider();
     var eventBus = new FakeEventBus();
-    var host = new FakePluginHost(data);
+    var host = new FakePluginHost { DataProvider = data };
     var manager = new EventManager(host, eventBus, NullLogger.Instance);
 
     var evt = new CameraEvent
@@ -124,7 +122,7 @@ public class EventManagerTests
   {
     var data = new FakeDataProvider();
     var eventBus = new FakeEventBus();
-    var host = new FakePluginHost(data);
+    var host = new FakePluginHost { DataProvider = data };
     var manager = new EventManager(host, eventBus, NullLogger.Instance);
 
     var evt = new CameraEvent
@@ -157,7 +155,7 @@ public class EventManagerTests
     var data = new FakeDataProvider();
     var eventBus = new FakeEventBus();
     var sink = new FakeNotificationSink();
-    var host = new FakePluginHost(data, notificationSinks: [sink]);
+    var host = new FakePluginHost { DataProvider = data, NotificationSinks = [sink] };
     var manager = new EventManager(host, eventBus, NullLogger.Instance);
 
     var evt = new CameraEvent
@@ -250,39 +248,4 @@ public class EventManagerTests
       throw new NotImplementedException();
   }
 
-  private sealed class FakePluginHost : IPluginHost
-  {
-    private readonly IDataProvider _data;
-
-    public FakePluginHost(
-      IDataProvider data,
-      IReadOnlyList<IEventFilter>? eventFilters = null,
-      IReadOnlyList<INotificationSink>? notificationSinks = null)
-    {
-      _data = data;
-      EventFilters = eventFilters ?? [];
-      NotificationSinks = notificationSinks ?? [];
-    }
-
-    public IReadOnlyList<PluginEntry> Plugins => [];
-    public IDataProvider DataProvider => _data;
-    public IReadOnlyList<ICaptureSource> CaptureSources => [];
-    public IReadOnlyList<IStreamFormat> StreamFormats => [];
-    public IReadOnlyList<ICameraProvider> CameraProviders => [];
-    public IReadOnlyList<IEventFilter> EventFilters { get; }
-    public IReadOnlyList<INotificationSink> NotificationSinks { get; }
-    public IReadOnlyList<IDataStreamAnalyzer> Analyzers => [];
-    public IReadOnlyList<IStorageProvider> StorageProviders => [];
-    public IReadOnlyList<IAuthProvider> AuthProviders => [];
-    public IReadOnlyList<IAuthzProvider> AuthzProviders => [];
-    public IStreamFormat? FindFormat(Type inputType) => null;
-    public void SetStreamTap(IStreamTap streamTap) { }
-    public void SetCameraRegistry(ICameraRegistry cameraRegistry) { }
-    public void SetRecordingAccess(IRecordingAccess recordingAccess) { }
-    public void Discover(string pluginsPath) { }
-    public void Initialize(bool dataOnly = false) { }
-    public void ResetErrored() { }
-    public Task StartAsync(CancellationToken ct) => Task.CompletedTask;
-    public Task StopAsync() => Task.CompletedTask;
-  }
 }

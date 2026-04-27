@@ -8,6 +8,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/Shared.Models/Shared.Models.csproj" />
+    <ProjectReference Include="../../src/Shared.Api/Shared.Api.csproj" />
     <ProjectReference Include="../../src/Shared.Protocol/Shared.Protocol.csproj" />
     <ProjectReference Include="../../src/plugins/cameras/Onvif/Onvif.csproj" />
     <ProjectReference Include="../../src/plugins/capture/Rtsp/Rtsp.csproj" />

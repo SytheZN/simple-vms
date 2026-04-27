@@ -2,10 +2,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Server.Core;
 using Server.Core.Services;
 using Server.Core.PortForwarding;
-using Server.Plugins;
-using Shared.Models;
-using Shared.Models.Dto;
-using Tests.Unit.Streaming;
+using Shared.Api;
+using Tests.Unit.Mocks;
 
 namespace Tests.Unit.Core;
 
@@ -92,7 +90,7 @@ public class SystemServiceRecomputeTests
 
   private static SystemService BuildService(IDataProvider provider, SystemHealth health)
   {
-    var host = new SessionTestPluginHost(provider);
+    var host = new FakePluginHost { DataProvider = provider };
     var endpoints = new ServerEndpoints { TunnelPort = 4433 };
     return new SystemService(
       host, health, endpoints,
@@ -117,7 +115,7 @@ public class SystemServiceRecomputeTests
   {
     public Task<OneOf<Success, Error>> ApplyAsync(CancellationToken ct) =>
       Task.FromResult<OneOf<Success, Error>>(new Success());
-    public PortForwardingStatus GetStatus() => new() { Active = false };
+    public PortForwardingStatusDto GetStatus() => new() { Active = false };
   }
 
   private sealed class StubHttpClientFactory : IHttpClientFactory

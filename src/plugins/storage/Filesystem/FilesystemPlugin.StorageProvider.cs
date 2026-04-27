@@ -66,7 +66,7 @@ public sealed partial class FilesystemPlugin : IStorageProvider
       utc.Year.ToString("D4"),
       utc.Month.ToString("D2"),
       utc.Day.ToString("D2"),
-      $"{metadata.StartTime}.mp4");
+      $"{metadata.StartTime}.{metadata.FileExtension}");
   }
 
   private void CleanEmptyParents(string directory)

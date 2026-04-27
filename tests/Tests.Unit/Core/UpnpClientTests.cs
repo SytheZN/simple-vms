@@ -93,7 +93,7 @@ public class UpnpClientTests
     await client.AddPortMappingAsync(
       externalPort: 30000, internalPort: 4433,
       internalClient: "192.168.1.50", leaseSeconds: 3600,
-      description: "Simple VMS tunnel", CancellationToken.None);
+      description: "SimpleVMS tunnel", CancellationToken.None);
 
     Assert.That(handler.LastSoapAction,
       Is.EqualTo($"\"{ServiceType}#AddPortMapping\""));

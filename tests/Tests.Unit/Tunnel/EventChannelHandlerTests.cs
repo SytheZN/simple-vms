@@ -3,7 +3,6 @@ using MessagePack;
 using Microsoft.Extensions.Logging.Abstractions;
 using Server.Plugins;
 using Server.Tunnel.Handlers;
-using Shared.Models;
 using Shared.Models.Events;
 using Shared.Protocol;
 

@@ -1,3 +1,5 @@
+using Shared.Models.Entities;
+
 namespace Shared.Models;
 
 public interface ISegmentRepository

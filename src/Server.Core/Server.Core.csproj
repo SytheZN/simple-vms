@@ -4,6 +4,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Shared.Models/Shared.Models.csproj" />
+    <ProjectReference Include="../Shared.Api/Shared.Api.csproj" />
     <ProjectReference Include="../Server.Plugins/Server.Plugins.csproj" />
   </ItemGroup>
 </Project>

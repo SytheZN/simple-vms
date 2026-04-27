@@ -13,6 +13,7 @@ public sealed class PluginHost : IPluginHost
   private readonly DataProviderConfigJsonStore _dataProviderConfig;
   private readonly IEventBus _eventBus;
   private readonly IServerEnvironment _environment;
+  private readonly IReadOnlyList<string> _pluginPaths;
 
   public IReadOnlyList<PluginEntry> Plugins => _plugins;
 
@@ -59,50 +60,79 @@ public sealed class PluginHost : IPluginHost
     ILoggerFactory loggerFactory,
     DataProviderConfigJsonStore dataProviderConfig,
     IEventBus eventBus,
-    IServerEnvironment environment)
+    IServerEnvironment environment,
+    IReadOnlyList<string> pluginPaths)
   {
     _logger = logger;
     _loggerFactory = loggerFactory;
     _dataProviderConfig = dataProviderConfig;
     _eventBus = eventBus;
     _environment = environment;
+    _pluginPaths = pluginPaths;
   }
 
   [RequiresUnreferencedCode("Plugin discovery loads assemblies dynamically")]
-  public void Discover(string pluginsPath)
+  public void DiscoverPlugins()
   {
-    if (!Directory.Exists(pluginsPath))
-      return;
-
-    var fullPath = Path.GetFullPath(pluginsPath);
-
-    foreach (var dir in Directory.GetDirectories(fullPath))
-    {
-      var dirName = Path.GetFileName(dir);
-      var dll = Path.Combine(dir, $"{dirName}.dll");
-      if (!File.Exists(dll))
-        continue;
-
-      LoadPlugin(dll);
-    }
-
-    foreach (var dll in Directory.GetFiles(fullPath, "*.dll"))
-      LoadPlugin(dll);
+    _plugins.Clear();
+    ClearExtensionPoints();
+    foreach (var path in _pluginPaths)
+      DiscoverPath(path);
   }
 
-  [RequiresUnreferencedCode("Plugin initialization uses dynamic type instantiation")]
-  public void Initialize(bool dataOnly = false)
+  public async Task TeardownPlugins(CancellationToken ct)
   {
-    ReinstantiatePlugins();
-
-    foreach (var entry in _plugins.Where(p =>
-      p.State == PluginState.Discovered
-      && (!dataOnly || p.ExtensionPoints.Contains("data"))))
+    foreach (var entry in _plugins.Where(p => p.State == PluginState.Running).Reverse())
     {
       try
       {
-        var context = BuildContext(entry);
-        var result = entry.Plugin.Initialize(context);
+        await entry.Plugin.StopAsync(ct);
+      }
+      catch (Exception ex)
+      {
+        _logger.LogError(ex, "Failed to stop plugin {Id} during teardown", entry.Metadata.Id);
+      }
+    }
+    _plugins.Clear();
+    ClearExtensionPoints();
+  }
+
+  [RequiresUnreferencedCode("Plugin initialization uses dynamic type instantiation")]
+  public void InitializeDataPlugins() => InitializeMatching(IsDataPlugin);
+
+  [RequiresUnreferencedCode("Plugin initialization uses dynamic type instantiation")]
+  public void InitializeOtherPlugins() => InitializeMatching(p => !IsDataPlugin(p));
+
+  public async Task StartConfiguredDataPlugin(CancellationToken ct)
+  {
+    var activeId = _dataProviderConfig.ActiveProvider;
+    if (string.IsNullOrEmpty(activeId)) return;
+
+    var entry = _plugins.FirstOrDefault(p =>
+      IsDataPlugin(p)
+      && p.Metadata.Id == activeId
+      && p.State == PluginState.Discovered);
+    if (entry == null) return;
+
+    await StartPluginAsync(entry, ct);
+  }
+
+  public async Task StartOtherPlugins(CancellationToken ct)
+  {
+    foreach (var entry in _plugins.Where(p =>
+      !IsDataPlugin(p) && p.State == PluginState.Discovered))
+    {
+      await StartPluginAsync(entry, ct);
+    }
+  }
+
+  private void InitializeMatching(Func<PluginEntry, bool> filter)
+  {
+    foreach (var entry in _plugins.Where(p => filter(p) && p.State == PluginState.Discovered))
+    {
+      try
+      {
+        var result = entry.Plugin.Initialize(BuildContext(entry));
         if (result.IsT1)
         {
           entry.State = PluginState.Error;
@@ -120,84 +150,11 @@ public sealed class PluginHost : IPluginHost
     }
   }
 
-  public async Task StartAsync(CancellationToken ct)
-  {
-    var dataProviderEntry = _plugins.FirstOrDefault(p =>
-      p.ExtensionPoints.Contains("data")
-      && p.Metadata.Id == _dataProviderConfig.ActiveProvider
-      && p.State == PluginState.Discovered);
-
-    if (dataProviderEntry != null)
-    {
-      await StartPluginAsync(dataProviderEntry, ct);
-    }
-
-    foreach (var entry in _plugins.Where(p =>
-      p != dataProviderEntry && p.State == PluginState.Discovered))
-    {
-      await StartPluginAsync(entry, ct);
-    }
-  }
-
-  public async Task StopAsync()
-  {
-    foreach (var entry in _plugins.Where(p => p.State == PluginState.Running).Reverse())
-    {
-      try
-      {
-        await entry.Plugin.StopAsync(CancellationToken.None);
-        entry.State = PluginState.Stopped;
-        _logger.LogInformation("Stopped plugin {Id}", entry.Metadata.Id);
-      }
-      catch (Exception ex)
-      {
-        entry.State = PluginState.Error;
-        entry.ErrorMessage = ex.Message;
-        _logger.LogError(ex, "Failed to stop plugin {Id}", entry.Metadata.Id);
-      }
-    }
-  }
-
-  [RequiresUnreferencedCode("Plugin types are instantiated dynamically")]
-  public void ResetErrored()
-  {
-    foreach (var entry in _plugins.Where(p => p.State == PluginState.Error))
-    {
-      entry.Plugin = (IPlugin)Activator.CreateInstance(entry.PluginType)!;
-      entry.Metadata = entry.Plugin.Metadata;
-      entry.State = PluginState.Discovered;
-      entry.ErrorMessage = null;
-
-      var context = BuildContext(entry);
-      var result = entry.Plugin.Initialize(context);
-      if (result.IsT1)
-      {
-        entry.State = PluginState.Error;
-        entry.ErrorMessage = result.AsT1.Message;
-        _logger.LogError(
-          "ResetErrored: re-initialise failed for plugin {Id}: {Message}",
-          entry.Metadata.Id, result.AsT1.Message);
-      }
-    }
-  }
-
-  [RequiresUnreferencedCode("Plugin types are instantiated dynamically")]
-  private void ReinstantiatePlugins()
-  {
-    ClearExtensionPoints();
-
-    foreach (var entry in _plugins)
-    {
-      entry.Plugin = (IPlugin)Activator.CreateInstance(entry.PluginType)!;
-      entry.Metadata = entry.Plugin.Metadata;
-      entry.State = PluginState.Discovered;
-      entry.ErrorMessage = null;
-    }
-  }
+  private static bool IsDataPlugin(PluginEntry e) => e.ExtensionPoints.Contains("data");
 
   private PluginContext BuildContext(PluginEntry entry)
   {
-    if (entry.ExtensionPoints.Contains("data"))
+    if (IsDataPlugin(entry))
     {
       return new PluginContext
       {
@@ -275,6 +232,28 @@ public sealed class PluginHost : IPluginHost
     _storageProviders.Clear();
     _authProviders.Clear();
     _authzProviders.Clear();
+  }
+
+  [RequiresUnreferencedCode("Plugin discovery loads assemblies dynamically")]
+  private void DiscoverPath(string pluginsPath)
+  {
+    if (!Directory.Exists(pluginsPath))
+      return;
+
+    var fullPath = Path.GetFullPath(pluginsPath);
+
+    foreach (var dir in Directory.GetDirectories(fullPath))
+    {
+      var dirName = Path.GetFileName(dir);
+      var dll = Path.Combine(dir, $"{dirName}.dll");
+      if (!File.Exists(dll))
+        continue;
+
+      LoadPlugin(dll);
+    }
+
+    foreach (var dll in Directory.GetFiles(fullPath, "*.dll"))
+      LoadPlugin(dll);
   }
 
   [RequiresUnreferencedCode("Plugin assemblies are loaded and inspected dynamically")]

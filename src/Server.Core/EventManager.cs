@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Server.Plugins;
 using Shared.Models;
+using Shared.Models.Entities;
 using Shared.Models.Events;
 
 namespace Server.Core;

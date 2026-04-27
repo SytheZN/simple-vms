@@ -58,7 +58,7 @@
                                      Width="{DynamicResource IconMd}"
                                      Height="{DynamicResource IconMd}"
                                      Foreground="{DynamicResource PrimaryBrush}" />
-              <TextBlock Text="VMS" FontSize="{DynamicResource TextLg}"
+              <TextBlock Text="sVMS" FontSize="{DynamicResource TextLg}"
                          FontFamily="{DynamicResource SansBoldFont}"
                          Foreground="{DynamicResource PrimaryBrush}"
                          VerticalAlignment="Center" />

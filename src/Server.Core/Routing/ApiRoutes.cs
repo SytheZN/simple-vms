@@ -1,6 +1,5 @@
 using Server.Core.Services;
 using Shared.Models;
-using Shared.Models.Dto;
 
 namespace Server.Core.Routing;
 
@@ -54,7 +53,7 @@ public static class ApiRoutes
       var cameras = req.Resolve<CameraService>();
       var result = await cameras.GetAllAsync(req.QueryString("status"), ct);
       return ApiResult.Ok(result, new DebugTag(ModuleIds.CameraManagement, 0x0010),
-        ServerJsonContext.Default.IReadOnlyListCameraListItem);
+        ServerJsonContext.Default.IReadOnlyListCameraDto);
     });
 
     dispatcher.Add("POST", "/api/v1/cameras", async (req, ct) =>
@@ -63,7 +62,7 @@ public static class ApiRoutes
       var result = await cameras.CreateAsync(
         req.Body(ServerJsonContext.Default.CreateCameraRequest), ct);
       return ApiResult.Created(result, new DebugTag(ModuleIds.CameraManagement, 0x0011),
-        ServerJsonContext.Default.CameraListItem);
+        ServerJsonContext.Default.CameraDto);
     });
 
     dispatcher.Add("POST", "/api/v1/cameras/probe", async (req, ct) =>
@@ -80,7 +79,7 @@ public static class ApiRoutes
       var cameras = req.Resolve<CameraService>();
       var result = await cameras.GetByIdAsync(req.RouteGuid("id"), ct);
       return ApiResult.Ok(result, new DebugTag(ModuleIds.CameraManagement, 0x0012),
-        ServerJsonContext.Default.CameraListItem);
+        ServerJsonContext.Default.CameraDto);
     });
 
     dispatcher.Add("PUT", "/api/v1/cameras/{id:guid}", async (req, ct) =>
@@ -89,7 +88,7 @@ public static class ApiRoutes
       var result = await cameras.UpdateAsync(
         req.RouteGuid("id"), req.Body(ServerJsonContext.Default.UpdateCameraRequest), ct);
       return ApiResult.Ok(result, new DebugTag(ModuleIds.CameraManagement, 0x0013),
-        ServerJsonContext.Default.CameraListItem);
+        ServerJsonContext.Default.CameraDto);
     });
 
     dispatcher.Add("DELETE", "/api/v1/cameras/{id:guid}", async (req, ct) =>
@@ -104,7 +103,7 @@ public static class ApiRoutes
       var cameras = req.Resolve<CameraService>();
       var result = await cameras.RefreshAsync(req.RouteGuid("id"), ct);
       return ApiResult.Ok(result, new DebugTag(ModuleIds.CameraManagement, 0x0017),
-        ServerJsonContext.Default.CameraListItem);
+        ServerJsonContext.Default.CameraDto);
     });
 
     dispatcher.Add("POST", "/api/v1/cameras/{id:guid}/restart", async (req, ct) =>
@@ -119,7 +118,7 @@ public static class ApiRoutes
       var config = req.Resolve<CameraConfigService>();
       var result = await config.GetSchemaAsync(req.RouteGuid("id"), ct);
       return ApiResult.Ok(result, new DebugTag(ModuleIds.CameraManagement, 0x0020),
-        ServerJsonContext.Default.CameraConfigSchema);
+        ServerJsonContext.Default.CameraConfigSchemaResponse);
     });
 
     dispatcher.Add("GET", "/api/v1/cameras/{id:guid}/config", async (req, ct) =>
@@ -146,7 +145,7 @@ public static class ApiRoutes
       var clients = req.Resolve<ClientService>();
       var result = await clients.GetAllAsync(ct);
       return ApiResult.Ok(result, new DebugTag(ModuleIds.ClientManagement, 0x0010),
-        ServerJsonContext.Default.IReadOnlyListClientListItem);
+        ServerJsonContext.Default.IReadOnlyListClientDto);
     });
 
     dispatcher.Add("GET", "/api/v1/clients/{id:guid}", async (req, ct) =>
@@ -154,7 +153,7 @@ public static class ApiRoutes
       var clients = req.Resolve<ClientService>();
       var result = await clients.GetByIdAsync(req.RouteGuid("id"), ct);
       return ApiResult.Ok(result, new DebugTag(ModuleIds.ClientManagement, 0x0011),
-        ServerJsonContext.Default.ClientListItem);
+        ServerJsonContext.Default.ClientDto);
     });
 
     dispatcher.Add("PUT", "/api/v1/clients/{id:guid}", async (req, ct) =>
@@ -324,7 +323,7 @@ public static class ApiRoutes
       var result = plugins.GetAll(req.QueryString("type"));
       return Task.FromResult(
         ApiResult.Ok(result, new DebugTag(ModuleIds.PluginManagement, 0x0010),
-          ServerJsonContext.Default.IReadOnlyListPluginListItem));
+          ServerJsonContext.Default.IReadOnlyListPluginDto));
     });
 
     dispatcher.Add("GET", "/api/v1/plugins/{id}", (req, _) =>
@@ -333,7 +332,7 @@ public static class ApiRoutes
       var result = plugins.GetById(req.RouteString("id"));
       return Task.FromResult(
         ApiResult.Ok(result, new DebugTag(ModuleIds.PluginManagement, 0x0011),
-          ServerJsonContext.Default.PluginListItem));
+          ServerJsonContext.Default.PluginDto));
     });
 
     dispatcher.Add("OPTIONS", "/api/v1/plugins/{id}/config", (req, _) =>

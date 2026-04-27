@@ -25,6 +25,7 @@ export interface StreamProfile {
   resolution: string
   fps: number
   bitrate?: number
+  recordingEnabled: boolean
 }
 
 export interface CameraListItem {

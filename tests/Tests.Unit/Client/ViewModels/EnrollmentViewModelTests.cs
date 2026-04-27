@@ -4,8 +4,7 @@ using Client.Core.Platform;
 using Client.Core.Tunnel;
 using Client.Core.ViewModels;
 using Microsoft.Extensions.Logging.Abstractions;
-using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
 using Tests.Unit.Client.Mocks;
 
 namespace Tests.Unit.Client.ViewModels;

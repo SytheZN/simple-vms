@@ -1,36 +1,45 @@
 using System.Runtime.CompilerServices;
 using Cameras.Onvif.Services;
+using Cameras.Onvif.Soap;
+using Microsoft.Extensions.Logging;
 using Shared.Models;
+using Shared.Models.Entities;
 
 namespace Cameras.Onvif;
 
 public sealed class OnvifEventSubscription : IEventSubscription
 {
   private readonly EventService _events;
-  private readonly string _pullPointUri;
+  private readonly string _eventsUri;
   private readonly Credentials _credentials;
   private readonly Guid _cameraId;
-  private readonly DateTimeOffset _terminationTime;
+  private readonly ILogger _logger;
+  private string _pullPointUri;
+  private DateTimeOffset _terminationTime;
   private bool _disposed;
 
   public OnvifEventSubscription(
     EventService events,
+    string eventsUri,
     string pullPointUri,
     Credentials credentials,
     Guid cameraId,
-    DateTimeOffset terminationTime)
+    DateTimeOffset terminationTime,
+    ILogger logger)
   {
     _events = events;
+    _eventsUri = eventsUri;
     _pullPointUri = pullPointUri;
     _credentials = credentials;
     _cameraId = cameraId;
     _terminationTime = terminationTime;
+    _logger = logger;
   }
 
   public async IAsyncEnumerable<CameraEvent> ReadEventsAsync(
     [EnumeratorCancellation] CancellationToken ct)
   {
-    var renewAt = _terminationTime.AddMinutes(-2);
+    var renewAt = ComputeRenewAt(_terminationTime);
 
     while (!ct.IsCancellationRequested && !_disposed)
     {
@@ -39,10 +48,21 @@ public sealed class OnvifEventSubscription : IEventSubscription
         try
         {
           await _events.RenewAsync(_pullPointUri, _credentials, ct);
-          renewAt = DateTimeOffset.UtcNow.AddMinutes(8);
+          renewAt = ComputeRenewAt(_terminationTime);
+        }
+        catch (SoapFaultException ex) when (!ct.IsCancellationRequested)
+        {
+          _logger.LogWarning(ex, "Renew failed for camera {CameraId}; recreating pullpoint", _cameraId);
+          if (!await TryRecreateAsync(ct))
+          {
+            await Task.Delay(TimeSpan.FromSeconds(5), ct);
+            continue;
+          }
+          renewAt = ComputeRenewAt(_terminationTime);
         }
         catch (Exception) when (!ct.IsCancellationRequested)
         {
+          renewAt = DateTimeOffset.UtcNow.AddSeconds(30);
         }
       }
 
@@ -50,6 +70,14 @@ public sealed class OnvifEventSubscription : IEventSubscription
       try
       {
         notifications = await _events.PullMessagesAsync(_pullPointUri, _credentials, ct);
+      }
+      catch (SoapFaultException ex) when (!ct.IsCancellationRequested)
+      {
+        _logger.LogWarning(ex, "PullMessages failed for camera {CameraId}; recreating pullpoint", _cameraId);
+        if (!await TryRecreateAsync(ct))
+          await Task.Delay(TimeSpan.FromSeconds(5), ct);
+        renewAt = ComputeRenewAt(_terminationTime);
+        continue;
       }
       catch (Exception) when (!ct.IsCancellationRequested)
       {
@@ -80,6 +108,30 @@ public sealed class OnvifEventSubscription : IEventSubscription
         };
       }
     }
+  }
+
+  private async Task<bool> TryRecreateAsync(CancellationToken ct)
+  {
+    try
+    {
+      var info = await _events.CreatePullPointAsync(_eventsUri, _credentials, ct);
+      _pullPointUri = info.SubscriptionUri;
+      _terminationTime = info.TerminationTime;
+      return true;
+    }
+    catch (Exception ex) when (!ct.IsCancellationRequested)
+    {
+      _logger.LogWarning(ex, "Recreate pullpoint failed for camera {CameraId}", _cameraId);
+      return false;
+    }
+  }
+
+  private static DateTimeOffset ComputeRenewAt(DateTimeOffset terminationTime)
+  {
+    var window = terminationTime - DateTimeOffset.UtcNow;
+    if (window <= TimeSpan.FromMinutes(2))
+      return DateTimeOffset.UtcNow.Add(TimeSpan.FromTicks(window.Ticks / 2));
+    return terminationTime - TimeSpan.FromMinutes(2);
   }
 
   public async ValueTask DisposeAsync()

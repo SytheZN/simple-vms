@@ -3,7 +3,7 @@ using Client.Core.Decoding;
 using Client.Core.Streaming;
 using Client.Core.Tunnel;
 using Microsoft.Extensions.Logging;
-using Shared.Models.Dto;
+using Shared.Api;
 
 namespace Client.Core.ViewModels;
 
@@ -18,7 +18,7 @@ public sealed class CameraViewModel : ViewModelBase, IAsyncDisposable
   private readonly DecodePipelineFactory _decodeFactory;
   private readonly Decoding.Diagnostics.DiagnosticsSettings _diagnosticsSettings;
 
-  private CameraListItem? _camera;
+  private CameraDto? _camera;
   private IVideoFeed? _motionFeed;
   private Player? _player;
   private string _selectedProfile = "main";
@@ -27,7 +27,7 @@ public sealed class CameraViewModel : ViewModelBase, IAsyncDisposable
   private bool _isBuffering;
   private bool _isPaused;
 
-  public CameraListItem? Camera
+  public CameraDto? Camera
   {
     get => _camera;
     set => SetProperty(ref _camera, value);

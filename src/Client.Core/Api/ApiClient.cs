@@ -4,7 +4,7 @@ using Client.Core.Tunnel;
 using MessagePack;
 using Microsoft.Extensions.Logging;
 using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
 using Shared.Protocol;
 
 namespace Client.Core.Api;
@@ -22,25 +22,25 @@ public sealed class ApiClient : IApiClient
     _logger = logger;
   }
 
-  public Task<OneOf<IReadOnlyList<CameraListItem>, Error>> GetCamerasAsync(
+  public Task<OneOf<IReadOnlyList<CameraDto>, Error>> GetCamerasAsync(
     string? status, CancellationToken ct)
   {
     var path = status != null ? $"/api/v1/cameras?status={Uri.EscapeDataString(status)}" : "/api/v1/cameras";
-    return ExecuteAsync("GET", path, null, Json.IReadOnlyListCameraListItem, ct);
+    return ExecuteAsync("GET", path, null, Json.IReadOnlyListCameraDto, ct);
   }
 
-  public Task<OneOf<CameraListItem, Error>> GetCameraAsync(Guid id, CancellationToken ct) =>
-    ExecuteAsync("GET", $"/api/v1/cameras/{id}", null, Json.CameraListItem, ct);
+  public Task<OneOf<CameraDto, Error>> GetCameraAsync(Guid id, CancellationToken ct) =>
+    ExecuteAsync("GET", $"/api/v1/cameras/{id}", null, Json.CameraDto, ct);
 
-  public Task<OneOf<CameraListItem, Error>> CreateCameraAsync(
+  public Task<OneOf<CameraDto, Error>> CreateCameraAsync(
     CreateCameraRequest request, CancellationToken ct) =>
     ExecuteAsync("POST", "/api/v1/cameras",
-      Serialize(request, Json.CreateCameraRequest), Json.CameraListItem, ct);
+      Serialize(request, Json.CreateCameraRequest), Json.CameraDto, ct);
 
-  public Task<OneOf<CameraListItem, Error>> UpdateCameraAsync(
+  public Task<OneOf<CameraDto, Error>> UpdateCameraAsync(
     Guid id, UpdateCameraRequest request, CancellationToken ct) =>
     ExecuteAsync("PUT", $"/api/v1/cameras/{id}",
-      Serialize(request, Json.UpdateCameraRequest), Json.CameraListItem, ct);
+      Serialize(request, Json.UpdateCameraRequest), Json.CameraDto, ct);
 
   public Task<OneOf<Success, Error>> DeleteCameraAsync(Guid id, CancellationToken ct) =>
     ExecuteVoidAsync("DELETE", $"/api/v1/cameras/{id}", null, ct);
@@ -50,22 +50,22 @@ public sealed class ApiClient : IApiClient
     ExecuteAsync("POST", "/api/v1/cameras/probe",
       Serialize(request, Json.ProbeRequest), Json.ProbeResponse, ct);
 
-  public Task<OneOf<CameraListItem, Error>> RefreshCameraAsync(Guid id, CancellationToken ct) =>
-    ExecuteAsync("POST", $"/api/v1/cameras/{id}/refresh", null, Json.CameraListItem, ct);
+  public Task<OneOf<CameraDto, Error>> RefreshCameraAsync(Guid id, CancellationToken ct) =>
+    ExecuteAsync("POST", $"/api/v1/cameras/{id}/refresh", null, Json.CameraDto, ct);
 
   public Task<OneOf<Success, Error>> RestartCameraAsync(Guid id, CancellationToken ct) =>
     ExecuteVoidAsync("POST", $"/api/v1/cameras/{id}/restart", null, ct);
 
-  public Task<OneOf<IReadOnlyList<ClientListItem>, Error>> GetClientsAsync(CancellationToken ct) =>
-    ExecuteAsync("GET", "/api/v1/clients", null, Json.IReadOnlyListClientListItem, ct);
+  public Task<OneOf<IReadOnlyList<ClientDto>, Error>> GetClientsAsync(CancellationToken ct) =>
+    ExecuteAsync("GET", "/api/v1/clients", null, Json.IReadOnlyListClientDto, ct);
 
-  public Task<OneOf<ClientListItem, Error>> GetClientAsync(Guid id, CancellationToken ct) =>
-    ExecuteAsync("GET", $"/api/v1/clients/{id}", null, Json.ClientListItem, ct);
+  public Task<OneOf<ClientDto, Error>> GetClientAsync(Guid id, CancellationToken ct) =>
+    ExecuteAsync("GET", $"/api/v1/clients/{id}", null, Json.ClientDto, ct);
 
-  public Task<OneOf<ClientListItem, Error>> UpdateClientAsync(
+  public Task<OneOf<ClientDto, Error>> UpdateClientAsync(
     Guid id, UpdateClientRequest request, CancellationToken ct) =>
     ExecuteAsync("PUT", $"/api/v1/clients/{id}",
-      Serialize(request, Json.UpdateClientRequest), Json.ClientListItem, ct);
+      Serialize(request, Json.UpdateClientRequest), Json.ClientDto, ct);
 
   public Task<OneOf<Success, Error>> DeleteClientAsync(Guid id, CancellationToken ct) =>
     ExecuteVoidAsync("DELETE", $"/api/v1/clients/{id}", null, ct);
@@ -134,15 +134,15 @@ public sealed class ApiClient : IApiClient
   public Task<OneOf<Success, Error>> GenerateCertsAsync(CancellationToken ct) =>
     ExecuteVoidAsync("POST", "/api/v1/system/certs", null, ct);
 
-  public Task<OneOf<IReadOnlyList<PluginListItem>, Error>> GetPluginsAsync(
+  public Task<OneOf<IReadOnlyList<PluginDto>, Error>> GetPluginsAsync(
     string? type, CancellationToken ct)
   {
     var path = type != null ? $"/api/v1/plugins?type={Uri.EscapeDataString(type)}" : "/api/v1/plugins";
-    return ExecuteAsync("GET", path, null, Json.IReadOnlyListPluginListItem, ct);
+    return ExecuteAsync("GET", path, null, Json.IReadOnlyListPluginDto, ct);
   }
 
-  public Task<OneOf<PluginListItem, Error>> GetPluginAsync(string id, CancellationToken ct) =>
-    ExecuteAsync("GET", $"/api/v1/plugins/{Uri.EscapeDataString(id)}", null, Json.PluginListItem, ct);
+  public Task<OneOf<PluginDto, Error>> GetPluginAsync(string id, CancellationToken ct) =>
+    ExecuteAsync("GET", $"/api/v1/plugins/{Uri.EscapeDataString(id)}", null, Json.PluginDto, ct);
 
   public Task<OneOf<IReadOnlyList<SettingGroup>, Error>> GetPluginConfigSchemaAsync(
     string id, CancellationToken ct) =>

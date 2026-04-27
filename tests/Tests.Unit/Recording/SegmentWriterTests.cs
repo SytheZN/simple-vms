@@ -1,7 +1,6 @@
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging.Abstractions;
 using Server.Recording;
-using Shared.Models;
 using Shared.Models.Events;
 using Shared.Models.Formats;
 
@@ -267,7 +266,7 @@ public class SegmentWriterTests
 
   private static SegmentWriter CreateWriter(
     FakeStorage storage, FakeDataProvider data, FakeEventBus bus, int segmentDuration) =>
-    new(CameraId, Profile, Codec, StreamId, segmentDuration,
+    new(CameraId, Profile, Profile, Codec, StreamId, segmentDuration,
       storage, data, bus, NullLogger.Instance);
 
   private static Fmp4Fragment MakeFragment(ulong ts, bool sync) => new()
@@ -287,6 +286,7 @@ public class SegmentWriterTests
     {
       DataFormat = "fmp4",
       MimeType = "video/mp4; codecs=\"avc1.640029\"",
+      FileExtension = "mp4",
       Resolution = "1920x1080",
       Fps = 30
     };

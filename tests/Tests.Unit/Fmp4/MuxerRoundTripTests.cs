@@ -1,8 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
-using System.Threading.Channels;
 using Format.Fmp4;
-using Shared.Models;
 using Shared.Models.Formats;
 
 namespace Tests.Unit.Fmp4;
@@ -37,7 +35,7 @@ public class MuxerRoundTripTests
     var nals = CreateH264NalSequence(2);
     var input = new TestDataStream<H264NalUnit>(nals);
 
-    var muxer = new Fmp4Muxer(MuxerCodec.H264, input);
+    var muxer = new Fmp4Muxer(MuxerCodec.H264, input, "mp4");
 
     var fragments = new List<Fmp4Fragment>();
     await foreach (var fragment in muxer.MuxAsync(CancellationToken.None))
@@ -65,7 +63,7 @@ public class MuxerRoundTripTests
     var nals = CreateH264NalSequence(1);
     var input = new TestDataStream<H264NalUnit>(nals);
 
-    var muxer = new Fmp4Muxer(MuxerCodec.H264, input);
+    var muxer = new Fmp4Muxer(MuxerCodec.H264, input, "mp4");
 
     var fragments = new List<Fmp4Fragment>();
     await foreach (var fragment in muxer.MuxAsync(CancellationToken.None))
@@ -97,7 +95,7 @@ public class MuxerRoundTripTests
     var input = new TestDataStream<H264NalUnit>(nals);
 
     var keyframes = new List<KeyframeOffset>();
-    var muxer = new Fmp4Muxer(MuxerCodec.H264, input, onKeyframe: kf => keyframes.Add(kf));
+    var muxer = new Fmp4Muxer(MuxerCodec.H264, input, "mp4", onKeyframe: kf => keyframes.Add(kf));
 
     var allData = new MemoryStream();
     await foreach (var fragment in muxer.MuxAsync(CancellationToken.None))
@@ -130,7 +128,7 @@ public class MuxerRoundTripTests
     var input = new TestDataStream<H264NalUnit>(nals);
 
     var keyframes = new List<KeyframeOffset>();
-    var muxer = new Fmp4Muxer(MuxerCodec.H264, input, onKeyframe: kf => keyframes.Add(kf));
+    var muxer = new Fmp4Muxer(MuxerCodec.H264, input, "mp4", onKeyframe: kf => keyframes.Add(kf));
 
     var allData = new MemoryStream();
     await foreach (var fragment in muxer.MuxAsync(CancellationToken.None))
@@ -166,7 +164,7 @@ public class MuxerRoundTripTests
     var nals = CreateH264NalSequence(2);
     var input = new TestDataStream<H264NalUnit>(nals);
 
-    var muxer = new Fmp4Muxer(MuxerCodec.H264, input);
+    var muxer = new Fmp4Muxer(MuxerCodec.H264, input, "mp4");
 
     var allData = new MemoryStream();
     await foreach (var fragment in muxer.MuxAsync(CancellationToken.None))
@@ -212,6 +210,7 @@ public class MuxerRoundTripTests
   {
     Data = Prepend(TestSps),
     Timestamp = ts,
+    MediaTimestamp = ts,
     IsSyncPoint = false,
     NalType = H264NalType.Sps
   };
@@ -220,6 +219,7 @@ public class MuxerRoundTripTests
   {
     Data = Prepend(TestPps),
     Timestamp = ts,
+    MediaTimestamp = ts,
     IsSyncPoint = false,
     NalType = H264NalType.Pps
   };
@@ -228,6 +228,7 @@ public class MuxerRoundTripTests
   {
     Data = Prepend([0x65, 0x88, 0x04, 0x00, 0xFF, 0xAA, 0xBB, 0xCC]),
     Timestamp = ts,
+    MediaTimestamp = ts,
     IsSyncPoint = true,
     NalType = H264NalType.Idr
   };
@@ -236,6 +237,7 @@ public class MuxerRoundTripTests
   {
     Data = Prepend([0x41, 0x9A, 0x24, 0x6C, 0x41, 0xFF]),
     Timestamp = ts,
+    MediaTimestamp = ts,
     IsSyncPoint = false,
     NalType = H264NalType.Slice
   };

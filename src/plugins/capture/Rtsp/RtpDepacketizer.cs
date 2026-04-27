@@ -5,17 +5,18 @@ namespace Capture.Rtsp;
 
 public interface IRtpDepacketizer
 {
-  IDataUnit? ProcessPacket(ReadOnlySpan<byte> rtpPayload, ulong timestamp);
+  IDataUnit? ProcessPacket(ReadOnlySpan<byte> rtpPayload, ulong mediaTimestamp, ulong wallClockTimestamp);
 }
 
 public sealed class RtpH264Depacketizer : IRtpDepacketizer
 {
   private MemoryStream? _fuBuffer;
-  private ulong _fuTimestamp;
+  private ulong _fuMediaTimestamp;
+  private ulong _fuWallClockTimestamp;
   private byte _fuNri;
   private byte _fuType;
 
-  public IDataUnit? ProcessPacket(ReadOnlySpan<byte> rtpPayload, ulong timestamp)
+  public IDataUnit? ProcessPacket(ReadOnlySpan<byte> rtpPayload, ulong mediaTimestamp, ulong wallClockTimestamp)
   {
     if (rtpPayload.Length < 1)
       return null;
@@ -25,14 +26,14 @@ public sealed class RtpH264Depacketizer : IRtpDepacketizer
 
     return nalType switch
     {
-      >= 1 and <= 23 => ProcessSingleNal(rtpPayload, timestamp),
-      24 => ProcessStapA(rtpPayload, timestamp),
-      28 => ProcessFuA(rtpPayload, timestamp),
+      >= 1 and <= 23 => ProcessSingleNal(rtpPayload, mediaTimestamp, wallClockTimestamp),
+      24 => ProcessStapA(rtpPayload, mediaTimestamp, wallClockTimestamp),
+      28 => ProcessFuA(rtpPayload, mediaTimestamp, wallClockTimestamp),
       _ => null
     };
   }
 
-  public IReadOnlyList<IDataUnit> ProcessStapAAll(ReadOnlySpan<byte> rtpPayload, ulong timestamp)
+  public IReadOnlyList<IDataUnit> ProcessStapAAll(ReadOnlySpan<byte> rtpPayload, ulong mediaTimestamp, ulong wallClockTimestamp)
   {
     if (rtpPayload.Length < 2)
       return [];
@@ -49,26 +50,26 @@ public sealed class RtpH264Depacketizer : IRtpDepacketizer
         break;
 
       var nalData = rtpPayload.Slice(offset, nalSize).ToArray();
-      results.Add(CreateH264NalUnit(nalData, timestamp));
+      results.Add(CreateH264NalUnit(nalData, mediaTimestamp, wallClockTimestamp));
       offset += nalSize;
     }
 
     return results;
   }
 
-  private IDataUnit? ProcessSingleNal(ReadOnlySpan<byte> rtpPayload, ulong timestamp)
+  private IDataUnit? ProcessSingleNal(ReadOnlySpan<byte> rtpPayload, ulong mediaTimestamp, ulong wallClockTimestamp)
   {
     var nalData = rtpPayload.ToArray();
-    return CreateH264NalUnit(nalData, timestamp);
+    return CreateH264NalUnit(nalData, mediaTimestamp, wallClockTimestamp);
   }
 
-  private IDataUnit? ProcessStapA(ReadOnlySpan<byte> rtpPayload, ulong timestamp)
+  private IDataUnit? ProcessStapA(ReadOnlySpan<byte> rtpPayload, ulong mediaTimestamp, ulong wallClockTimestamp)
   {
-    var all = ProcessStapAAll(rtpPayload, timestamp);
+    var all = ProcessStapAAll(rtpPayload, mediaTimestamp, wallClockTimestamp);
     return all.Count > 0 ? all[0] : null;
   }
 
-  private IDataUnit? ProcessFuA(ReadOnlySpan<byte> rtpPayload, ulong timestamp)
+  private IDataUnit? ProcessFuA(ReadOnlySpan<byte> rtpPayload, ulong mediaTimestamp, ulong wallClockTimestamp)
   {
     if (rtpPayload.Length < 2)
       return null;
@@ -86,7 +87,8 @@ public sealed class RtpH264Depacketizer : IRtpDepacketizer
         _fuBuffer = new MemoryStream();
       else
         _fuBuffer.SetLength(0);
-      _fuTimestamp = timestamp;
+      _fuMediaTimestamp = mediaTimestamp;
+      _fuWallClockTimestamp = wallClockTimestamp;
       _fuNri = (byte)nri;
       _fuType = (byte)nalType;
       _fuBuffer.Write(rtpPayload[2..]);
@@ -110,19 +112,20 @@ public sealed class RtpH264Depacketizer : IRtpDepacketizer
       nalData[0] = reconstructedHeader;
       fuBuf.AsSpan(0, fuLen).CopyTo(nalData.AsSpan(1));
 
-      return CreateH264NalUnit(nalData, _fuTimestamp);
+      return CreateH264NalUnit(nalData, _fuMediaTimestamp, _fuWallClockTimestamp);
     }
 
     return null;
   }
 
-  internal static H264NalUnit CreateH264NalUnit(byte[] nalData, ulong timestamp)
+  internal static H264NalUnit CreateH264NalUnit(byte[] nalData, ulong mediaTimestamp, ulong wallClockTimestamp)
   {
     var nalType = ClassifyH264(nalData[0]);
     return new H264NalUnit
     {
       Data = nalData,
-      Timestamp = timestamp,
+      Timestamp = wallClockTimestamp,
+      MediaTimestamp = mediaTimestamp,
       IsSyncPoint = nalType == H264NalType.Idr,
       NalType = nalType
     };
@@ -146,11 +149,12 @@ public sealed class RtpH264Depacketizer : IRtpDepacketizer
 public sealed class RtpH265Depacketizer : IRtpDepacketizer
 {
   private MemoryStream? _fuBuffer;
-  private ulong _fuTimestamp;
+  private ulong _fuMediaTimestamp;
+  private ulong _fuWallClockTimestamp;
   private byte _fuType;
   private byte _fuLayerTid;
 
-  public IDataUnit? ProcessPacket(ReadOnlySpan<byte> rtpPayload, ulong timestamp)
+  public IDataUnit? ProcessPacket(ReadOnlySpan<byte> rtpPayload, ulong mediaTimestamp, ulong wallClockTimestamp)
   {
     if (rtpPayload.Length < 2)
       return null;
@@ -159,14 +163,14 @@ public sealed class RtpH265Depacketizer : IRtpDepacketizer
 
     return nalType switch
     {
-      >= 0 and <= 47 => ProcessSingleNal(rtpPayload, timestamp),
-      48 => ProcessAp(rtpPayload, timestamp),
-      49 => ProcessFu(rtpPayload, timestamp),
+      >= 0 and <= 47 => ProcessSingleNal(rtpPayload, mediaTimestamp, wallClockTimestamp),
+      48 => ProcessAp(rtpPayload, mediaTimestamp, wallClockTimestamp),
+      49 => ProcessFu(rtpPayload, mediaTimestamp, wallClockTimestamp),
       _ => null
     };
   }
 
-  public IReadOnlyList<IDataUnit> ProcessApAll(ReadOnlySpan<byte> rtpPayload, ulong timestamp)
+  public IReadOnlyList<IDataUnit> ProcessApAll(ReadOnlySpan<byte> rtpPayload, ulong mediaTimestamp, ulong wallClockTimestamp)
   {
     if (rtpPayload.Length < 4)
       return [];
@@ -183,26 +187,26 @@ public sealed class RtpH265Depacketizer : IRtpDepacketizer
         break;
 
       var nalData = rtpPayload.Slice(offset, nalSize).ToArray();
-      results.Add(CreateH265NalUnit(nalData, timestamp));
+      results.Add(CreateH265NalUnit(nalData, mediaTimestamp, wallClockTimestamp));
       offset += nalSize;
     }
 
     return results;
   }
 
-  private IDataUnit? ProcessSingleNal(ReadOnlySpan<byte> rtpPayload, ulong timestamp)
+  private IDataUnit? ProcessSingleNal(ReadOnlySpan<byte> rtpPayload, ulong mediaTimestamp, ulong wallClockTimestamp)
   {
     var nalData = rtpPayload.ToArray();
-    return CreateH265NalUnit(nalData, timestamp);
+    return CreateH265NalUnit(nalData, mediaTimestamp, wallClockTimestamp);
   }
 
-  private IDataUnit? ProcessAp(ReadOnlySpan<byte> rtpPayload, ulong timestamp)
+  private IDataUnit? ProcessAp(ReadOnlySpan<byte> rtpPayload, ulong mediaTimestamp, ulong wallClockTimestamp)
   {
-    var all = ProcessApAll(rtpPayload, timestamp);
+    var all = ProcessApAll(rtpPayload, mediaTimestamp, wallClockTimestamp);
     return all.Count > 0 ? all[0] : null;
   }
 
-  private IDataUnit? ProcessFu(ReadOnlySpan<byte> rtpPayload, ulong timestamp)
+  private IDataUnit? ProcessFu(ReadOnlySpan<byte> rtpPayload, ulong mediaTimestamp, ulong wallClockTimestamp)
   {
     if (rtpPayload.Length < 3)
       return null;
@@ -220,7 +224,8 @@ public sealed class RtpH265Depacketizer : IRtpDepacketizer
         _fuBuffer = new MemoryStream();
       else
         _fuBuffer.SetLength(0);
-      _fuTimestamp = timestamp;
+      _fuMediaTimestamp = mediaTimestamp;
+      _fuWallClockTimestamp = wallClockTimestamp;
       _fuType = (byte)nalType;
       _fuLayerTid = payloadHeader1;
       _fuBuffer.Write(rtpPayload[3..]);
@@ -245,19 +250,20 @@ public sealed class RtpH265Depacketizer : IRtpDepacketizer
       nalData[1] = _fuLayerTid;
       fuBuf.AsSpan(0, fuLen).CopyTo(nalData.AsSpan(2));
 
-      return CreateH265NalUnit(nalData, _fuTimestamp);
+      return CreateH265NalUnit(nalData, _fuMediaTimestamp, _fuWallClockTimestamp);
     }
 
     return null;
   }
 
-  internal static H265NalUnit CreateH265NalUnit(byte[] nalData, ulong timestamp)
+  internal static H265NalUnit CreateH265NalUnit(byte[] nalData, ulong mediaTimestamp, ulong wallClockTimestamp)
   {
     var nalType = ClassifyH265(nalData[0]);
     return new H265NalUnit
     {
       Data = nalData,
-      Timestamp = timestamp,
+      Timestamp = wallClockTimestamp,
+      MediaTimestamp = mediaTimestamp,
       IsSyncPoint = nalType is H265NalType.IdrWRadl or H265NalType.IdrNLp,
       NalType = nalType
     };

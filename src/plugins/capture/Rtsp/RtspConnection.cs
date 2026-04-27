@@ -113,19 +113,20 @@ public sealed class RtspConnection : IStreamConnection
             continue;
 
           var rtpPayload = ExtractRtpPayload(payload);
-          var timestamp = ExtractRtpTimestamp(payload);
+          var mediaTimestamp = ExtractRtpTimestamp(payload);
+          var wallClockTimestamp = DateTimeOffset.UtcNow.ToUnixMicroseconds();
 
           if (_depacketizer is RtpH264Depacketizer h264 && stream is DataStream<H264NalUnit> h264Stream)
           {
             var nalType = rtpPayload.Span[0] & 0x1F;
             if (nalType == 24) // STAP-A
             {
-              foreach (var unit in h264.ProcessStapAAll(rtpPayload.Span, timestamp))
+              foreach (var unit in h264.ProcessStapAAll(rtpPayload.Span, mediaTimestamp, wallClockTimestamp))
                 await h264Stream.Writer.WriteAsync((H264NalUnit)unit, _cts.Token);
             }
             else
             {
-              var unit = h264.ProcessPacket(rtpPayload.Span, timestamp);
+              var unit = h264.ProcessPacket(rtpPayload.Span, mediaTimestamp, wallClockTimestamp);
               if (unit is H264NalUnit h264Unit)
                 await h264Stream.Writer.WriteAsync(h264Unit, _cts.Token);
             }
@@ -135,12 +136,12 @@ public sealed class RtspConnection : IStreamConnection
             var nalType = (rtpPayload.Span[0] >> 1) & 0x3F;
             if (nalType == 48) // AP
             {
-              foreach (var unit in h265.ProcessApAll(rtpPayload.Span, timestamp))
+              foreach (var unit in h265.ProcessApAll(rtpPayload.Span, mediaTimestamp, wallClockTimestamp))
                 await h265Stream.Writer.WriteAsync((H265NalUnit)unit, _cts.Token);
             }
             else
             {
-              var unit = h265.ProcessPacket(rtpPayload.Span, timestamp);
+              var unit = h265.ProcessPacket(rtpPayload.Span, mediaTimestamp, wallClockTimestamp);
               if (unit is H265NalUnit h265Unit)
                 await h265Stream.Writer.WriteAsync(h265Unit, _cts.Token);
             }

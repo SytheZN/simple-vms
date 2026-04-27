@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Server.Streaming;
-using Shared.Models;
 using Shared.Protocol;
+using Tests.Unit.Mocks;
 
 namespace Tests.Unit.Streaming;
 
@@ -230,9 +230,11 @@ public class StreamSessionRunnerFetchTests
   public async Task RunFetch_NoStorage_SendsError()
   {
     var sink = new TestStreamSink();
-    var plugins = new SessionTestPluginHost(
-      dataProvider: new StubDataProvider(),
-      storageProviders: []);
+    var plugins = new FakePluginHost
+    {
+      DataProvider = new StubDataProvider(),
+      StorageProviders = []
+    };
 
     await StreamSessionRunner.RunFetchAsync(
       Guid.NewGuid(), "main", 1000, 2000, sink, new StreamTapRegistry(), plugins,
@@ -258,10 +260,13 @@ public class StreamSessionRunnerFetchTests
   public async Task RunFetch_StreamLookupFails_SendsError()
   {
     var sink = new TestStreamSink();
-    var plugins = new SessionTestPluginHost(
-      dataProvider: new StubDataProvider(
+    var plugins = new FakePluginHost
+    {
+      DataProvider = new StubDataProvider(
         streams: new StubStreamRepository(
-          error: Error.Create(0, 0, Result.InternalError, "db error"))));
+          error: Error.Create(0, 0, Result.InternalError, "db error"))),
+      StorageProviders = [new StubStorageProvider()]
+    };
 
     await StreamSessionRunner.RunFetchAsync(
       Guid.NewGuid(), "main", 1000, 2000, sink, new StreamTapRegistry(), plugins,
@@ -288,15 +293,18 @@ public class StreamSessionRunnerFetchTests
   {
     var sink = new TestStreamSink();
     var cameraId = Guid.NewGuid();
-    var plugins = new SessionTestPluginHost(
-      dataProvider: new StubDataProvider(
+    var plugins = new FakePluginHost
+    {
+      DataProvider = new StubDataProvider(
         streams: new StubStreamRepository(streams: [
           new CameraStream
           {
             Id = Guid.NewGuid(), CameraId = cameraId, Profile = "main",
             FormatId = "fmp4", Uri = "rtsp://test"
           }
-        ])));
+        ])),
+      StorageProviders = [new StubStorageProvider()]
+    };
 
     await StreamSessionRunner.RunFetchAsync(
       cameraId, "nonexistent", 1000, 2000, sink, new StreamTapRegistry(), plugins,
@@ -324,8 +332,9 @@ public class StreamSessionRunnerFetchTests
     var sink = new TestStreamSink();
     var cameraId = Guid.NewGuid();
     var streamId = Guid.NewGuid();
-    var plugins = new SessionTestPluginHost(
-      dataProvider: new StubDataProvider(
+    var plugins = new FakePluginHost
+    {
+      DataProvider = new StubDataProvider(
         streams: new StubStreamRepository(streams: [
           new CameraStream
           {
@@ -334,7 +343,9 @@ public class StreamSessionRunnerFetchTests
           }
         ]),
         segments: new StubSegmentRepository(
-          playbackError: Error.Create(0, 0, Result.NotFound, "not found"))));
+          playbackError: Error.Create(0, 0, Result.NotFound, "not found"))),
+      StorageProviders = [new StubStorageProvider()]
+    };
 
     await StreamSessionRunner.RunFetchAsync(
       cameraId, "main", 1000, 2000, sink, new StreamTapRegistry(), plugins,
@@ -363,8 +374,9 @@ public class StreamSessionRunnerFetchTests
     var cameraId = Guid.NewGuid();
     var streamId = Guid.NewGuid();
     var segmentId = Guid.NewGuid();
-    var plugins = new SessionTestPluginHost(
-      dataProvider: new StubDataProvider(
+    var plugins = new FakePluginHost
+    {
+      DataProvider = new StubDataProvider(
         streams: new StubStreamRepository(streams: [
           new CameraStream
           {
@@ -384,7 +396,9 @@ public class StreamSessionRunnerFetchTests
             StartTime = 1000, EndTime = 2000,
             SegmentRef = "test.mp4", SizeBytes = 1024, KeyframeCount = 1
           })),
-      streamFormats: []);
+      StorageProviders = [new StubStorageProvider()],
+      StreamFormats = []
+    };
 
     await StreamSessionRunner.RunFetchAsync(
       cameraId, "main", 1000, 2000, sink, new StreamTapRegistry(), plugins,

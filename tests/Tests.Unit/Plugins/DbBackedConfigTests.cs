@@ -1,5 +1,4 @@
 using Server.Plugins;
-using Shared.Models;
 
 namespace Tests.Unit.Plugins;
 

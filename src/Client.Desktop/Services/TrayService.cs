@@ -69,9 +69,9 @@ public sealed class TrayService : IDisposable
 
   private static string GetTooltip(ConnectionState state) => state switch
   {
-    ConnectionState.Connected => "VMS - Connected",
-    ConnectionState.Connecting => "VMS - Connecting...",
-    _ => "VMS - Disconnected"
+    ConnectionState.Connected => "sVMS - Connected",
+    ConnectionState.Connecting => "sVMS - Connecting...",
+    _ => "sVMS - Disconnected"
   };
 
   public void Dispose()

@@ -1,4 +1,3 @@
-using System.Net.Http;
 using System.Threading.Channels;
 using MessagePack;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -8,9 +7,9 @@ using Server.Core.Services;
 using Server.Core.PortForwarding;
 using Server.Plugins;
 using Server.Tunnel.Handlers;
-using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
 using Shared.Protocol;
+using Tests.Unit.Mocks;
 using Tests.Unit.Streaming;
 
 namespace Tests.Unit.Tunnel;
@@ -30,7 +29,7 @@ public class ApiHandlerTests
     _services = new FakeServiceProvider();
     var health = new SystemHealth();
     health.TransitionToHealthy();
-    var pluginHost = new SessionTestPluginHost(new StubDataProviderWithConfig());
+    var pluginHost = new FakePluginHost { DataProvider = new StubDataProviderWithConfig() };
     var endpoints = new ServerEndpoints { TunnelPort = 4433 };
     _services.Register(new SystemService(
       pluginHost, health, endpoints, new NoopPortForwardingApplier(), new StubHttpClientFactory(),
@@ -41,7 +40,7 @@ public class ApiHandlerTests
   {
     public Task<OneOf<Success, Error>> ApplyAsync(CancellationToken ct) =>
       Task.FromResult<OneOf<Success, Error>>(new Success());
-    public PortForwardingStatus GetStatus() => new() { Active = false };
+    public PortForwardingStatusDto GetStatus() => new() { Active = false };
   }
 
   private sealed class StubHttpClientFactory : IHttpClientFactory
@@ -155,7 +154,8 @@ public class ApiHandlerTests
   [Test]
   public async Task HandleApi_WithQueryString_ParsedAndDispatched()
   {
-    _services.Register(new PluginService(new SessionTestPluginHost()));
+    _services.Register(new PluginService(new FakePluginHost(),
+      new DataProviderConfigJsonStore(Path.GetTempPath())));
 
     var response = await DispatchAsync("GET", "/api/v1/plugins?type=storage");
 

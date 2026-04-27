@@ -21,11 +21,12 @@ public interface IPluginHost
   void SetCameraRegistry(ICameraRegistry cameraRegistry);
   void SetRecordingAccess(IRecordingAccess recordingAccess);
   [RequiresUnreferencedCode("Plugin discovery loads assemblies dynamically")]
-  void Discover(string pluginsPath);
+  void DiscoverPlugins();
+  Task TeardownPlugins(CancellationToken ct);
   [RequiresUnreferencedCode("Plugin initialization uses dynamic type instantiation")]
-  void Initialize(bool dataOnly = false);
-  [RequiresUnreferencedCode("Plugin types are instantiated dynamically")]
-  void ResetErrored();
-  Task StartAsync(CancellationToken ct);
-  Task StopAsync();
+  void InitializeDataPlugins();
+  [RequiresUnreferencedCode("Plugin initialization uses dynamic type instantiation")]
+  void InitializeOtherPlugins();
+  Task StartConfiguredDataPlugin(CancellationToken ct);
+  Task StartOtherPlugins(CancellationToken ct);
 }

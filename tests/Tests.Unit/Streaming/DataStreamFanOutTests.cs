@@ -1,5 +1,4 @@
 using Server.Streaming;
-using Shared.Models;
 using Shared.Models.Formats;
 
 namespace Tests.Unit.Streaming;
@@ -13,6 +12,7 @@ public class DataStreamFanOutTests
   {
     Data = new byte[] { 0x00, 0x00, 0x00, 0x01, 0x65 },
     Timestamp = ts,
+    MediaTimestamp = ts,
     IsSyncPoint = false,
     NalType = H264NalType.Slice
   };

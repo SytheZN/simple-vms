@@ -2,7 +2,6 @@ using System.Net;
 using System.Xml.Linq;
 using Cameras.Onvif.Services;
 using Cameras.Onvif.Soap;
-using Shared.Models;
 
 namespace Tests.Unit.Onvif;
 

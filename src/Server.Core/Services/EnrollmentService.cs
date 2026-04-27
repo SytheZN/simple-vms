@@ -1,9 +1,9 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
-using Server.Core;
 using Server.Plugins;
 using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
+using Shared.Models.Entities;
 
 namespace Server.Core.Services;
 

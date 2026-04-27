@@ -1,7 +1,8 @@
 using Microsoft.Extensions.Logging;
 using Server.Plugins;
 using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
+using Shared.Models.Entities;
 using Shared.Models.Events;
 
 namespace Server.Core.Services;
@@ -21,14 +22,14 @@ public sealed class CameraService
     _logger = logger;
   }
 
-  public async Task<OneOf<IReadOnlyList<CameraListItem>, Error>> GetAllAsync(
+  public async Task<OneOf<IReadOnlyList<CameraDto>, Error>> GetAllAsync(
     string? statusFilter, CancellationToken ct)
   {
     var result = await _plugins.DataProvider.Cameras.GetAllAsync(ct);
-    return await result.Match<Task<OneOf<IReadOnlyList<CameraListItem>, Error>>>(
+    return await result.Match<Task<OneOf<IReadOnlyList<CameraDto>, Error>>>(
       async cameras =>
       {
-        var items = new List<CameraListItem>();
+        var items = new List<CameraDto>();
         foreach (var cam in cameras)
         {
           var cameraStatus = _status.GetStatus(cam.Id);
@@ -37,30 +38,38 @@ public sealed class CameraService
 
           var streams = await _plugins.DataProvider.Streams.GetByCameraIdAsync(cam.Id, ct);
           var streamDtos = streams.Match(
-            s => s.Select(ToStreamDto).ToList(),
+            s =>
+            {
+              var byId = s.ToDictionary(x => x.Id);
+              return s.Select(x => ToStreamDto(x, id => byId.TryGetValue(id, out var v) ? v : null)).ToList();
+            },
             _ => new List<StreamProfileDto>());
 
           items.Add(ToCameraListItem(cam, cameraStatus, streamDtos));
         }
-        return (OneOf<IReadOnlyList<CameraListItem>, Error>)items;
+        return (OneOf<IReadOnlyList<CameraDto>, Error>)items;
       },
-      error => Task.FromResult<OneOf<IReadOnlyList<CameraListItem>, Error>>(error));
+      error => Task.FromResult<OneOf<IReadOnlyList<CameraDto>, Error>>(error));
   }
 
-  public async Task<OneOf<CameraListItem, Error>> GetByIdAsync(
+  public async Task<OneOf<CameraDto, Error>> GetByIdAsync(
     Guid id, CancellationToken ct)
   {
     var result = await _plugins.DataProvider.Cameras.GetByIdAsync(id, ct);
-    return await result.Match<Task<OneOf<CameraListItem, Error>>>(
+    return await result.Match<Task<OneOf<CameraDto, Error>>>(
       async cam =>
       {
         var streams = await _plugins.DataProvider.Streams.GetByCameraIdAsync(cam.Id, ct);
         var streamDtos = streams.Match(
-          s => s.Select(ToStreamDto).ToList(),
+          s =>
+          {
+            var byId = s.ToDictionary(x => x.Id);
+            return s.Select(x => ToStreamDto(x, id => byId.TryGetValue(id, out var v) ? v : null)).ToList();
+          },
           _ => new List<StreamProfileDto>());
         return ToCameraListItem(cam, _status.GetStatus(cam.Id), streamDtos);
       },
-      error => Task.FromResult<OneOf<CameraListItem, Error>>(error));
+      error => Task.FromResult<OneOf<CameraDto, Error>>(error));
   }
 
   public async Task<OneOf<ProbeResponse, Error>> ProbeAsync(
@@ -103,14 +112,15 @@ public sealed class CameraService
         Kind = s.Kind,
         Codec = s.Codec ?? "",
         Resolution = s.Resolution ?? "",
-        Fps = s.Fps ?? 0
+        Fps = s.Fps ?? 0,
+        RecordingEnabled = false
       }).ToList(),
       Capabilities = config.Capabilities,
       Config = config.Config
     };
   }
 
-  public async Task<OneOf<CameraListItem, Error>> CreateAsync(
+  public async Task<OneOf<CameraDto, Error>> CreateAsync(
     CreateCameraRequest request, CancellationToken ct)
   {
     var address = NormalizeOnvifAddress(request.Address);
@@ -156,7 +166,7 @@ public sealed class CameraService
     return await RefreshAsync(camera.Id, ct);
   }
 
-  public async Task<OneOf<CameraListItem, Error>> UpdateAsync(
+  public async Task<OneOf<CameraDto, Error>> UpdateAsync(
     Guid id, UpdateCameraRequest request, CancellationToken ct)
   {
     var result = await _plugins.DataProvider.Cameras.GetByIdAsync(id, ct);
@@ -202,7 +212,7 @@ public sealed class CameraService
     return await GetByIdAsync(id, ct);
   }
 
-  public async Task<OneOf<CameraListItem, Error>> RefreshAsync(Guid id, CancellationToken ct)
+  public async Task<OneOf<CameraDto, Error>> RefreshAsync(Guid id, CancellationToken ct)
   {
     var result = await _plugins.DataProvider.Cameras.GetByIdAsync(id, ct);
     if (result.IsT1) return result.AsT1;
@@ -249,73 +259,78 @@ public sealed class CameraService
     await _plugins.DataProvider.Cameras.UpdateAsync(camera, ct);
 
     var existingStreamsResult = await _plugins.DataProvider.Streams.GetByCameraIdAsync(id, ct);
-    var existingProfiles = existingStreamsResult.IsT0
-      ? existingStreamsResult.AsT0.ToDictionary(s => s.Profile)
-      : new Dictionary<string, CameraStream>();
-
-    var rtspPortOverride = camera.Config.TryGetValue("rtspPortOverride", out var portStr)
-      && int.TryParse(portStr, out var port) ? (int?)port : null;
-
-    var streamDtos = new List<StreamProfileDto>();
-    var streamsChanged = false;
-    foreach (var s in config.Streams)
-    {
-      if (existingProfiles.TryGetValue(s.Profile, out var existing))
+    return await existingStreamsResult.Match<Task<OneOf<CameraDto, Error>>>(
+      async allExisting =>
       {
-        existing.Codec = s.Codec;
-        existing.Resolution = s.Resolution;
-        existing.Fps = s.Fps;
-        existing.Bitrate = s.Bitrate;
-        var uri = rtspPortOverride.HasValue ? RewriteRtspPort(s.Uri, rtspPortOverride.Value) : s.Uri;
-        if (existing.Uri != uri)
-          streamsChanged = true;
-        existing.Uri = uri;
-        await _plugins.DataProvider.Streams.UpsertAsync(existing, ct);
-        streamDtos.Add(ToStreamDto(existing));
-      }
-      else
-      {
-        streamsChanged = true;
-        var uri = rtspPortOverride.HasValue ? RewriteRtspPort(s.Uri, rtspPortOverride.Value) : s.Uri;
-        var stream = new CameraStream
+        var existingProfiles = allExisting
+          .Where(s => s.ProducerId == null)
+          .ToDictionary(s => s.Profile);
+
+        var rtspPortOverride = camera.Config.TryGetValue("rtspPortOverride", out var portStr)
+          && int.TryParse(portStr, out var port) ? (int?)port : null;
+
+        var streamDtos = new List<StreamProfileDto>();
+        var streamsChanged = false;
+        foreach (var s in config.Streams)
         {
-          Id = Guid.NewGuid(),
-          CameraId = id,
-          Profile = s.Profile,
-          Kind = s.Kind,
-          FormatId = s.FormatId,
-          Codec = s.Codec,
-          Resolution = s.Resolution,
-          Fps = s.Fps,
-          Bitrate = s.Bitrate,
-          Uri = uri,
-          RecordingEnabled = true
-        };
-        await _plugins.DataProvider.Streams.UpsertAsync(stream, ct);
-        streamDtos.Add(ToStreamDto(stream));
-      }
-    }
+          if (existingProfiles.TryGetValue(s.Profile, out var existing))
+          {
+            existing.Codec = s.Codec;
+            existing.Resolution = s.Resolution;
+            existing.Fps = s.Fps;
+            existing.Bitrate = s.Bitrate;
+            var uri = rtspPortOverride.HasValue ? RewriteRtspPort(s.Uri, rtspPortOverride.Value) : s.Uri;
+            if (existing.Uri != uri)
+              streamsChanged = true;
+            existing.Uri = uri;
+            await _plugins.DataProvider.Streams.UpsertAsync(existing, ct);
+            streamDtos.Add(ToStreamDto(existing));
+          }
+          else
+          {
+            streamsChanged = true;
+            var uri = rtspPortOverride.HasValue ? RewriteRtspPort(s.Uri, rtspPortOverride.Value) : s.Uri;
+            var stream = new CameraStream
+            {
+              Id = Guid.NewGuid(),
+              CameraId = id,
+              Profile = s.Profile,
+              Kind = s.Kind,
+              FormatId = s.FormatId,
+              Codec = s.Codec,
+              Resolution = s.Resolution,
+              Fps = s.Fps,
+              Bitrate = s.Bitrate,
+              Uri = uri,
+              RecordingEnabled = true
+            };
+            await _plugins.DataProvider.Streams.UpsertAsync(stream, ct);
+            streamDtos.Add(ToStreamDto(stream));
+          }
+        }
 
-    var newProfiles = config.Streams.Select(s => s.Profile).ToHashSet();
-    foreach (var (profile, existing) in existingProfiles)
-    {
-      if (!newProfiles.Contains(profile))
-      {
-        streamsChanged = true;
-        await _plugins.DataProvider.Streams.DeleteAsync(existing.Id, ct);
-      }
-    }
+        var newProfiles = config.Streams.Select(s => s.Profile).ToHashSet();
+        foreach (var (profile, existing) in existingProfiles)
+        {
+          if (!newProfiles.Contains(profile))
+          {
+            streamsChanged = true;
+            await _plugins.DataProvider.Streams.DeleteAsync(existing.Id, ct);
+          }
+        }
 
-    if (streamsChanged)
-    {
-      await _eventBus.PublishAsync(new CameraConfigChanged
-      {
-        CameraId = id,
-        Timestamp = camera.UpdatedAt
-      }, ct);
-    }
+        if (streamsChanged)
+        {
+          await _eventBus.PublishAsync(new CameraConfigChanged
+          {
+            CameraId = id,
+            Timestamp = camera.UpdatedAt
+          }, ct);
+        }
 
-    return ToCameraListItem(camera, _status.GetStatus(id), streamDtos);
+        return ToCameraListItem(camera, _status.GetStatus(id), streamDtos);
+      },
+      err => Task.FromResult<OneOf<CameraDto, Error>>(err));
   }
 
   public async Task<OneOf<Success, Error>> DeleteAsync(Guid id, CancellationToken ct)
@@ -375,7 +390,7 @@ public sealed class CameraService
       "Snapshot not available"));
   }
 
-  private static CameraListItem ToCameraListItem(
+  private static CameraDto ToCameraListItem(
     Camera cam, string status, List<StreamProfileDto> streams) =>
     new()
     {
@@ -394,15 +409,22 @@ public sealed class CameraService
         ? null : cam.RetentionValue
     };
 
-  private static StreamProfileDto ToStreamDto(CameraStream s) =>
-    new()
+  private static StreamProfileDto ToStreamDto(CameraStream s, Func<Guid, CameraStream?>? lookup = null)
+  {
+    var recordingEnabled = s.Kind == StreamKind.Metadata && lookup != null
+      ? StreamHierarchy.ResolveRootStream(s, lookup).RecordingEnabled
+      : s.RecordingEnabled;
+
+    return new StreamProfileDto
     {
       Profile = s.Profile,
       Kind = s.Kind,
       Codec = s.Codec ?? "",
       Resolution = s.Resolution ?? "",
-      Fps = s.Fps ?? 0m
+      Fps = s.Fps ?? 0m,
+      RecordingEnabled = recordingEnabled
     };
+  }
 
   internal static string NormalizeOnvifAddress(string address)
   {

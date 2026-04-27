@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using Client.Core.Decoding.Diagnostics;
 
 namespace Tests.Unit.Client.Decoding.Diagnostics;

@@ -1,6 +1,7 @@
 using Server.Plugins;
 using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
+using Shared.Models.Entities;
 
 namespace Server.Core.Services;
 
@@ -15,20 +16,20 @@ public sealed class ClientService
     _connections = connections;
   }
 
-  public async Task<OneOf<IReadOnlyList<ClientListItem>, Error>> GetAllAsync(
+  public async Task<OneOf<IReadOnlyList<ClientDto>, Error>> GetAllAsync(
     CancellationToken ct)
   {
     var result = await _plugins.DataProvider!.Clients.GetAllAsync(ct);
-    return result.Match<OneOf<IReadOnlyList<ClientListItem>, Error>>(
+    return result.Match<OneOf<IReadOnlyList<ClientDto>, Error>>(
       clients => clients.Select(c => ToDto(c)).ToList(),
       error => error);
   }
 
-  public async Task<OneOf<ClientListItem, Error>> GetByIdAsync(
+  public async Task<OneOf<ClientDto, Error>> GetByIdAsync(
     Guid id, CancellationToken ct)
   {
     var result = await _plugins.DataProvider!.Clients.GetByIdAsync(id, ct);
-    return result.Match<OneOf<ClientListItem, Error>>(
+    return result.Match<OneOf<ClientDto, Error>>(
       client => ToDto(client),
       error => error);
   }
@@ -56,7 +57,7 @@ public sealed class ClientService
     return await _plugins.DataProvider!.Clients.UpdateAsync(client, ct);
   }
 
-  private ClientListItem ToDto(Client c) =>
+  private ClientDto ToDto(Client c) =>
     new()
     {
       Id = c.Id,

@@ -16,83 +16,83 @@ public sealed class CoreStreamSettings : IPluginStreamSettings
 
   public IReadOnlyList<SettingGroup> GetSchema(Guid streamId)
   {
-    var stream = _plugins.DataProvider.Streams.GetByIdAsync(streamId).GetAwaiter().GetResult();
-    if (stream.IsT0 && stream.AsT0.Kind == StreamKind.Metadata)
-      return [];
-    return BuildSchema();
+    var result = _plugins.DataProvider.Streams.GetByIdAsync(streamId).GetAwaiter().GetResult();
+    return result.Match<IReadOnlyList<SettingGroup>>(
+      s => s.Kind == StreamKind.Metadata ? [] : FullSchema,
+      _ => FullSchema);
   }
 
-  private static IReadOnlyList<SettingGroup> BuildSchema() =>
-  [
-    new SettingGroup
-    {
-      Key = "recording",
-      Order = 0,
-      Label = "Recording",
-      Fields =
-      [
-        new SettingField
-        {
-          Key = "recordingEnabled",
-          Order = 0,
-          Label = "Record",
-          Type = "boolean",
-          Description = "Save this stream's video to disk for playback.",
-          DefaultValue = "false",
-          Required = true
-        }
-      ]
-    },
-    new SettingGroup
-    {
-      Key = "retention",
-      Order = 1,
-      Label = "Retention",
-      Fields =
-      [
-        new SettingField
-        {
-          Key = "retentionMode",
-          Order = 0,
-          Label = "Retention Mode",
-          Type = "select",
-          Description = "How long this stream's recordings are kept.",
-          DefaultValue = "default",
-          Required = true,
-          Options =
-          [
-            new SettingFieldOption { Value = "default", Label = "Inherit from Camera" },
-            new SettingFieldOption { Value = "days", Label = "Days" },
-            new SettingFieldOption { Value = "bytes", Label = "Bytes" },
-            new SettingFieldOption { Value = "percent", Label = "Percent" }
-          ]
-        },
-        new SettingField
-        {
-          Key = "retentionValue",
-          Order = 1,
-          Label = "Retention Value",
-          Type = "number",
-          Description = "Quantity for the selected Mode. Leave blank to inherit.",
-          Required = false
-        }
-      ]
-    }
-  ];
+  private static readonly SettingGroup RecordingGroup = new()
+  {
+    Key = "recording",
+    Order = 0,
+    Label = "Recording",
+    Fields =
+    [
+      new SettingField
+      {
+        Key = "recordingEnabled",
+        Order = 0,
+        Label = "Record",
+        Type = "boolean",
+        Description = "Save this stream's video to disk for playback.",
+        DefaultValue = "false",
+        Required = true
+      }
+    ]
+  };
+
+  private static readonly SettingGroup RetentionGroup = new()
+  {
+    Key = "retention",
+    Order = 1,
+    Label = "Retention",
+    Fields =
+    [
+      new SettingField
+      {
+        Key = "retentionMode",
+        Order = 0,
+        Label = "Retention Mode",
+        Type = "select",
+        Description = "How long this stream's recordings are kept.",
+        DefaultValue = "default",
+        Required = true,
+        Options =
+        [
+          new SettingFieldOption { Value = "default", Label = "Inherit from Camera" },
+          new SettingFieldOption { Value = "days", Label = "Days" },
+          new SettingFieldOption { Value = "bytes", Label = "Bytes" },
+          new SettingFieldOption { Value = "percent", Label = "Percent" }
+        ]
+      },
+      new SettingField
+      {
+        Key = "retentionValue",
+        Order = 1,
+        Label = "Retention Value",
+        Type = "number",
+        Description = "Quantity for the selected Mode. Leave blank to inherit.",
+        Required = false
+      }
+    ]
+  };
+
+  private static readonly IReadOnlyList<SettingGroup> FullSchema = [RecordingGroup, RetentionGroup];
 
   public IReadOnlyDictionary<string, string> GetValues(Guid streamId)
   {
-    var stream = _plugins.DataProvider.Streams.GetByIdAsync(streamId).GetAwaiter().GetResult();
-    if (stream.IsT1)
-      return new Dictionary<string, string>();
-
-    var s = stream.AsT0;
-    return new Dictionary<string, string>
-    {
-      ["recordingEnabled"] = s.RecordingEnabled ? "true" : "false",
-      ["retentionMode"] = s.RetentionMode.ToString().ToLowerInvariant(),
-      ["retentionValue"] = s.RetentionValue == 0 ? "" : s.RetentionValue.ToString()
-    };
+    var result = _plugins.DataProvider.Streams.GetByIdAsync(streamId).GetAwaiter().GetResult();
+    return result.Match<IReadOnlyDictionary<string, string>>(
+      s => s.Kind == StreamKind.Metadata
+        ? new Dictionary<string, string>()
+        : new Dictionary<string, string>
+          {
+            ["recordingEnabled"] = s.RecordingEnabled ? "true" : "false",
+            ["retentionMode"] = s.RetentionMode.ToString().ToLowerInvariant(),
+            ["retentionValue"] = s.RetentionValue == 0 ? "" : s.RetentionValue.ToString()
+          },
+      _ => new Dictionary<string, string>());
   }
 
   public OneOf<Success, Error> ValidateValue(Guid streamId, string key, string value)
@@ -126,19 +126,21 @@ public sealed class CoreStreamSettings : IPluginStreamSettings
       if (validation.IsT1) return validation;
     }
 
-    var streamResult = _plugins.DataProvider.Streams.GetByIdAsync(streamId).GetAwaiter().GetResult();
-    if (streamResult.IsT1) return streamResult.AsT1;
-    var stream = streamResult.AsT0;
+    return _plugins.DataProvider.Streams.GetByIdAsync(streamId).GetAwaiter().GetResult().Match<OneOf<Success, Error>>(
+      stream =>
+      {
+        if (values.TryGetValue("recordingEnabled", out var re))
+          stream.RecordingEnabled = re == "true";
+        if (values.TryGetValue("retentionMode", out var rm))
+          stream.RetentionMode = Enum.Parse<RetentionMode>(rm, ignoreCase: true);
+        if (values.TryGetValue("retentionValue", out var rv))
+          stream.RetentionValue = string.IsNullOrEmpty(rv) ? 0 : long.Parse(rv);
 
-    if (values.TryGetValue("recordingEnabled", out var re))
-      stream.RecordingEnabled = re == "true";
-    if (values.TryGetValue("retentionMode", out var rm))
-      stream.RetentionMode = Enum.Parse<RetentionMode>(rm, ignoreCase: true);
-    if (values.TryGetValue("retentionValue", out var rv))
-      stream.RetentionValue = string.IsNullOrEmpty(rv) ? 0 : long.Parse(rv);
-
-    var upsert = _plugins.DataProvider.Streams.UpsertAsync(stream).GetAwaiter().GetResult();
-    return upsert.IsT1 ? upsert.AsT1 : new Success();
+        return _plugins.DataProvider.Streams.UpsertAsync(stream).GetAwaiter().GetResult().Match<OneOf<Success, Error>>(
+          _ => new Success(),
+          err => err);
+      },
+      err => err);
   }
 
   public Task<OneOf<Success, Error>> OnRemovedAsync(Guid streamId, CancellationToken ct) =>

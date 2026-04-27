@@ -5,8 +5,7 @@ using Client.Core.Api;
 using Client.Core.Tunnel;
 using MessagePack;
 using Microsoft.Extensions.Logging.Abstractions;
-using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
 using Shared.Protocol;
 
 namespace Tests.Unit.Client;
@@ -30,7 +29,7 @@ public class ApiClientExtraTests
   public async Task GetCameras_WithStatusFilter_AppendsQuery()
   {
     var (client, tunnel) = NewClient();
-    tunnel.NextResponse = OkResponse(new List<CameraListItem>(), Json.IReadOnlyListCameraListItem);
+    tunnel.NextResponse = OkResponse(new List<CameraDto>(), Json.IReadOnlyListCameraDto);
 
     var result = await client.GetCamerasAsync("online", CancellationToken.None);
 
@@ -55,7 +54,7 @@ public class ApiClientExtraTests
   public async Task GetCameras_NoFilter_PlainPath()
   {
     var (client, tunnel) = NewClient();
-    tunnel.NextResponse = OkResponse(new List<CameraListItem>(), Json.IReadOnlyListCameraListItem);
+    tunnel.NextResponse = OkResponse(new List<CameraDto>(), Json.IReadOnlyListCameraDto);
 
     await client.GetCamerasAsync(null, CancellationToken.None);
 
@@ -77,7 +76,7 @@ public class ApiClientExtraTests
   {
     var (client, tunnel) = NewClient();
     var id = Guid.NewGuid();
-    tunnel.NextResponse = OkResponse(SampleCamera(id), Json.CameraListItem);
+    tunnel.NextResponse = OkResponse(SampleCamera(id), Json.CameraDto);
 
     await client.UpdateCameraAsync(id, new UpdateCameraRequest { Name = "Lobby" }, CancellationToken.None);
 
@@ -105,7 +104,7 @@ public class ApiClientExtraTests
   {
     var (client, tunnel) = NewClient();
     var id = Guid.NewGuid();
-    tunnel.NextResponse = OkResponse(SampleCamera(id), Json.CameraListItem);
+    tunnel.NextResponse = OkResponse(SampleCamera(id), Json.CameraDto);
 
     await client.RefreshCameraAsync(id, CancellationToken.None);
 
@@ -161,8 +160,8 @@ public class ApiClientExtraTests
     var (client, tunnel) = NewClient();
     var id = Guid.NewGuid();
     tunnel.NextResponse = OkResponse(
-      new ClientListItem { Id = id, Name = "C", EnrolledAt = 0, Connected = false },
-      Json.ClientListItem);
+      new ClientDto { Id = id, Name = "C", EnrolledAt = 0, Connected = false },
+      Json.ClientDto);
 
     await client.GetClientAsync(id, CancellationToken.None);
 
@@ -185,8 +184,8 @@ public class ApiClientExtraTests
     var (client, tunnel) = NewClient();
     var id = Guid.NewGuid();
     tunnel.NextResponse = OkResponse(
-      new ClientListItem { Id = id, Name = "Renamed", EnrolledAt = 0, Connected = true },
-      Json.ClientListItem);
+      new ClientDto { Id = id, Name = "Renamed", EnrolledAt = 0, Connected = true },
+      Json.ClientDto);
 
     await client.UpdateClientAsync(id, new UpdateClientRequest { Name = "Renamed" },
       CancellationToken.None);
@@ -388,7 +387,7 @@ public class ApiClientExtraTests
   private static ApiResponseMessage SuccessResponse() =>
     new() { Result = (byte)Result.Success, DebugTag = 0x00010001 };
 
-  private static CameraListItem SampleCamera(Guid id) => new()
+  private static CameraDto SampleCamera(Guid id) => new()
   {
     Id = id,
     Name = "Camera",

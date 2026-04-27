@@ -215,16 +215,17 @@ internal sealed class RtspSession : IAsyncDisposable
       {
         if (payload.Length < 12) return;
         var rtpPayload = RtspConnection.ExtractRtpPayload(payload);
-        var timestamp = RtspConnection.ExtractRtpTimestamp(payload);
+        var mediaTimestamp = RtspConnection.ExtractRtpTimestamp(payload);
+        var wallClockTimestamp = DateTimeOffset.UtcNow.ToUnixMicroseconds();
         var nalType = rtpPayload.Span[0] & 0x1F;
         if (nalType == 24)
         {
-          foreach (var unit in depacketizer.ProcessStapAAll(rtpPayload.Span, timestamp))
+          foreach (var unit in depacketizer.ProcessStapAAll(rtpPayload.Span, mediaTimestamp, wallClockTimestamp))
             h264Stream.Writer.TryWrite((H264NalUnit)unit);
         }
         else
         {
-          var unit = depacketizer.ProcessPacket(rtpPayload.Span, timestamp);
+          var unit = depacketizer.ProcessPacket(rtpPayload.Span, mediaTimestamp, wallClockTimestamp);
           if (unit is H264NalUnit h264Unit)
             h264Stream.Writer.TryWrite(h264Unit);
         }
@@ -237,16 +238,17 @@ internal sealed class RtspSession : IAsyncDisposable
       {
         if (payload.Length < 12) return;
         var rtpPayload = RtspConnection.ExtractRtpPayload(payload);
-        var timestamp = RtspConnection.ExtractRtpTimestamp(payload);
+        var mediaTimestamp = RtspConnection.ExtractRtpTimestamp(payload);
+        var wallClockTimestamp = DateTimeOffset.UtcNow.ToUnixMicroseconds();
         var nalType = (rtpPayload.Span[0] >> 1) & 0x3F;
         if (nalType == 48)
         {
-          foreach (var unit in depacketizer.ProcessApAll(rtpPayload.Span, timestamp))
+          foreach (var unit in depacketizer.ProcessApAll(rtpPayload.Span, mediaTimestamp, wallClockTimestamp))
             h265Stream.Writer.TryWrite((H265NalUnit)unit);
         }
         else
         {
-          var unit = depacketizer.ProcessPacket(rtpPayload.Span, timestamp);
+          var unit = depacketizer.ProcessPacket(rtpPayload.Span, mediaTimestamp, wallClockTimestamp);
           if (unit is H265NalUnit h265Unit)
             h265Stream.Writer.TryWrite(h265Unit);
         }

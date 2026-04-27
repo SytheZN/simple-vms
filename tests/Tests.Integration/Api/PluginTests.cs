@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
 
 namespace Tests.Integration.Api;
 
@@ -29,7 +29,7 @@ public sealed class PluginTests
     var response = await _client.GetAsync("/api/v1/plugins");
     Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
 
-    var plugins = (await ApiTestFixture.Envelope<PluginListItem[]>(response)).Body!;
+    var plugins = (await ApiTestFixture.Envelope<PluginDto[]>(response)).Body!;
     Assert.That(plugins, Is.Not.Empty);
 
     var sqlite = plugins.FirstOrDefault(p => p.Id == "sqlite");
@@ -56,7 +56,7 @@ public sealed class PluginTests
     var response = await _client.GetAsync("/api/v1/plugins/sqlite");
     Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
 
-    var body = (await ApiTestFixture.Envelope<PluginListItem>(response)).Body!;
+    var body = (await ApiTestFixture.Envelope<PluginDto>(response)).Body!;
     Assert.That(body.Id, Is.EqualTo("sqlite"));
     Assert.That(body.ExtensionPoints, Does.Contain("data"));
   }
@@ -130,7 +130,7 @@ public sealed class PluginTests
   /// OPTIONS /api/v1/plugins/sqlite/config
   ///
   /// EXPECTED RESULT:
-  /// 200 with an array of setting groups containing the database group
+  /// 200 with an array of setting groups containing the provider group (host-injected for data plugins) and the database group
   /// </summary>
   [Test]
   public async Task GetConfigSchema_SqliteReturnsSchema()
@@ -142,8 +142,12 @@ public sealed class PluginTests
     var envelope = await ApiTestFixture.Envelope<SettingGroup[]>(response);
     Assert.That(envelope.Result, Is.EqualTo(Result.Success));
     Assert.That(envelope.Body, Is.Not.Empty);
-    Assert.That(envelope.Body![0].Key, Is.EqualTo("database"));
-    Assert.That(envelope.Body[0].Fields, Has.Count.EqualTo(2));
+    Assert.That(envelope.Body![0].Key, Is.EqualTo("provider"));
+    Assert.That(envelope.Body[0].Fields, Has.Count.EqualTo(1));
+    Assert.That(envelope.Body[0].Fields[0].Key, Is.EqualTo("active"));
+    Assert.That(envelope.Body[0].Fields[0].Type, Is.EqualTo("boolean-enable-only"));
+    Assert.That(envelope.Body[1].Key, Is.EqualTo("database"));
+    Assert.That(envelope.Body[1].Fields, Has.Count.EqualTo(2));
   }
 
   /// <summary>
@@ -262,7 +266,7 @@ public sealed class PluginTests
   public async Task ListPlugins_SqliteHasSettingsTrue()
   {
     var response = await _client.GetAsync("/api/v1/plugins");
-    var plugins = (await ApiTestFixture.Envelope<PluginListItem[]>(response)).Body!;
+    var plugins = (await ApiTestFixture.Envelope<PluginDto[]>(response)).Body!;
     var sqlite = plugins.First(p => p.Id == "sqlite");
     Assert.That(sqlite.HasSettings, Is.True);
   }
@@ -283,7 +287,7 @@ public sealed class PluginTests
     var response = await _client.GetAsync("/api/v1/plugins?type=data");
     Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
 
-    var plugins = (await ApiTestFixture.Envelope<PluginListItem[]>(response)).Body!;
+    var plugins = (await ApiTestFixture.Envelope<PluginDto[]>(response)).Body!;
     Assert.That(plugins, Is.Not.Empty);
     Assert.That(plugins.All(p => p.ExtensionPoints.Contains("data")), Is.True);
   }

@@ -1,7 +1,8 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Server.Tunnel;
-using Shared.Models;
-using Tests.Unit.Streaming;
+using Shared.Models.Events;
+using Tests.Unit.Mocks;
+using tClient = Shared.Models.Entities.Client;
 
 namespace Tests.Unit.Tunnel;
 
@@ -22,7 +23,7 @@ public class ClientValidationTests
   public async Task Validate_ValidSerial_ReturnsClientId()
   {
     var clientId = Guid.NewGuid();
-    var client = new Shared.Models.Client
+    var client = new tClient
     {
       Id = clientId,
       Name = "test",
@@ -70,7 +71,7 @@ public class ClientValidationTests
   [Test]
   public async Task Validate_RevokedClient_ReturnsForbidden()
   {
-    var client = new Shared.Models.Client
+    var client = new tClient
     {
       Id = Guid.NewGuid(),
       Name = "revoked",
@@ -89,31 +90,31 @@ public class ClientValidationTests
   private static ClientValidator CreateValidator(IClientRepository clients)
   {
     var data = new FakeDataProvider(clients);
-    var plugins = new SessionTestPluginHost(dataProvider: data);
+    var plugins = new FakePluginHost { DataProvider = data };
     return new ClientValidator(plugins, NullLogger.Instance);
   }
 
   private sealed class FakeClientRepository : IClientRepository
   {
-    private readonly Shared.Models.Client? _client;
+    private readonly tClient? _client;
 
-    public FakeClientRepository(Shared.Models.Client? client) => _client = client;
+    public FakeClientRepository(tClient? client) => _client = client;
 
-    public Task<OneOf<Shared.Models.Client, Error>> GetByCertificateSerialAsync(string serial, CancellationToken ct)
+    public Task<OneOf<tClient, Error>> GetByCertificateSerialAsync(string serial, CancellationToken ct)
     {
       if (_client != null && _client.CertificateSerial == serial)
-        return Task.FromResult<OneOf<Shared.Models.Client, Error>>(_client);
-      return Task.FromResult<OneOf<Shared.Models.Client, Error>>(
+        return Task.FromResult<OneOf<tClient, Error>>(_client);
+      return Task.FromResult<OneOf<tClient, Error>>(
         Error.Create(ModuleIds.Tunnel, 0, Result.NotFound, "not found"));
     }
 
-    public Task<OneOf<IReadOnlyList<Shared.Models.Client>, Error>> GetAllAsync(CancellationToken ct) =>
+    public Task<OneOf<IReadOnlyList<tClient>, Error>> GetAllAsync(CancellationToken ct) =>
       throw new NotImplementedException();
-    public Task<OneOf<Shared.Models.Client, Error>> GetByIdAsync(Guid id, CancellationToken ct) =>
+    public Task<OneOf<tClient, Error>> GetByIdAsync(Guid id, CancellationToken ct) =>
       throw new NotImplementedException();
-    public Task<OneOf<Success, Error>> CreateAsync(Shared.Models.Client client, CancellationToken ct) =>
+    public Task<OneOf<Success, Error>> CreateAsync(tClient client, CancellationToken ct) =>
       throw new NotImplementedException();
-    public Task<OneOf<Success, Error>> UpdateAsync(Shared.Models.Client client, CancellationToken ct) =>
+    public Task<OneOf<Success, Error>> UpdateAsync(tClient client, CancellationToken ct) =>
       throw new NotImplementedException();
   }
 

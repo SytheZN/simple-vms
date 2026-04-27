@@ -2,7 +2,7 @@ using System.Runtime.Loader;
 using Microsoft.Extensions.Logging.Abstractions;
 using Server.Plugins;
 using Server.Streaming;
-using Shared.Models;
+using Tests.Unit.Mocks;
 
 namespace Tests.Unit.Streaming;
 
@@ -38,7 +38,7 @@ public class StreamReconcilerTests
         FormatId = "motion-grid"
       }]);
 
-    var host = new FakePluginHost(streams, analyzer);
+    var host = MakeHost(streams, analyzer);
     var reconciler = new StreamReconciler(host, NullLogger.Instance);
 
     var result = await reconciler.ReconcileCameraAsync(cameraId, CancellationToken.None);
@@ -91,7 +91,7 @@ public class StreamReconcilerTests
         FormatId = "motion-grid"
       }]);
 
-    var host = new FakePluginHost(streams, analyzer);
+    var host = MakeHost(streams, analyzer);
     var reconciler = new StreamReconciler(host, NullLogger.Instance);
 
     await reconciler.ReconcileCameraAsync(cameraId, CancellationToken.None);
@@ -130,7 +130,7 @@ public class StreamReconcilerTests
 
     var analyzer = new FakeAnalyzer("motion-grid-h264", []);
 
-    var host = new FakePluginHost(streams, analyzer);
+    var host = MakeHost(streams, analyzer);
     var reconciler = new StreamReconciler(host, NullLogger.Instance);
 
     await reconciler.ReconcileCameraAsync(cameraId, CancellationToken.None);
@@ -168,7 +168,7 @@ public class StreamReconcilerTests
         FormatId = "motion-grid"
       }]);
 
-    var host = new FakePluginHost(streams, analyzer);
+    var host = MakeHost(streams, analyzer);
     var reconciler = new StreamReconciler(host, NullLogger.Instance);
 
     await reconciler.ReconcileCameraAsync(cameraId, CancellationToken.None);
@@ -243,43 +243,18 @@ public class StreamReconcilerTests
     }
   }
 
-  private sealed class FakePluginHost : IPluginHost
+  private static FakePluginHost MakeHost(FakeStreamRepo streams, FakeAnalyzer analyzer) => new()
   {
-    public IReadOnlyList<PluginEntry> Plugins { get; }
-    public IDataProvider DataProvider { get; }
-    public IReadOnlyList<ICaptureSource> CaptureSources => [];
-    public IReadOnlyList<IStreamFormat> StreamFormats => [];
-    public IReadOnlyList<ICameraProvider> CameraProviders => [];
-    public IReadOnlyList<IEventFilter> EventFilters => [];
-    public IReadOnlyList<INotificationSink> NotificationSinks => [];
-    public IReadOnlyList<IDataStreamAnalyzer> Analyzers { get; }
-    public IReadOnlyList<IStorageProvider> StorageProviders => [];
-    public IReadOnlyList<IAuthProvider> AuthProviders => [];
-    public IReadOnlyList<IAuthzProvider> AuthzProviders => [];
-
-    public FakePluginHost(FakeStreamRepo streams, FakeAnalyzer analyzer)
+    DataProvider = new MinimalDataProvider(streams),
+    Analyzers = [analyzer],
+    Plugins = [new PluginEntry
     {
-      DataProvider = new MinimalDataProvider(streams);
-      Analyzers = [analyzer];
-      Plugins = [new PluginEntry
-      {
-        PluginType = analyzer.GetType(),
-        LoadContext = AssemblyLoadContext.Default,
-        Plugin = analyzer,
-        Metadata = analyzer.Metadata
-      }];
-    }
-
-    public IStreamFormat? FindFormat(Type inputType) => null;
-    public void SetStreamTap(IStreamTap streamTap) { }
-    public void SetCameraRegistry(ICameraRegistry cameraRegistry) { }
-    public void SetRecordingAccess(IRecordingAccess recordingAccess) { }
-    public void Discover(string pluginsPath) { }
-    public void Initialize(bool dataOnly = false) { }
-    public void ResetErrored() { }
-    public Task StartAsync(CancellationToken ct) => Task.CompletedTask;
-    public Task StopAsync() => Task.CompletedTask;
-  }
+      PluginType = analyzer.GetType(),
+      LoadContext = AssemblyLoadContext.Default,
+      Plugin = analyzer,
+      Metadata = analyzer.Metadata
+    }]
+  };
 
   private sealed class MinimalDataProvider : IDataProvider
   {

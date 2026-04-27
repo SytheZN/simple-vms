@@ -1,26 +1,26 @@
 using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
 
 namespace Client.Core.Api;
 
 public interface IApiClient
 {
-  Task<OneOf<IReadOnlyList<CameraListItem>, Error>> GetCamerasAsync(
+  Task<OneOf<IReadOnlyList<CameraDto>, Error>> GetCamerasAsync(
     string? status = null, CancellationToken ct = default);
-  Task<OneOf<CameraListItem, Error>> GetCameraAsync(Guid id, CancellationToken ct = default);
-  Task<OneOf<CameraListItem, Error>> CreateCameraAsync(
+  Task<OneOf<CameraDto, Error>> GetCameraAsync(Guid id, CancellationToken ct = default);
+  Task<OneOf<CameraDto, Error>> CreateCameraAsync(
     CreateCameraRequest request, CancellationToken ct = default);
-  Task<OneOf<CameraListItem, Error>> UpdateCameraAsync(
+  Task<OneOf<CameraDto, Error>> UpdateCameraAsync(
     Guid id, UpdateCameraRequest request, CancellationToken ct = default);
   Task<OneOf<Success, Error>> DeleteCameraAsync(Guid id, CancellationToken ct = default);
   Task<OneOf<ProbeResponse, Error>> ProbeCameraAsync(
     ProbeRequest request, CancellationToken ct = default);
-  Task<OneOf<CameraListItem, Error>> RefreshCameraAsync(Guid id, CancellationToken ct = default);
+  Task<OneOf<CameraDto, Error>> RefreshCameraAsync(Guid id, CancellationToken ct = default);
   Task<OneOf<Success, Error>> RestartCameraAsync(Guid id, CancellationToken ct = default);
 
-  Task<OneOf<IReadOnlyList<ClientListItem>, Error>> GetClientsAsync(CancellationToken ct = default);
-  Task<OneOf<ClientListItem, Error>> GetClientAsync(Guid id, CancellationToken ct = default);
-  Task<OneOf<ClientListItem, Error>> UpdateClientAsync(
+  Task<OneOf<IReadOnlyList<ClientDto>, Error>> GetClientsAsync(CancellationToken ct = default);
+  Task<OneOf<ClientDto, Error>> GetClientAsync(Guid id, CancellationToken ct = default);
+  Task<OneOf<ClientDto, Error>> UpdateClientAsync(
     Guid id, UpdateClientRequest request, CancellationToken ct = default);
   Task<OneOf<Success, Error>> DeleteClientAsync(Guid id, CancellationToken ct = default);
   Task<OneOf<StartEnrollmentResponse, Error>> StartEnrollmentAsync(CancellationToken ct = default);
@@ -51,9 +51,9 @@ public interface IApiClient
     ServerSettings settings, CancellationToken ct = default);
   Task<OneOf<Success, Error>> GenerateCertsAsync(CancellationToken ct = default);
 
-  Task<OneOf<IReadOnlyList<PluginListItem>, Error>> GetPluginsAsync(
+  Task<OneOf<IReadOnlyList<PluginDto>, Error>> GetPluginsAsync(
     string? type = null, CancellationToken ct = default);
-  Task<OneOf<PluginListItem, Error>> GetPluginAsync(string id, CancellationToken ct = default);
+  Task<OneOf<PluginDto, Error>> GetPluginAsync(string id, CancellationToken ct = default);
   Task<OneOf<IReadOnlyList<SettingGroup>, Error>> GetPluginConfigSchemaAsync(
     string id, CancellationToken ct = default);
   Task<OneOf<IReadOnlyDictionary<string, string>, Error>> GetPluginConfigAsync(

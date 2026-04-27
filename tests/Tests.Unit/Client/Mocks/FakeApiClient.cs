@@ -1,22 +1,21 @@
 using Client.Core.Api;
-using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
 
 namespace Tests.Unit.Client.Mocks;
 
 public class FakeApiClient : IApiClient
 {
-  public virtual Task<OneOf<IReadOnlyList<CameraListItem>, Error>> GetCamerasAsync(string? status, CancellationToken ct) => throw new NotImplementedException();
-  public virtual Task<OneOf<CameraListItem, Error>> GetCameraAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
-  public virtual Task<OneOf<CameraListItem, Error>> CreateCameraAsync(CreateCameraRequest r, CancellationToken ct) => throw new NotImplementedException();
-  public virtual Task<OneOf<CameraListItem, Error>> UpdateCameraAsync(Guid id, UpdateCameraRequest r, CancellationToken ct) => throw new NotImplementedException();
+  public virtual Task<OneOf<IReadOnlyList<CameraDto>, Error>> GetCamerasAsync(string? status, CancellationToken ct) => throw new NotImplementedException();
+  public virtual Task<OneOf<CameraDto, Error>> GetCameraAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
+  public virtual Task<OneOf<CameraDto, Error>> CreateCameraAsync(CreateCameraRequest r, CancellationToken ct) => throw new NotImplementedException();
+  public virtual Task<OneOf<CameraDto, Error>> UpdateCameraAsync(Guid id, UpdateCameraRequest r, CancellationToken ct) => throw new NotImplementedException();
   public virtual Task<OneOf<Success, Error>> DeleteCameraAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
   public virtual Task<OneOf<ProbeResponse, Error>> ProbeCameraAsync(ProbeRequest r, CancellationToken ct) => throw new NotImplementedException();
-  public virtual Task<OneOf<CameraListItem, Error>> RefreshCameraAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
+  public virtual Task<OneOf<CameraDto, Error>> RefreshCameraAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
   public virtual Task<OneOf<Success, Error>> RestartCameraAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
-  public virtual Task<OneOf<IReadOnlyList<ClientListItem>, Error>> GetClientsAsync(CancellationToken ct) => throw new NotImplementedException();
-  public virtual Task<OneOf<ClientListItem, Error>> GetClientAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
-  public virtual Task<OneOf<ClientListItem, Error>> UpdateClientAsync(Guid id, UpdateClientRequest r, CancellationToken ct) => throw new NotImplementedException();
+  public virtual Task<OneOf<IReadOnlyList<ClientDto>, Error>> GetClientsAsync(CancellationToken ct) => throw new NotImplementedException();
+  public virtual Task<OneOf<ClientDto, Error>> GetClientAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
+  public virtual Task<OneOf<ClientDto, Error>> UpdateClientAsync(Guid id, UpdateClientRequest r, CancellationToken ct) => throw new NotImplementedException();
   public virtual Task<OneOf<Success, Error>> DeleteClientAsync(Guid id, CancellationToken ct) => throw new NotImplementedException();
   public virtual Task<OneOf<StartEnrollmentResponse, Error>> StartEnrollmentAsync(CancellationToken ct) => throw new NotImplementedException();
   public virtual Task<OneOf<IReadOnlyList<DiscoveredCameraDto>, Error>> DiscoverAsync(DiscoveryRequest r, CancellationToken ct) => throw new NotImplementedException();
@@ -31,8 +30,8 @@ public class FakeApiClient : IApiClient
   public virtual Task<OneOf<ServerSettings, Error>> GetSettingsAsync(CancellationToken ct) => throw new NotImplementedException();
   public virtual Task<OneOf<Success, Error>> UpdateSettingsAsync(ServerSettings s, CancellationToken ct) => throw new NotImplementedException();
   public virtual Task<OneOf<Success, Error>> GenerateCertsAsync(CancellationToken ct) => throw new NotImplementedException();
-  public virtual Task<OneOf<IReadOnlyList<PluginListItem>, Error>> GetPluginsAsync(string? ty, CancellationToken ct) => throw new NotImplementedException();
-  public virtual Task<OneOf<PluginListItem, Error>> GetPluginAsync(string id, CancellationToken ct) => throw new NotImplementedException();
+  public virtual Task<OneOf<IReadOnlyList<PluginDto>, Error>> GetPluginsAsync(string? ty, CancellationToken ct) => throw new NotImplementedException();
+  public virtual Task<OneOf<PluginDto, Error>> GetPluginAsync(string id, CancellationToken ct) => throw new NotImplementedException();
   public virtual Task<OneOf<IReadOnlyList<SettingGroup>, Error>> GetPluginConfigSchemaAsync(string id, CancellationToken ct) => throw new NotImplementedException();
   public virtual Task<OneOf<IReadOnlyDictionary<string, string>, Error>> GetPluginConfigAsync(string id, CancellationToken ct) => throw new NotImplementedException();
   public virtual Task<OneOf<Success, Error>> UpdatePluginConfigAsync(string id, Dictionary<string, string> v, CancellationToken ct) => throw new NotImplementedException();

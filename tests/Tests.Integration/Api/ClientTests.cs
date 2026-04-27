@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
 
 namespace Tests.Integration.Api;
 
@@ -21,7 +21,7 @@ public sealed class ClientTests
   /// GET /api/v1/clients
   ///
   /// EXPECTED RESULT:
-  /// 200 with an array of ClientListItem
+  /// 200 with an array of ClientDto
   /// </summary>
   [Test]
   public async Task ListClients_ReturnsArray()
@@ -29,7 +29,7 @@ public sealed class ClientTests
     var response = await _client.GetAsync("/api/v1/clients");
     Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
 
-    var envelope = await ApiTestFixture.Envelope<ClientListItem[]>(response);
+    var envelope = await ApiTestFixture.Envelope<ClientDto[]>(response);
     Assert.That(envelope.Result, Is.EqualTo(Result.Success));
     Assert.That(envelope.Body, Is.Not.Null);
   }
@@ -52,7 +52,7 @@ public sealed class ClientTests
     var response = await _client.GetAsync($"/api/v1/clients/{clientId}");
     Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
 
-    var body = (await ApiTestFixture.Envelope<ClientListItem>(response)).Body!;
+    var body = (await ApiTestFixture.Envelope<ClientDto>(response)).Body!;
     Assert.That(body.Id.ToString(), Is.EqualTo(clientId));
     Assert.That(body.Name, Is.Not.Null.And.Not.Empty);
     Assert.That(body.EnrolledAt, Is.GreaterThan(0UL));
@@ -99,7 +99,7 @@ public sealed class ClientTests
       $"/api/v1/clients/{clientId}", new { name = "Living Room Tablet" });
     Assert.That(updateResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
 
-    var body = (await ApiTestFixture.Envelope<ClientListItem>(
+    var body = (await ApiTestFixture.Envelope<ClientDto>(
       await _client.GetAsync($"/api/v1/clients/{clientId}"))).Body!;
     Assert.That(body.Name, Is.EqualTo("Living Room Tablet"));
   }

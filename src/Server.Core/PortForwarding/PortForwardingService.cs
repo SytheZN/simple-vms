@@ -2,11 +2,10 @@ using System.Net;
 using System.Net.Sockets;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Server.Core;
 using Server.Core.Services;
 using Server.Plugins;
 using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
 
 namespace Server.Core.PortForwarding;
 
@@ -92,10 +91,10 @@ public sealed class PortForwardingService : IHostedService, IAsyncDisposable, IP
     finally { _controlLock.Release(); }
   }
 
-  public PortForwardingStatus GetStatus()
+  public PortForwardingStatusDto GetStatus()
   {
     var snap = _status;
-    return new PortForwardingStatus
+    return new PortForwardingStatusDto
     {
       Active = snap.Mapping != null,
       Protocol = snap.Mapping?.Protocol switch
@@ -298,7 +297,7 @@ public sealed class PortForwardingService : IHostedService, IAsyncDisposable, IP
     {
       await client.AddPortMappingAsync(
         externalPort, internalPort, internalIp.ToString(),
-        LeaseSeconds, "Simple VMS tunnel", ct);
+        LeaseSeconds, "SimpleVMS tunnel", ct);
     }
     catch (UpnpSoapFaultException ex)
     {

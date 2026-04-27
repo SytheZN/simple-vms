@@ -1,8 +1,7 @@
 using Client.Core.Tunnel;
 using Client.Core.ViewModels;
 using Microsoft.Extensions.Logging.Abstractions;
-using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
 using Shared.Protocol;
 using Tests.Unit.Client.Mocks;
 
@@ -193,7 +192,7 @@ public class GalleryViewModelExtraTests
     });
   }
 
-  private static CameraListItem MakeCamera(string name, string address, string status) => new()
+  private static CameraDto MakeCamera(string name, string address, string status) => new()
   {
     Id = Guid.NewGuid(), Name = name, Address = address,
     Status = status, ProviderId = "onvif", Streams = [], Capabilities = []
@@ -201,20 +200,20 @@ public class GalleryViewModelExtraTests
 
   private sealed class GalleryApi : FakeApiClient
   {
-    public List<CameraListItem>? CameraList { get; set; }
+    public List<CameraDto>? CameraList { get; set; }
     public bool ReturnError { get; set; }
     public int GetCallCount { get; private set; }
 
-    public override Task<OneOf<IReadOnlyList<CameraListItem>, Error>> GetCamerasAsync(
+    public override Task<OneOf<IReadOnlyList<CameraDto>, Error>> GetCamerasAsync(
       string? status, CancellationToken ct)
     {
       GetCallCount++;
       if (ReturnError)
         return Task.FromResult(
-          OneOf<IReadOnlyList<CameraListItem>, Error>.FromT1(
+          OneOf<IReadOnlyList<CameraDto>, Error>.FromT1(
             new Error(Result.Unavailable, default, "api fail")));
       return Task.FromResult(
-        OneOf<IReadOnlyList<CameraListItem>, Error>.FromT0((CameraList ?? []).ToList()));
+        OneOf<IReadOnlyList<CameraDto>, Error>.FromT0((CameraList ?? []).ToList()));
     }
   }
 }

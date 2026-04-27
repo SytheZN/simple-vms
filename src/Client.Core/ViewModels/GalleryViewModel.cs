@@ -3,7 +3,7 @@ using Client.Core.Api;
 using Client.Core.Events;
 using Client.Core.Tunnel;
 using Microsoft.Extensions.Logging;
-using Shared.Models.Dto;
+using Shared.Api;
 using Shared.Protocol;
 
 namespace Client.Core.ViewModels;
@@ -16,10 +16,10 @@ public sealed class GalleryViewModel : ViewModelBase, IDisposable
   private readonly ILogger<GalleryViewModel> _logger;
 
   private int _columns = 3;
-  private CameraListItem? _selectedCamera;
+  private CameraDto? _selectedCamera;
   private bool _isLoading;
 
-  public ObservableCollection<CameraListItem> Cameras { get; } = [];
+  public ObservableCollection<CameraDto> Cameras { get; } = [];
 
   public int Columns
   {
@@ -27,7 +27,7 @@ public sealed class GalleryViewModel : ViewModelBase, IDisposable
     set => SetProperty(ref _columns, value);
   }
 
-  public CameraListItem? SelectedCamera
+  public CameraDto? SelectedCamera
   {
     get => _selectedCamera;
     set => SetProperty(ref _selectedCamera, value);

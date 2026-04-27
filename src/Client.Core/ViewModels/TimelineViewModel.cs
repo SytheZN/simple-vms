@@ -1,7 +1,7 @@
 using System.Collections.ObjectModel;
 using Client.Core.Api;
 using Microsoft.Extensions.Logging;
-using Shared.Models.Dto;
+using Shared.Api;
 
 namespace Client.Core.ViewModels;
 
@@ -18,8 +18,8 @@ public sealed class TimelineViewModel : ViewModelBase, IDisposable
   private ulong _visibleTo;
   private CancellationTokenSource? _loadCts;
 
-  public ObservableCollection<TimelineSpan> Spans { get; } = [];
-  public ObservableCollection<TimelineEvent> Events { get; } = [];
+  public ObservableCollection<TimelineSpanDto> Spans { get; } = [];
+  public ObservableCollection<TimelineEventDto> Events { get; } = [];
 
   public ulong CurrentPosition
   {

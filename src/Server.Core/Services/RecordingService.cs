@@ -1,6 +1,7 @@
 using Server.Plugins;
 using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
+using Shared.Models.Entities;
 
 namespace Server.Core.Services;
 
@@ -49,14 +50,14 @@ public sealed class RecordingService
 
     var eventsResult = await _plugins.DataProvider.Events.GetByTimeRangeAsync(cameraId, from, to, ct);
     var events = eventsResult.Match(
-      evts => evts.Select(e => new TimelineEvent
+      evts => evts.Select(e => new TimelineEventDto
       {
         Id = e.Id,
         Type = e.Type,
         StartTime = e.StartTime,
         EndTime = e.EndTime
       }).ToList(),
-      _ => new List<TimelineEvent>());
+      _ => new List<TimelineEventDto>());
 
     return new TimelineResponse { Spans = spans, Events = events };
   }
@@ -77,12 +78,12 @@ public sealed class RecordingService
     return match;
   }
 
-  private static List<TimelineSpan> MergeSpans(IReadOnlyList<Segment> segments)
+  private static List<TimelineSpanDto> MergeSpans(IReadOnlyList<Segment> segments)
   {
     if (segments.Count == 0)
       return [];
 
-    var spans = new List<TimelineSpan>();
+    var spans = new List<TimelineSpanDto>();
     var start = segments[0].StartTime;
     var end = segments[0].EndTime;
 
@@ -95,13 +96,13 @@ public sealed class RecordingService
       }
       else
       {
-        spans.Add(new TimelineSpan { StartTime = start, EndTime = end });
+        spans.Add(new TimelineSpanDto { StartTime = start, EndTime = end });
         start = seg.StartTime;
         end = seg.EndTime;
       }
     }
 
-    spans.Add(new TimelineSpan { StartTime = start, EndTime = end });
+    spans.Add(new TimelineSpanDto { StartTime = start, EndTime = end });
     return spans;
   }
 }

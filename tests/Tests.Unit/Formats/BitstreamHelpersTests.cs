@@ -1,4 +1,3 @@
-using Shared.Models.Formats;
 using static Shared.Models.Formats.BitstreamHelpers;
 
 namespace Tests.Unit.Formats;

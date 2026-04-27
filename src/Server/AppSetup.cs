@@ -63,13 +63,12 @@ public static class AppSetup
 
     var environment = new ServerEnvironment(dataPath);
 
-    var pluginHost = new PluginHost(
-      loggerFactory.CreateLogger<PluginHost>(), loggerFactory,
-      dataProviderConfig, eventBus, environment);
     var bundledPluginsPath = Path.Combine(AppContext.BaseDirectory, "plugins");
     var userPluginsPath = Path.Combine(dataPath, "plugins");
-    pluginHost.Discover(bundledPluginsPath);
-    pluginHost.Discover(userPluginsPath);
+    var pluginHost = new PluginHost(
+      loggerFactory.CreateLogger<PluginHost>(), loggerFactory,
+      dataProviderConfig, eventBus, environment,
+      [bundledPluginsPath, userPluginsPath]);
     builder.Services.AddSingleton(pluginHost);
     builder.Services.AddSingleton<IPluginHost>(pluginHost);
 
@@ -132,7 +131,7 @@ public static class AppSetup
       _streamingService?.StopAsync().GetAwaiter().GetResult();
 
       var pluginHost = app.Services.GetRequiredService<IPluginHost>();
-      pluginHost.StopAsync().GetAwaiter().GetResult();
+      pluginHost.TeardownPlugins(CancellationToken.None).GetAwaiter().GetResult();
 
       _loggerProvider?.Dispose();
     });
@@ -149,7 +148,8 @@ public static class AppSetup
     else
     {
       var pluginHost = app.Services.GetRequiredService<IPluginHost>();
-      pluginHost.Initialize(dataOnly: true);
+      pluginHost.DiscoverPlugins();
+      pluginHost.InitializeDataPlugins();
       _ = PollForCertsAsync(app, certManager, systemHealth);
     }
   }
@@ -160,12 +160,15 @@ public static class AppSetup
   {
     var pluginHost = app.Services.GetRequiredService<IPluginHost>();
     var tapRegistry = app.Services.GetRequiredService<StreamTapRegistry>();
-    var eventBus = app.Services.GetRequiredService<IEventBus>();
+    var statusTracker = app.Services.GetRequiredService<CameraStatusTracker>();
+    var ct = app.Lifetime.ApplicationStopping;
 
     pluginHost.SetStreamTap(tapRegistry);
 
-    pluginHost.Initialize();
-    await pluginHost.StartAsync(app.Lifetime.ApplicationStopping);
+    await pluginHost.TeardownPlugins(ct);
+    pluginHost.DiscoverPlugins();
+    pluginHost.InitializeDataPlugins();
+    await pluginHost.StartConfiguredDataPlugin(ct);
 
     if (!IsDataProviderRunning(pluginHost))
     {
@@ -173,6 +176,11 @@ public static class AppSetup
       _ = RetryDataProviderAsync(app, systemHealth);
       return;
     }
+
+    pluginHost.SetCameraRegistry(new CameraRegistry(pluginHost.DataProvider, statusTracker));
+    pluginHost.SetRecordingAccess(new RecordingAccess(pluginHost));
+    pluginHost.InitializeOtherPlugins();
+    await pluginHost.StartOtherPlugins(ct);
 
     await FinaliseStartupAsync(app, systemHealth);
   }
@@ -191,16 +199,10 @@ public static class AppSetup
 
     WatchCameraStatus(eventBus, statusTracker, app.Lifetime.ApplicationStopping);
 
-    var cameraRegistry = new CameraRegistry(pluginHost.DataProvider, statusTracker);
-    pluginHost.SetCameraRegistry(cameraRegistry);
-
     _streamingService = new StreamingService(
       pluginHost, tapRegistry, eventBus,
       app.Services.GetRequiredService<ILoggerFactory>().CreateLogger<StreamingService>());
     await _streamingService.StartAsync(app.Lifetime.ApplicationStopping);
-
-    var recordingAccess = new RecordingAccess(pluginHost);
-    pluginHost.SetRecordingAccess(recordingAccess);
 
     _recordingManager = new RecordingManager(
       pluginHost, tapRegistry, eventBus,
@@ -257,8 +259,10 @@ public static class AppSetup
         logger.LogInformation("Retrying data provider start");
         try
         {
-          pluginHost.ResetErrored();
-          await pluginHost.StartAsync(ct);
+          await pluginHost.TeardownPlugins(ct);
+          pluginHost.DiscoverPlugins();
+          pluginHost.InitializeDataPlugins();
+          await pluginHost.StartConfiguredDataPlugin(ct);
         }
         catch (Exception ex)
         {
@@ -272,6 +276,11 @@ public static class AppSetup
           systemHealth.TransitionToStarting();
           try
           {
+            var statusTracker = app.Services.GetRequiredService<CameraStatusTracker>();
+            pluginHost.SetCameraRegistry(new CameraRegistry(pluginHost.DataProvider, statusTracker));
+            pluginHost.SetRecordingAccess(new RecordingAccess(pluginHost));
+            pluginHost.InitializeOtherPlugins();
+            await pluginHost.StartOtherPlugins(ct);
             await FinaliseStartupAsync(app, systemHealth);
           }
           catch (Exception ex)

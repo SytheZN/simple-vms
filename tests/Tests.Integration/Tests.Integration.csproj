@@ -4,6 +4,7 @@
     <IsAotCompatible>false</IsAotCompatible>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../src/Shared.Api/Shared.Api.csproj" />
     <ProjectReference Include="../../src/Server/Server.csproj" />
     <ProjectReference Include="../../src/plugins/data/Sqlite/Sqlite.csproj" />
     <ProjectReference Include="../../src/Client.Core/Client.Core.csproj" />

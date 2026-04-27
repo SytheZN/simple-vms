@@ -1,5 +1,3 @@
-using Microsoft.Data.Sqlite;
-using Shared.Models;
 namespace Data.Sqlite;
 
 internal sealed class ConfigRepository : IConfigRepository

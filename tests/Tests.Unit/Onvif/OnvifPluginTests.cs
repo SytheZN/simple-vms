@@ -1,5 +1,4 @@
 using Cameras.Onvif;
-using Shared.Models;
 
 namespace Tests.Unit.Onvif;
 

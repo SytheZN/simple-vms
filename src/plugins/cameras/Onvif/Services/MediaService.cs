@@ -62,7 +62,7 @@ public sealed class MediaService(SoapClient soap)
       ?.Element(XmlHelpers.NsSchema + "Uri")?.Value;
   }
 
-  public static StreamProfile ToStreamProfile(OnvifProfile profile, string streamUri, int index) =>
+  public static SourceStreamSpec ToSourceStreamSpec(OnvifProfile profile, string streamUri, int index) =>
     new()
     {
       Profile = index == 0 ? "main" : index == 1 ? "sub" : $"stream{index}",

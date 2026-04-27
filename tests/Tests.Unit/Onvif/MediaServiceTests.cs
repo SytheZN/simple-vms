@@ -1,5 +1,4 @@
 using Cameras.Onvif.Services;
-using Shared.Models;
 
 namespace Tests.Unit.Onvif;
 
@@ -7,7 +6,7 @@ namespace Tests.Unit.Onvif;
 public class MediaServiceTests
 {
   [Test]
-  public void ToStreamProfile_FirstProfile_MapsToMain()
+  public void ToSourceStreamSpec_FirstProfile_MapsToMain()
   {
     var profile = new OnvifProfile
     {
@@ -20,7 +19,7 @@ public class MediaServiceTests
       Bitrate = 4096
     };
 
-    var result = MediaService.ToStreamProfile(profile, "rtsp://192.168.1.100/stream1", 0);
+    var result = MediaService.ToSourceStreamSpec(profile, "rtsp://192.168.1.100/stream1", 0);
 
     Assert.That(result.Profile, Is.EqualTo("main"));
     Assert.That(result.Kind, Is.EqualTo(StreamKind.Quality));
@@ -33,7 +32,7 @@ public class MediaServiceTests
   }
 
   [Test]
-  public void ToStreamProfile_SecondProfile_MapsToSub()
+  public void ToSourceStreamSpec_SecondProfile_MapsToSub()
   {
     var profile = new OnvifProfile
     {
@@ -45,14 +44,14 @@ public class MediaServiceTests
       Bitrate = 512
     };
 
-    var result = MediaService.ToStreamProfile(profile, "rtsp://192.168.1.100/stream2", 1);
+    var result = MediaService.ToSourceStreamSpec(profile, "rtsp://192.168.1.100/stream2", 1);
 
     Assert.That(result.Profile, Is.EqualTo("sub"));
     Assert.That(result.Resolution, Is.EqualTo("640x480"));
   }
 
   [Test]
-  public void ToStreamProfile_ThirdProfile_MapsToStream2()
+  public void ToSourceStreamSpec_ThirdProfile_MapsToStream2()
   {
     var profile = new OnvifProfile
     {
@@ -62,13 +61,13 @@ public class MediaServiceTests
       Height = 720
     };
 
-    var result = MediaService.ToStreamProfile(profile, "rtsp://192.168.1.100/stream3", 2);
+    var result = MediaService.ToSourceStreamSpec(profile, "rtsp://192.168.1.100/stream3", 2);
 
     Assert.That(result.Profile, Is.EqualTo("stream2"));
   }
 
   [Test]
-  public void ToStreamProfile_NullResolution_OmitsResolution()
+  public void ToSourceStreamSpec_NullResolution_OmitsResolution()
   {
     var profile = new OnvifProfile
     {
@@ -76,13 +75,13 @@ public class MediaServiceTests
       Codec = "h264"
     };
 
-    var result = MediaService.ToStreamProfile(profile, "rtsp://host/s", 0);
+    var result = MediaService.ToSourceStreamSpec(profile, "rtsp://host/s", 0);
 
     Assert.That(result.Resolution, Is.Null);
   }
 
   [Test]
-  public void ToStreamProfile_PartialResolution_OmitsResolution()
+  public void ToSourceStreamSpec_PartialResolution_OmitsResolution()
   {
     var profile = new OnvifProfile
     {
@@ -91,7 +90,7 @@ public class MediaServiceTests
       Width = 1920
     };
 
-    var result = MediaService.ToStreamProfile(profile, "rtsp://host/s", 0);
+    var result = MediaService.ToSourceStreamSpec(profile, "rtsp://host/s", 0);
 
     Assert.That(result.Resolution, Is.Null);
   }

@@ -3,7 +3,7 @@ set -euo pipefail
 
 SOLUTION_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT_DIR="$SOLUTION_DIR/out"
-SOLUTION_FILE="${BUILD_SOLUTION_FILE:-Solution.slnx}"
+SOLUTION_FILE="${BUILD_SOLUTION_FILE:-Solution.NoMobile.slnx}"
 
 VERSION_ARGS=()
 if [ -n "${BUILD_VERSION:-}" ]; then

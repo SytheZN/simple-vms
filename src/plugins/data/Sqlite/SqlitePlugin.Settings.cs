@@ -1,5 +1,3 @@
-using Shared.Models;
-
 namespace Data.Sqlite;
 
 public sealed partial class SqliteProvider : IPluginSettings

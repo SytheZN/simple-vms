@@ -21,17 +21,16 @@ public sealed class FragmentAssembler
   public (Fmp4Fragment fragment, KeyframeOffset? keyframeOffset) Assemble(
     IReadOnlyList<ReadOnlyMemory<byte>> annexBNals,
     IReadOnlyList<SampleEntry> samples,
-    ulong firstTimestamp,
+    ulong firstMediaTimestamp,
+    ulong firstWallClockTimestamp,
     bool isKeyframe)
   {
     _sequenceNumber++;
 
-    var wallClockUs = DateTimeOffset.UtcNow.ToUnixMicroseconds();
-
     _moofWriter.Reset();
     var moofLen = MoofBuilder.WriteTo(
-      _moofWriter, _sequenceNumber, firstTimestamp, samples,
-      wallClockUs: isKeyframe ? wallClockUs : 0);
+      _moofWriter, _sequenceNumber, firstMediaTimestamp, samples,
+      wallClockUs: isKeyframe ? firstWallClockTimestamp : 0);
 
     var mdatPayloadSize = 0;
     foreach (var nal in annexBNals)
@@ -66,14 +65,14 @@ public sealed class FragmentAssembler
     var fragment = new Fmp4Fragment
     {
       Data = fragmentData,
-      Timestamp = wallClockUs,
-      MediaTimestamp = firstTimestamp,
+      Timestamp = firstWallClockTimestamp,
+      MediaTimestamp = firstMediaTimestamp,
       IsSyncPoint = isKeyframe,
       IsHeader = false
     };
 
     KeyframeOffset? keyframe = isKeyframe
-      ? new KeyframeOffset { Timestamp = wallClockUs, ByteOffset = moofOffset }
+      ? new KeyframeOffset { Timestamp = firstWallClockTimestamp, ByteOffset = moofOffset }
       : null;
 
     return (fragment, keyframe);

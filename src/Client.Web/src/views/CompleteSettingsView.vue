@@ -147,7 +147,7 @@ onMounted(load)
             <div class="card p-6 space-y-4">
               <div class="space-y-1">
                 <label class="label">Server name</label>
-                <input class="input" v-model="settings.serverName" placeholder="My VMS" />
+                <input class="input" v-model="settings.serverName" placeholder="My sVMS" />
               </div>
               <div class="space-y-1">
                 <label class="label">

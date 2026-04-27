@@ -1,5 +1,4 @@
 using Format.Fmp4;
-using Shared.Models;
 using Shared.Models.Formats;
 
 namespace Tests.Unit.Fmp4;
@@ -24,7 +23,7 @@ public class Fmp4PluginTests
 
     Assert.That(plugin.Metadata.Id, Is.EqualTo("fmp4-h264"));
     Assert.That(plugin.FormatId, Is.EqualTo("fmp4"));
-    Assert.That(plugin.FileExtension, Is.EqualTo(".mp4"));
+    Assert.That(plugin.FileExtension, Is.EqualTo("mp4"));
     Assert.That(plugin.InputType, Is.EqualTo(typeof(H264NalUnit)));
     Assert.That(plugin.OutputType, Is.EqualTo(typeof(Fmp4Fragment)));
   }
@@ -46,7 +45,7 @@ public class Fmp4PluginTests
 
     Assert.That(plugin.Metadata.Id, Is.EqualTo("fmp4-h265"));
     Assert.That(plugin.FormatId, Is.EqualTo("fmp4"));
-    Assert.That(plugin.FileExtension, Is.EqualTo(".mp4"));
+    Assert.That(plugin.FileExtension, Is.EqualTo("mp4"));
     Assert.That(plugin.InputType, Is.EqualTo(typeof(H265NalUnit)));
     Assert.That(plugin.OutputType, Is.EqualTo(typeof(Fmp4Fragment)));
   }

@@ -10,8 +10,7 @@ using Client.Core.Tunnel;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Server.Core;
-using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
 using Shared.Protocol;
 namespace Tests.Integration.Tunnel;
 

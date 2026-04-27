@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 using Server.Core.PortForwarding;
 using Server.Plugins;
 using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
 
 namespace Server.Core.Services;
 
@@ -128,12 +128,12 @@ public sealed class SystemService
 
   public async Task<OneOf<StorageResponse, Error>> GetStorageAsync(CancellationToken ct)
   {
-    IReadOnlyList<StorageBreakdownItem>? breakdown = null;
+    IReadOnlyList<StorageBreakdownDto>? breakdown = null;
     try
     {
       var result = await _plugins.DataProvider.Segments.GetSizeBreakdownAsync(ct);
       if (result.IsT0)
-        breakdown = result.AsT0.Select(u => new StorageBreakdownItem
+        breakdown = result.AsT0.Select(u => new StorageBreakdownDto
         {
           CameraId = u.CameraId,
           CameraName = u.CameraName,

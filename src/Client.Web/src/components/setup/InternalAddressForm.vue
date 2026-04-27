@@ -66,7 +66,7 @@ defineExpose({ submit })
   <form class="space-y-4" @submit.prevent="submit">
     <div class="space-y-1">
       <label class="label">Server name</label>
-      <input class="input" v-model="serverName" placeholder="My VMS" />
+      <input class="input" v-model="serverName" placeholder="My sVMS" />
     </div>
     <div class="space-y-1">
       <label class="label">

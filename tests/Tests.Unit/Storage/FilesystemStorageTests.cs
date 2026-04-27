@@ -1,4 +1,3 @@
-using Shared.Models;
 using Storage.Filesystem;
 
 namespace Tests.Unit.Storage;
@@ -51,7 +50,8 @@ public class FilesystemStorageTests
       CameraId = cameraId,
       Profile = "main",
       StartTime = 1742558400000000,
-      Codec = "h264"
+      Codec = "h264",
+      FileExtension = "mp4"
     };
 
     await using var handle = await _plugin.CreateSegmentAsync(metadata, CancellationToken.None);
@@ -240,7 +240,8 @@ public class FilesystemStorageTests
     CameraId = Guid.Parse("550e8400-e29b-41d4-a716-446655440000"),
     Profile = "main",
     StartTime = 1742558400000000,
-    Codec = "h264"
+    Codec = "h264",
+    FileExtension = "mp4"
   };
 
   private sealed class FakeConfig : IConfig

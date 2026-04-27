@@ -2,8 +2,7 @@ using System.Net;
 using System.Text.Json;
 using Client.Core.Api;
 using Microsoft.Extensions.Logging.Abstractions;
-using Shared.Models;
-using Shared.Models.Dto;
+using Shared.Api;
 using Tests.Unit.Client.Mocks;
 
 namespace Tests.Unit.Client;
