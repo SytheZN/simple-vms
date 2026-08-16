@@ -19,13 +19,64 @@ public sealed class AndroidApp : Avalonia.Application
 
   public override void OnFrameworkInitializationCompleted()
   {
-    if (ApplicationLifetime is ISingleViewApplicationLifetime single)
+    if (ApplicationLifetime is ISingleViewApplicationLifetime)
     {
-      var shellVm = Services.GetRequiredService<MainShellViewModel>();
-      single.MainView = new ShellView { DataContext = shellVm };
+      ResetMainView();
       _ = AutoConnectAsync();
     }
     base.OnFrameworkInitializationCompleted();
+  }
+
+  // The single-view lifetime is process-wide, so a relaunched activity is handed whatever
+  // MainView it already holds. That instance is still parented to the destroyed activity's
+  // view and renders nothing, so each activity gets a fresh one.
+  internal void ResetMainView()
+  {
+    if (ApplicationLifetime is not ISingleViewApplicationLifetime single) return;
+
+    var shellVm = Services.GetRequiredService<MainShellViewModel>();
+    single.MainView = new ShellView { DataContext = shellVm };
+  }
+
+  // Suspend/resume state lives here rather than on the activity: the process outlives any
+  // single MainActivity, so a warm relaunch gets a fresh activity that must still know the
+  // tunnel was dropped while backgrounded.
+  private readonly SemaphoreSlim _suspendGate = new(1, 1);
+  private bool _suspended;
+
+  internal bool IsSuspended => _suspended;
+
+  internal async Task ReconnectAsync()
+  {
+    await _suspendGate.WaitAsync();
+    try
+    {
+      if (!_suspended) return;
+      _suspended = false;
+      await AutoConnectAsync();
+    }
+    finally { _suspendGate.Release(); }
+  }
+
+  internal async Task SuspendAsync()
+  {
+    await _suspendGate.WaitAsync();
+    try
+    {
+      if (_suspended) return;
+      _suspended = true;
+
+      if (AndroidContext != null)
+        TunnelForegroundService.Stop(AndroidContext);
+
+      await Services.GetRequiredService<ITunnelService>().DisconnectAsync();
+    }
+    catch (Exception ex)
+    {
+      Services.GetRequiredService<ILogger<AndroidApp>>()
+        .LogError(ex, "Suspending tunnel on background failed");
+    }
+    finally { _suspendGate.Release(); }
   }
 
   private async Task AutoConnectAsync()

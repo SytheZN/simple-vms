@@ -113,6 +113,31 @@ internal sealed class EventRepository : IEventRepository
     }, ct);
   }
 
+  public Task<OneOf<int, Error>> DeleteOlderThanAsync(
+    Guid cameraId, ulong cutoff, CancellationToken ct)
+  {
+    return _queue.ExecuteAsync<OneOf<int, Error>>(conn =>
+    {
+      try
+      {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+          DELETE FROM events
+          WHERE camera_id = @cameraId
+            AND COALESCE(end_time, start_time) < @cutoff
+          """;
+        cmd.Parameters.AddWithValue("@cameraId", cameraId.ToString());
+        cmd.Parameters.AddWithValue("@cutoff", (long)cutoff);
+        return cmd.ExecuteNonQuery();
+      }
+      catch (Exception ex)
+      {
+        return Error.Create(ModuleId, 0x0006, Result.InternalError,
+          $"Failed to delete events: {ex.Message}");
+      }
+    }, ct);
+  }
+
   public Task<OneOf<IReadOnlyList<CameraEvent>, Error>> GetByTimeRangeAsync(
     Guid cameraId, ulong from, ulong to, CancellationToken ct)
   {

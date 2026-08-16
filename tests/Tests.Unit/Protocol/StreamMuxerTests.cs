@@ -208,6 +208,140 @@ public class StreamMuxerTests
     Assert.That(frame2.Payload, Is.All.EqualTo((byte)0x22));
   }
 
+  /// <summary>
+  /// SCENARIO:
+  /// A stream has sent its full window without any credit returning
+  ///
+  /// ACTION:
+  /// Send one more frame on that stream
+  ///
+  /// EXPECTED RESULT:
+  /// The send does not complete, holding the sender to the window
+  /// </summary>
+  [Test]
+  public async Task SendAsync_WindowExhausted_BlocksSender()
+  {
+    var transport = new MemoryStream();
+    await using var muxer = new StreamMuxer(transport, NullLogger.Instance, 1);
+
+    var (streamId, _) = muxer.OpenStream(StreamTypes.Playback);
+    await muxer.SendAsync(streamId, 0, new byte[StreamMuxer.StreamWindowBytes - 1024],
+      CancellationToken.None);
+
+    var blocked = muxer.SendAsync(streamId, 0, new byte[4096], CancellationToken.None);
+    var winner = await Task.WhenAny(blocked, Task.Delay(TimeSpan.FromMilliseconds(250)));
+
+    Assert.That(winner, Is.Not.SameAs(blocked), "send should be held by flow control");
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A stream is blocked by flow control and the peer returns credit
+  ///
+  /// ACTION:
+  /// Deliver a window update frame for that stream through the read loop
+  ///
+  /// EXPECTED RESULT:
+  /// The blocked send completes
+  /// </summary>
+  [Test]
+  public async Task WindowUpdate_ReleasesBlockedSender()
+  {
+    var transport = new LoopbackStream();
+    await using var muxer = new StreamMuxer(transport, NullLogger.Instance, 1);
+
+    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+    var readLoop = muxer.RunReadLoopAsync(cts.Token);
+
+    var (streamId, _) = muxer.OpenStream(StreamTypes.Playback);
+    await muxer.SendAsync(streamId, 0, new byte[StreamMuxer.StreamWindowBytes - 1024],
+      CancellationToken.None);
+
+    var blocked = muxer.SendAsync(streamId, 0, new byte[4096], CancellationToken.None);
+
+    var update = new byte[MessageEnvelope.MuxHeaderSize + MessageEnvelope.WindowUpdateSize];
+    MessageEnvelope.WriteMuxHeader(
+      update, streamId, MessageEnvelope.FlagWindowUpdate, MessageEnvelope.WindowUpdateSize);
+    MessageEnvelope.WriteWindowUpdate(
+      update.AsSpan(MessageEnvelope.MuxHeaderSize), StreamMuxer.StreamWindowBytes);
+    transport.Deliver(update);
+
+    var winner = await Task.WhenAny(blocked, Task.Delay(TimeSpan.FromSeconds(2)));
+    Assert.That(winner, Is.SameAs(blocked), "returned credit should release the sender");
+    await blocked;
+
+    await cts.CancelAsync();
+    try { await readLoop; } catch (OperationCanceledException) { }
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A single frame is larger than the whole flow control window
+  ///
+  /// ACTION:
+  /// Send that frame on a freshly opened stream
+  ///
+  /// EXPECTED RESULT:
+  /// The send completes rather than deadlocking against an unsatisfiable window
+  /// </summary>
+  [Test]
+  public async Task SendAsync_FrameLargerThanWindow_DoesNotDeadlock()
+  {
+    var transport = new MemoryStream();
+    await using var muxer = new StreamMuxer(transport, NullLogger.Instance, 1);
+
+    var (streamId, _) = muxer.OpenStream(StreamTypes.Playback);
+    var oversized = new byte[StreamMuxer.StreamWindowBytes + 4096];
+
+    var send = muxer.SendAsync(streamId, 0, oversized, CancellationToken.None);
+    var winner = await Task.WhenAny(send, Task.Delay(TimeSpan.FromSeconds(2)));
+
+    Assert.That(winner, Is.SameAs(send), "oversized frame should not be blocked forever");
+    await send;
+  }
+
+  private sealed class LoopbackStream : Stream
+  {
+    private readonly Channel<byte[]> _inbound = Channel.CreateUnbounded<byte[]>();
+    private ReadOnlyMemory<byte> _current;
+
+    public void Deliver(byte[] data) => _inbound.Writer.TryWrite(data);
+
+    public override bool CanRead => true;
+    public override bool CanSeek => false;
+    public override bool CanWrite => true;
+    public override long Length => throw new NotSupportedException();
+    public override long Position
+    {
+      get => throw new NotSupportedException();
+      set => throw new NotSupportedException();
+    }
+
+    public override void Flush() { }
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override int Read(byte[] buffer, int offset, int count) =>
+      throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) { }
+
+    public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken ct = default) =>
+      ValueTask.CompletedTask;
+
+    public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
+    {
+      while (_current.IsEmpty)
+        _current = await _inbound.Reader.ReadAsync(ct);
+
+      var n = Math.Min(buffer.Length, _current.Length);
+      _current[..n].CopyTo(buffer);
+      _current = _current[n..];
+      return n;
+    }
+
+    public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken ct) =>
+      ReadAsync(buffer.AsMemory(offset, count), ct).AsTask();
+  }
+
   private sealed class DuplexPipe
   {
     private readonly Pipe _pipe = new();

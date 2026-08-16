@@ -18,7 +18,19 @@ public sealed class StreamMuxer : IAsyncDisposable
   private readonly Dictionary<uint, StreamEntry> _streams = [];
   private readonly List<Task> _handlerTasks = [];
 
-  private sealed record StreamEntry(Channel<MuxMessage> Channel, CancellationTokenSource Cts);
+  // Bounds bytes in flight per stream. A stream abandoned mid-transfer can only strand
+  // this much data on the shared transport, which is what the peer must drain before
+  // anything else gets through.
+  public const int StreamWindowBytes = 1024 * 1024;
+
+  private sealed class StreamEntry
+  {
+    public required Channel<MuxMessage> Channel { get; init; }
+    public required CancellationTokenSource Cts { get; init; }
+    public SemaphoreSlim CreditChanged { get; } = new(0);
+    public long SendCredit { get; set; } = StreamWindowBytes;
+    public long PendingAck { get; set; }
+  }
   private readonly ILogger _logger;
   private readonly Lock _lock = new();
   private readonly uint _startStreamId;
@@ -81,7 +93,7 @@ public sealed class StreamMuxer : IAsyncDisposable
       SingleWriter = true
     });
     var cts = CancellationTokenSource.CreateLinkedTokenSource(linkTo);
-    return new StreamEntry(channel, cts);
+    return new StreamEntry { Channel = channel, Cts = cts };
   }
 
   private void CompleteAndRemove(uint streamId)
@@ -94,6 +106,7 @@ public sealed class StreamMuxer : IAsyncDisposable
     entry.Channel.Writer.TryComplete();
     try { entry.Cts.Cancel(); } catch (ObjectDisposedException) { }
     entry.Cts.Dispose();
+    entry.CreditChanged.Release();
   }
 
   public async Task RunReadLoopAsync(CancellationToken ct)
@@ -166,6 +179,22 @@ public sealed class StreamMuxer : IAsyncDisposable
       var isFin = (flags & MessageEnvelope.FlagFin) != 0;
       var isErr = (flags & MessageEnvelope.FlagErr) != 0;
       var typeFlags = (ushort)(flags & MessageEnvelope.TypeFlagMask);
+
+      if ((flags & MessageEnvelope.FlagWindowUpdate) != 0)
+      {
+        if (payload.Length >= MessageEnvelope.WindowUpdateSize)
+          GrantCredit(streamId, MessageEnvelope.ReadWindowUpdate(payload.Span));
+        continue;
+      }
+
+      if (payload.Length > 0)
+      {
+        // Credits are additive, so delivery order does not matter. Sending inline would
+        // park the read loop on the write lock behind whatever large frame is going out.
+        var ack = RecordReceived(streamId, payload.Length);
+        if (ack > 0)
+          _ = SendWindowUpdateAsync(streamId, ack, ct);
+      }
 
       StreamEntry? entry;
       bool isNew;
@@ -253,6 +282,9 @@ public sealed class StreamMuxer : IAsyncDisposable
   public async Task SendAsync(
     uint streamId, ushort flags, ReadOnlyMemory<byte> payload, CancellationToken ct)
   {
+    if ((flags & MessageEnvelope.ControlFlagMask) == 0 && payload.Length > 0)
+      await AcquireCreditAsync(streamId, payload.Length, ct).ConfigureAwait(false);
+
     var total = MessageEnvelope.MuxHeaderSize + payload.Length;
     var frame = ArrayPool<byte>.Shared.Rent(total);
     try
@@ -280,6 +312,74 @@ public sealed class StreamMuxer : IAsyncDisposable
     finally
     {
       ArrayPool<byte>.Shared.Return(frame);
+    }
+  }
+
+  private async Task AcquireCreditAsync(uint streamId, int bytes, CancellationToken ct)
+  {
+    while (true)
+    {
+      StreamEntry? entry;
+      lock (_lock)
+      {
+        if (!_streams.TryGetValue(streamId, out entry))
+          return;
+
+        // A frame at or above the window can never be covered outright once anything at all
+        // is outstanding, and credit only returns once the peer has acked half a window - so
+        // it goes out on whatever credit exists. Credit may go negative; acks restore it.
+        var need = Math.Min(bytes, StreamWindowBytes);
+        if (entry.SendCredit >= need || (bytes >= StreamWindowBytes && entry.SendCredit > 0))
+        {
+          entry.SendCredit -= bytes;
+          return;
+        }
+      }
+
+      await entry.CreditChanged.WaitAsync(ct).ConfigureAwait(false);
+    }
+  }
+
+  private void GrantCredit(uint streamId, int bytes)
+  {
+    StreamEntry? entry;
+    lock (_lock)
+    {
+      if (!_streams.TryGetValue(streamId, out entry))
+        return;
+      entry.SendCredit += bytes;
+    }
+    entry.CreditChanged.Release();
+  }
+
+  private int RecordReceived(uint streamId, int bytes)
+  {
+    lock (_lock)
+    {
+      if (!_streams.TryGetValue(streamId, out var entry))
+        return 0;
+
+      entry.PendingAck += bytes;
+      if (entry.PendingAck < StreamWindowBytes / 2)
+        return 0;
+
+      var ack = (int)entry.PendingAck;
+      entry.PendingAck = 0;
+      return ack;
+    }
+  }
+
+  private async Task SendWindowUpdateAsync(uint streamId, int bytes, CancellationToken ct)
+  {
+    var payload = new byte[MessageEnvelope.WindowUpdateSize];
+    MessageEnvelope.WriteWindowUpdate(payload, bytes);
+    try
+    {
+      await SendAsync(streamId, MessageEnvelope.FlagWindowUpdate, payload, ct).ConfigureAwait(false);
+    }
+    catch (Exception ex) when (ex is IOException or ObjectDisposedException or OperationCanceledException)
+    {
+      _logger.LogDebug("StreamMuxer: window update for stream {StreamId} not sent", streamId);
     }
   }
 

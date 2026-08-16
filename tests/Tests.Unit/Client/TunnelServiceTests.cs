@@ -142,7 +142,7 @@ public class TunnelServiceTests
   /// Connect and inspect the bytes written to the transport
   ///
   /// EXPECTED RESULT:
-  /// First frame is a mux header on stream 0 with a 4-byte payload containing version 1
+  /// First frame is a mux header on stream 0 with a 4-byte payload containing the protocol version
   /// </summary>
   [Test]
   public async Task Connect_VersionExchange_WritesCorrectBytes()
@@ -163,7 +163,7 @@ public class TunnelServiceTests
 
     var version = BinaryPrimitives.ReadUInt32LittleEndian(
       written.AsSpan(MessageEnvelope.MuxHeaderSize));
-    Assert.That(version, Is.EqualTo(1u));
+    Assert.That(version, Is.EqualTo(MessageEnvelope.CurrentVersion));
 
     await service.DisconnectAsync();
   }
@@ -172,7 +172,7 @@ public class TunnelServiceTests
   {
     public HashSet<string> FailAddresses { get; } = [];
     public string? ConnectedAddress { get; private set; }
-    public uint ServerVersion { get; set; } = 1;
+    public uint ServerVersion { get; set; } = MessageEnvelope.CurrentVersion;
     public VersionExchangePipe? LastPipe { get; private set; }
 
     public Task<TransportConnection> ConnectAsync(

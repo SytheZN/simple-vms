@@ -184,6 +184,7 @@ public static class StreamSessionRunner
     }
 
     const long maxReverseBufferBytes = 256 * 1024 * 1024;
+    const int GopChunkBytes = 256 * 1024;
     long reverseBufferBytes = 0;
     var collectedGops = new List<(ulong Timestamp, byte[] Data)>();
     var initSent = false;
@@ -233,7 +234,24 @@ public static class StreamSessionRunner
 
         ulong gopTimestamp = 0;
         var gopStarted = false;
+        var gopChunked = false;
         gopStream.SetLength(0);
+
+        async Task SendChunkAsync(GopFlags flags)
+        {
+          await sink.SendGopAsync(flags, profile, gopTimestamp,
+            gopStream.GetBuffer().AsMemory(0, (int)gopStream.Length), ct);
+          gopStream.SetLength(0);
+        }
+
+        bool CollectReverseGop()
+        {
+          var gopData = gopStream.ToArray();
+          reverseBufferBytes += gopData.Length;
+          collectedGops.Add((gopTimestamp, gopData));
+          gopStream.SetLength(0);
+          return reverseBufferBytes <= maxReverseBufferBytes;
+        }
 
         await foreach (var frame in reader.ReadAsync(ct))
         {
@@ -242,50 +260,50 @@ public static class StreamSessionRunner
 
           if (frame.IsSyncPoint)
           {
-            if (gopStarted && gopStream.Length > 0)
+            if (gopStarted)
             {
               if (reverse)
               {
-                var gopData = gopStream.ToArray();
-                reverseBufferBytes += gopData.Length;
-                if (reverseBufferBytes > maxReverseBufferBytes)
+                if (gopStream.Length > 0 && !CollectReverseGop())
                 {
                   await sink.SendStatusAsync(StreamStatus.Error, ct);
                   return;
                 }
-                collectedGops.Add((gopTimestamp, gopData));
               }
-              else
-                await sink.SendGopAsync(GopFlags.Begin | GopFlags.End, profile,
-                  gopTimestamp, gopStream.GetBuffer().AsMemory(0, (int)gopStream.Length), ct);
-              gopStream.SetLength(0);
+              else if (gopChunked || gopStream.Length > 0)
+                await SendChunkAsync(gopChunked ? GopFlags.End : GopFlags.Begin | GopFlags.End);
             }
             gopTimestamp = frame.Timestamp;
             gopStarted = true;
+            gopChunked = false;
           }
 
           if (!gopStarted)
             continue;
 
           gopStream.Write(frame.Data.Span);
+
+          // Frames are atomic on the wire but GOPs need not be. Splitting them bounds how
+          // much of an abandoned stream a seek has to drain before new data gets through.
+          if (!reverse && gopStream.Length >= GopChunkBytes)
+          {
+            await SendChunkAsync(gopChunked ? GopFlags.None : GopFlags.Begin);
+            gopChunked = true;
+          }
         }
 
-        if (gopStarted && gopStream.Length > 0)
+        if (gopStarted)
         {
           if (reverse)
           {
-            var gopData = gopStream.ToArray();
-            reverseBufferBytes += gopData.Length;
-            if (reverseBufferBytes > maxReverseBufferBytes)
+            if (gopStream.Length > 0 && !CollectReverseGop())
             {
               await sink.SendStatusAsync(StreamStatus.Error, ct);
               return;
             }
-            collectedGops.Add((gopTimestamp, gopData));
           }
-          else
-            await sink.SendGopAsync(GopFlags.Begin | GopFlags.End, profile,
-              gopTimestamp, gopStream.GetBuffer().AsMemory(0, (int)gopStream.Length), ct);
+          else if (gopChunked || gopStream.Length > 0)
+            await SendChunkAsync(gopChunked ? GopFlags.End : GopFlags.Begin | GopFlags.End);
         }
       }
 

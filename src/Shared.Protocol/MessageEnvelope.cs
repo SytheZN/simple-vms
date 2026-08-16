@@ -4,14 +4,27 @@ namespace Shared.Protocol;
 
 public static class MessageEnvelope
 {
+  // Both ends compare this for exact equality during the handshake, so it lives here rather
+  // than being declared separately by each side.
+  public const uint CurrentVersion = 2;
+
   public const int HeaderSize = 6;
   public const int MuxHeaderSize = 10;
   public const int MaxPayloadSize = 16 * 1024 * 1024;
   public const int StreamTypeHeaderSize = 2;
   public const ushort FlagFin = 1 << 15;
   public const ushort FlagErr = 1 << 14;
-  public const ushort ControlFlagMask = FlagFin | FlagErr;
+  public const ushort FlagWindowUpdate = 1 << 13;
+  public const ushort ControlFlagMask = FlagFin | FlagErr | FlagWindowUpdate;
   public const ushort TypeFlagMask = unchecked((ushort)~ControlFlagMask);
+
+  public const int WindowUpdateSize = 4;
+
+  public static void WriteWindowUpdate(Span<byte> destination, int bytes) =>
+    BinaryPrimitives.WriteUInt32LittleEndian(destination, (uint)bytes);
+
+  public static int ReadWindowUpdate(ReadOnlySpan<byte> source) =>
+    (int)Math.Min(BinaryPrimitives.ReadUInt32LittleEndian(source), int.MaxValue);
 
   public static void WriteStreamType(Span<byte> destination, ushort streamType) =>
     BinaryPrimitives.WriteUInt16LittleEndian(destination, streamType);

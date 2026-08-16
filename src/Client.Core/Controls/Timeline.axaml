@@ -1,21 +1,18 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="Client.Core.Controls.Timeline">
-  <StackPanel Spacing="4">
+  <StackPanel Spacing="4" Background="Transparent">
     <!-- Track bar -->
-    <Panel Height="{DynamicResource Space4}">
+    <Panel x:Name="TrackPanel">
       <Border x:Name="TrackBar"
               Background="{DynamicResource SurfaceSunkenBrush}"
               CornerRadius="{DynamicResource RadiusSm}" />
       <Canvas x:Name="SpanCanvas"
               ClipToBounds="True" />
-      <Canvas x:Name="MarkerCanvas" />
-      <Border x:Name="Playhead"
-              Width="2"
-              Background="{DynamicResource TextBrush}"
-              HorizontalAlignment="Left"
-              IsHitTestVisible="True"
-              Cursor="Hand" />
+      <Canvas x:Name="MarkerCanvas"
+              ClipToBounds="True" />
+      <Canvas x:Name="PlayheadCanvas"
+              ClipToBounds="True" />
     </Panel>
 
     <!-- Tick labels -->

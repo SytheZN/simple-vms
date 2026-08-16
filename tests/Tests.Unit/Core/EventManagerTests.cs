@@ -246,6 +246,9 @@ public class EventManagerTests
     public Task<OneOf<IReadOnlyList<CameraEvent>, Error>> GetByTimeRangeAsync(
       Guid cameraId, ulong from, ulong to, CancellationToken ct) =>
       throw new NotImplementedException();
+    public Task<OneOf<int, Error>> DeleteOlderThanAsync(
+      Guid cameraId, ulong cutoff, CancellationToken ct) =>
+      throw new NotImplementedException();
   }
 
 }

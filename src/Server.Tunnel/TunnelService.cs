@@ -19,7 +19,7 @@ namespace Server.Tunnel;
 
 public sealed class TunnelService
 {
-  private const uint ProtocolVersion = 1;
+  private const uint ProtocolVersion = MessageEnvelope.CurrentVersion;
 
   private readonly ICertificateService _certs;
   private readonly ServerEndpoints _endpoints;

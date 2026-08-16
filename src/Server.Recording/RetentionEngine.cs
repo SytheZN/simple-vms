@@ -35,15 +35,6 @@ public sealed class RetentionEngine : IAsyncDisposable
     {
       try
       {
-        await Task.Delay(TimeSpan.FromMinutes(DefaultIntervalMinutes), ct);
-      }
-      catch (OperationCanceledException)
-      {
-        break;
-      }
-
-      try
-      {
         await EvaluateAsync(ct);
       }
       catch (OperationCanceledException)
@@ -53,6 +44,15 @@ public sealed class RetentionEngine : IAsyncDisposable
       catch (Exception ex)
       {
         _logger.LogError(ex, "Retention evaluation failed");
+      }
+
+      try
+      {
+        await Task.Delay(TimeSpan.FromMinutes(DefaultIntervalMinutes), ct);
+      }
+      catch (OperationCanceledException)
+      {
+        break;
       }
     }
   }
@@ -110,6 +110,8 @@ public sealed class RetentionEngine : IAsyncDisposable
             break;
         }
       }
+
+      await PurgeEventsAsync(data, camera, streamsResult.AsT0, ct);
 
       foreach (var stream in streamsResult.AsT0)
       {
@@ -243,6 +245,41 @@ public sealed class RetentionEngine : IAsyncDisposable
 
     _logger.LogInformation("Purged {Count} segments ({Bytes} bytes)",
       segments.Count, segments.Sum(s => s.SizeBytes));
+  }
+
+  // Every retention mode works by purging segments, so whatever survives a purge is the
+  // boundary for days, bytes and percent alike. Anchoring events to the oldest remaining
+  // segment therefore follows the policy without having to know which mode produced it.
+  private async Task PurgeEventsAsync(
+    IDataProvider data, Camera camera, IReadOnlyList<CameraStream> streams, CancellationToken ct)
+  {
+    ulong? cutoff = null;
+
+    foreach (var stream in streams)
+    {
+      var oldestResult = await data.Segments.GetOldestAsync(stream.Id, 1, ct);
+      if (oldestResult.IsT1 || oldestResult.AsT0.Count == 0)
+        continue;
+
+      var start = oldestResult.AsT0[0].StartTime;
+      if (cutoff == null || start < cutoff)
+        cutoff = start;
+    }
+
+    if (cutoff == null)
+      return;
+
+    var deleteResult = await data.Events.DeleteOlderThanAsync(camera.Id, cutoff.Value, ct);
+    if (deleteResult.IsT1)
+    {
+      _logger.LogWarning("Retention: failed to purge events for camera {CameraId}: {Message}",
+        camera.Id, deleteResult.AsT1.Message);
+      return;
+    }
+
+    if (deleteResult.AsT0 > 0)
+      _logger.LogInformation("Purged {Count} events for camera {CameraId}",
+        deleteResult.AsT0, camera.Id);
   }
 
   private async Task<(RetentionMode Mode, long Value)> GetGlobalPolicyAsync(CancellationToken ct)

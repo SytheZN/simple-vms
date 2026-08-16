@@ -126,18 +126,18 @@ public sealed class TunnelIntegrationTests
   /// Version exchange after TLS handshake
   ///
   /// ACTION:
-  /// Handshake, then send version 1 on stream 0, read server response
+  /// Handshake, then send the protocol version on stream 0, read server response
   ///
   /// EXPECTED RESULT:
-  /// Server responds with version 1
+  /// Server responds with the same protocol version
   /// </summary>
   [Test, Order(5)]
-  public async Task VersionExchange_ReturnsVersion1()
+  public async Task VersionExchange_ReturnsCurrentVersion()
   {
     var (tcp, ssl) = await ConnectTlsAsync();
 
     var versionPayload = new byte[4];
-    BinaryPrimitives.WriteUInt32LittleEndian(versionPayload, 1);
+    BinaryPrimitives.WriteUInt32LittleEndian(versionPayload, MessageEnvelope.CurrentVersion);
     var frame = new byte[MessageEnvelope.MuxHeaderSize + 4];
     MessageEnvelope.WriteMuxHeader(frame, 0, 0, 4);
     versionPayload.CopyTo(frame.AsSpan(MessageEnvelope.MuxHeaderSize));
@@ -154,7 +154,7 @@ public sealed class TunnelIntegrationTests
     await ssl.ReadExactlyAsync(responsePayload);
     var serverVersion = BinaryPrimitives.ReadUInt32LittleEndian(responsePayload);
 
-    Assert.That(serverVersion, Is.EqualTo(1u));
+    Assert.That(serverVersion, Is.EqualTo(MessageEnvelope.CurrentVersion));
 
     await ssl.DisposeAsync();
     tcp.Dispose();

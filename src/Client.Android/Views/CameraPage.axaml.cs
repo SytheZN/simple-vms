@@ -163,15 +163,13 @@ public sealed partial class CameraPage : UserControl
       var timelineVm = ((AndroidApp)Avalonia.Application.Current!).Services
         .GetRequiredService<TimelineViewModel>();
       timelineVm.Configure(cameraId, vm.SelectedProfile);
-      var now = (ulong)(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000);
-      var fourHours = 4UL * 3600 * 1_000_000;
-      timelineVm.SetVisibleRange(now - fourHours, now + fourHours / 4);
       if (_timeline != null)
       {
         _timeline.ViewModel = timelineVm;
+        _timeline.SetPosition(vm.CurrentPositionUs > 0
+          ? (ulong)vm.CurrentPositionUs
+          : (ulong)(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000));
       }
-      timelineVm.CurrentPosition = (ulong)vm.CurrentPositionUs;
-      await timelineVm.LoadAsync(ct);
     }
     catch (Exception ex)
     {
@@ -189,8 +187,7 @@ public sealed partial class CameraPage : UserControl
     else if (e.PropertyName == nameof(CameraViewModel.CurrentPositionUs))
     {
       UpdateTimestamp((ulong)vm.CurrentPositionUs);
-      if (_timeline?.ViewModel != null)
-        _timeline.ViewModel.CurrentPosition = (ulong)vm.CurrentPositionUs;
+      _timeline?.SetPosition((ulong)vm.CurrentPositionUs);
     }
     else if (e.PropertyName == nameof(CameraViewModel.IsPaused))
       UpdatePlayPauseIcon(vm.IsPaused);

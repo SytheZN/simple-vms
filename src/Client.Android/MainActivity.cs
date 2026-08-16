@@ -39,6 +39,11 @@ public sealed class MainActivity : AvaloniaMainActivity
 
   protected override void OnCreate(Bundle? savedInstanceState)
   {
+    // On a relaunch into a live process Avalonia is already initialised, so
+    // OnFrameworkInitializationCompleted will not run again and the lifetime still holds the
+    // previous activity's view. Replace it before the base attaches whatever it finds.
+    (Avalonia.Application.Current as AndroidApp)?.ResetMainView();
+
     base.OnCreate(savedInstanceState);
     OnBackPressedDispatcher.AddCallback(this, new BackCallback(this));
 
@@ -57,19 +62,37 @@ public sealed class MainActivity : AvaloniaMainActivity
     if (_shell != null) ApplyImmersive(_shell.IsFullscreen);
   }
 
+  protected override void OnStart()
+  {
+    base.OnStart();
+    if (Avalonia.Application.Current is AndroidApp { IsSuspended: true } app)
+      _ = app.ReconnectAsync();
+  }
+
+  // Nothing is on screen once the activity stops, so holding the tunnel open only keeps the
+  // radio and the decode pipeline alive. Dropping it also tears down any live or playback
+  // stream, which is where the drain actually comes from.
+  protected override void OnStop()
+  {
+    base.OnStop();
+    if (Avalonia.Application.Current is AndroidApp app)
+      _ = app.SuspendAsync();
+  }
+
   public override void OnWindowFocusChanged(bool hasFocus)
   {
     base.OnWindowFocusChanged(hasFocus);
     if (hasFocus && _shell != null) ApplyImmersive(_shell.IsFullscreen);
   }
 
+  // Killing our own process here leaves Android holding a task record pointing at a dead
+  // process, which is why the app could not be resumed from recents. OnStop has already
+  // dropped the tunnel and the foreground service, so there is nothing left running to
+  // justify it - the process can be reclaimed normally.
   protected override void OnDestroy()
   {
-    var finishing = IsFinishing;
     if (_shell != null) _shell.PropertyChanged -= OnShellPropertyChanged;
     base.OnDestroy();
-    if (finishing)
-      global::Android.OS.Process.KillProcess(global::Android.OS.Process.MyPid());
   }
 
   private void OnShellPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -150,7 +173,7 @@ public sealed class MainActivity : AvaloniaMainActivity
         return;
       }
 
-      _activity.MoveTaskToBack(true);
+      _activity.Finish();
     }
   }
 }

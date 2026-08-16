@@ -366,7 +366,7 @@ public class RetentionEngineTests
     public IStreamRepository Streams { get; }
     public ISegmentRepository Segments { get; }
     public IKeyframeRepository Keyframes { get; }
-    public IEventRepository Events => throw new NotImplementedException();
+    public IEventRepository Events { get; }
     public IClientRepository Clients => throw new NotImplementedException();
     public IConfigRepository Config { get; }
     public IDataStore GetDataStore(string pluginId) => throw new NotImplementedException();
@@ -380,8 +380,11 @@ public class RetentionEngineTests
       Streams = new FakeStreamRepo(_streams);
       Segments = new FakeSegmentRepo(_segments);
       Keyframes = new FakeKeyframeRepo();
+      Events = new FakeEventRepo();
       Config = new FakeConfigRepo();
     }
+
+    public List<(Guid CameraId, ulong Cutoff)> PurgedEvents => ((FakeEventRepo)Events).Purged;
 
     public void AddCamera(Camera camera) => _cameras.Add(camera);
 
@@ -496,6 +499,28 @@ public class RetentionEngineTests
       return Task.FromResult<OneOf<Success, Error>>(new Success());
     }
     public Task<OneOf<IReadOnlyList<StreamStorageUsage>, Error>> GetSizeBreakdownAsync(CancellationToken ct) =>
+      throw new NotImplementedException();
+  }
+
+  private sealed class FakeEventRepo : IEventRepository
+  {
+    public List<(Guid CameraId, ulong Cutoff)> Purged { get; } = [];
+
+    public Task<OneOf<int, Error>> DeleteOlderThanAsync(Guid cameraId, ulong cutoff, CancellationToken ct)
+    {
+      Purged.Add((cameraId, cutoff));
+      return Task.FromResult<OneOf<int, Error>>(0);
+    }
+
+    public Task<OneOf<IReadOnlyList<CameraEvent>, Error>> QueryAsync(
+      Guid? cameraId, string? type, ulong from, ulong to, int limit, int offset, CancellationToken ct) =>
+      throw new NotImplementedException();
+    public Task<OneOf<CameraEvent, Error>> GetByIdAsync(Guid id, CancellationToken ct) =>
+      throw new NotImplementedException();
+    public Task<OneOf<Success, Error>> CreateAsync(CameraEvent evt, CancellationToken ct) =>
+      throw new NotImplementedException();
+    public Task<OneOf<IReadOnlyList<CameraEvent>, Error>> GetByTimeRangeAsync(
+      Guid cameraId, ulong from, ulong to, CancellationToken ct) =>
       throw new NotImplementedException();
   }
 

@@ -8,7 +8,7 @@ namespace Client.Core.Tunnel;
 
 public sealed class TunnelService : ITunnelService, IAsyncDisposable
 {
-  private const uint ProtocolVersion = 1;
+  private const uint ProtocolVersion = MessageEnvelope.CurrentVersion;
   private static readonly TimeSpan[] BackoffSteps =
     [
       TimeSpan.FromMilliseconds(100),
