@@ -60,7 +60,7 @@ public sealed class GalleryViewModel : ViewModelBase, IDisposable
       return;
     }
     _logger.LogDebug("Loading cameras");
-    IsLoading = true;
+    RunOnUiThread(() => IsLoading = true);
     var result = await _api.GetCamerasAsync(ct: ct);
     result.Switch(
       cameras => RunOnUiThread(() =>

@@ -28,63 +28,42 @@ public sealed class LogSyncer : IDisposable
 
     while (!ct.IsCancellationRequested)
     {
-      if (data == null)
+      try
       {
-        try
-        {
-          data = new RotatingFileWriter(dataLogDir, startTime);
-        }
-        catch
-        {
-          await DelayOrStop(ct);
-          continue;
-        }
-      }
+        data ??= new RotatingFileWriter(dataLogDir, startTime);
 
-      if (!previousRunsSynced)
-      {
-        try
+        if (!previousRunsSynced)
         {
           SyncPreviousRuns(dataLogDir);
           previousRunsSynced = true;
         }
-        catch
+
+        var tempFiles = RotatingFileWriter.ListLogFiles(_tempDir, _filePrefix);
+        if (tempFiles.Count == 0)
         {
-          data.Dispose();
-          data = null;
           await DelayOrStop(ct);
           continue;
         }
-      }
 
-      var tempFiles = RotatingFileWriter.ListLogFiles(_tempDir, _filePrefix);
-      if (tempFiles.Count == 0)
-      {
-        await DelayOrStop(ct);
-        continue;
-      }
+        if (currentFile != null && !tempFiles.Contains(currentFile))
+        {
+          data.WriteLine("--- gap: logs missing (temp logs rotated before sync) ---");
+          currentFile = null;
+          currentOffset = 0;
+        }
 
-      if (currentFile != null && !tempFiles.Contains(currentFile))
-      {
-        data.WriteLine("--- gap: logs missing (temp logs rotated before sync) ---");
-        currentFile = null;
-        currentOffset = 0;
-      }
+        var startIndex = currentFile != null
+          ? tempFiles.IndexOf(currentFile)
+          : 0;
 
-      var startIndex = currentFile != null
-        ? tempFiles.IndexOf(currentFile)
-        : 0;
+        if (startIndex < 0)
+        {
+          currentFile = null;
+          currentOffset = 0;
+          startIndex = 0;
+        }
 
-      if (startIndex < 0)
-      {
-        currentFile = null;
-        currentOffset = 0;
-        startIndex = 0;
-      }
-
-      var synced = false;
-      try
-      {
+        var synced = false;
         for (var i = startIndex; i < tempFiles.Count; i++)
         {
           var file = tempFiles[i];
@@ -97,15 +76,17 @@ public sealed class LogSyncer : IDisposable
           currentFile = file;
           currentOffset = newOffset;
         }
+
+        if (!synced)
+          await DelayOrStop(ct);
       }
+      catch (OperationCanceledException) { }
       catch
       {
-        data.Dispose();
+        data?.Dispose();
         data = null;
-      }
-
-      if (!synced)
         await DelayOrStop(ct);
+      }
     }
 
     data?.Dispose();

@@ -41,7 +41,7 @@ public sealed class TlsTransportFactory : ITransportFactory
       connectCts.CancelAfter(TimeSpan.FromSeconds(5));
       try
       {
-        await tcpClient.ConnectAsync(host, port, connectCts.Token);
+        await tcpClient.ConnectAsync(host, port, connectCts.Token).ConfigureAwait(false);
       }
       catch (OperationCanceledException) when (!ct.IsCancellationRequested)
       {
@@ -58,7 +58,7 @@ public sealed class TlsTransportFactory : ITransportFactory
       {
         _logger.LogDebug("Starting TLS handshake");
         protocol.Connect(tlsClient);
-        await DriveHandshakeAsync(protocol, tlsClient, netStream, ct);
+        await DriveHandshakeAsync(protocol, tlsClient, netStream, ct).ConfigureAwait(false);
         _logger.LogDebug("TLS handshake completed");
       }
       catch (Exception ex)
@@ -72,7 +72,7 @@ public sealed class TlsTransportFactory : ITransportFactory
         throw;
       }
 
-      return new TransportConnection(new NonBlockingTlsStream(protocol, netStream), tcpClient);
+      return new TransportConnection(new NonBlockingTlsStream(protocol, netStream, _logger), tcpClient);
     }
     catch
     {
@@ -128,15 +128,15 @@ public sealed class TlsTransportFactory : ITransportFactory
     {
       while (!tlsClient.HandshakeComplete)
       {
-        await FlushOutputAsync(protocol, net, ct);
+        await FlushOutputAsync(protocol, net, ct).ConfigureAwait(false);
         if (tlsClient.HandshakeComplete) break;
 
-        var n = await net.ReadAsync(ioBuf.AsMemory(0, 16384), ct);
+        var n = await net.ReadAsync(ioBuf.AsMemory(0, 16384), ct).ConfigureAwait(false);
         if (n <= 0)
           throw new IOException("Connection closed during TLS handshake");
         protocol.OfferInput(ioBuf, 0, n);
       }
-      await FlushOutputAsync(protocol, net, ct);
+      await FlushOutputAsync(protocol, net, ct).ConfigureAwait(false);
     }
     finally { ArrayPool<byte>.Shared.Return(ioBuf); }
   }
@@ -151,23 +151,27 @@ public sealed class TlsTransportFactory : ITransportFactory
     {
       var read = protocol.ReadOutput(buf, 0, avail);
       if (read > 0)
-        await net.WriteAsync(buf.AsMemory(0, read), ct);
+        await net.WriteAsync(buf.AsMemory(0, read), ct).ConfigureAwait(false);
     }
     finally { ArrayPool<byte>.Shared.Return(buf); }
   }
 
   private sealed class NonBlockingTlsStream : Stream
   {
+    private static readonly TimeSpan CloseLockTimeout = TimeSpan.FromSeconds(2);
+
     private readonly TlsClientProtocol _protocol;
     private readonly Stream _transport;
+    private readonly ILogger _logger;
     private readonly SemaphoreSlim _protocolLock = new(1, 1);
     private readonly SemaphoreSlim _socketReadLock = new(1, 1);
     private bool _disposed;
 
-    public NonBlockingTlsStream(TlsClientProtocol protocol, Stream transport)
+    public NonBlockingTlsStream(TlsClientProtocol protocol, Stream transport, ILogger logger)
     {
       _protocol = protocol;
       _transport = transport;
+      _logger = logger;
     }
 
     public override bool CanRead => true;
@@ -202,7 +206,7 @@ public sealed class TlsTransportFactory : ITransportFactory
           ct.ThrowIfCancellationRequested();
 
           int consumed = 0;
-          await _protocolLock.WaitAsync(ct);
+          await _protocolLock.WaitAsync(ct).ConfigureAwait(false);
           try
           {
             var available = _protocol.GetAvailableInputBytes();
@@ -219,16 +223,43 @@ public sealed class TlsTransportFactory : ITransportFactory
 
           rbuf ??= ArrayPool<byte>.Shared.Rent(16384);
 
-          int n;
-          await _socketReadLock.WaitAsync(ct);
-          try { n = await _transport.ReadAsync(rbuf.AsMemory(0, 16384), ct); }
+          // TLS 1.3 AEAD keys its nonce on the record sequence number, so ciphertext must
+          // reach OfferInput in the order it came off the socket. The socket lock therefore
+          // spans read + offer: releasing it between the two lets a concurrent reader offer
+          // a later chunk first, which fails the MAC on every subsequent record.
+          var n = 0;
+          await _socketReadLock.WaitAsync(ct).ConfigureAwait(false);
+          try
+          {
+            n = await _transport.ReadAsync(rbuf.AsMemory(0, 16384), ct).ConfigureAwait(false);
+            if (n > 0)
+            {
+              await _protocolLock.WaitAsync(ct).ConfigureAwait(false);
+              try
+              {
+                _protocol.OfferInput(rbuf, 0, n);
+                var outAvail = _protocol.GetAvailableOutputBytes();
+                if (outAvail > 0)
+                {
+                  var pending = ArrayPool<byte>.Shared.Rent(outAvail);
+                  try
+                  {
+                    var pendingLen = _protocol.ReadOutput(pending, 0, outAvail);
+                    await _transport.WriteAsync(pending.AsMemory(0, pendingLen), ct).ConfigureAwait(false);
+                  }
+                  finally { ArrayPool<byte>.Shared.Return(pending); }
+                }
+              }
+              finally { _protocolLock.Release(); }
+            }
+          }
           finally { _socketReadLock.Release(); }
 
           if (n <= 0)
           {
             // Transport EOF: one final drain for any plaintext already decrypted
             // into the input buffer (e.g. last app-data record co-arriving with close-notify).
-            await _protocolLock.WaitAsync(ct);
+            await _protocolLock.WaitAsync(ct).ConfigureAwait(false);
             try
             {
               var tail = _protocol.GetAvailableInputBytes();
@@ -238,26 +269,6 @@ public sealed class TlsTransportFactory : ITransportFactory
             finally { _protocolLock.Release(); }
             return 0;
           }
-
-          // TLS 1.3 AEAD keys its nonce on the implicit sequence number — records
-          // must reach the wire in encryption order, so lock spans encrypt + send.
-          await _protocolLock.WaitAsync(ct);
-          try
-          {
-            _protocol.OfferInput(rbuf, 0, n);
-            var outAvail = _protocol.GetAvailableOutputBytes();
-            if (outAvail > 0)
-            {
-              var pending = ArrayPool<byte>.Shared.Rent(outAvail);
-              try
-              {
-                var pendingLen = _protocol.ReadOutput(pending, 0, outAvail);
-                await _transport.WriteAsync(pending.AsMemory(0, pendingLen), ct);
-              }
-              finally { ArrayPool<byte>.Shared.Return(pending); }
-            }
-          }
-          finally { _protocolLock.Release(); }
         }
       }
       finally
@@ -271,7 +282,7 @@ public sealed class TlsTransportFactory : ITransportFactory
       byte[] buffer, int offset, int count, CancellationToken ct)
     {
       // Hold the protocol lock across encrypt + socket write: see record-ordering note in ReadAsync.
-      await _protocolLock.WaitAsync(ct);
+      await _protocolLock.WaitAsync(ct).ConfigureAwait(false);
       try
       {
         _protocol.WriteApplicationData(buffer, offset, count);
@@ -282,7 +293,7 @@ public sealed class TlsTransportFactory : ITransportFactory
         try
         {
           var outLen = _protocol.ReadOutput(outBytes, 0, avail);
-          await _transport.WriteAsync(outBytes.AsMemory(0, outLen), ct);
+          await _transport.WriteAsync(outBytes.AsMemory(0, outLen), ct).ConfigureAwait(false);
         }
         finally { ArrayPool<byte>.Shared.Return(outBytes); }
       }
@@ -301,7 +312,7 @@ public sealed class TlsTransportFactory : ITransportFactory
       var rented = ArrayPool<byte>.Shared.Rent(dest.Length);
       try
       {
-        var n = await ReadAsync(rented, 0, dest.Length, ct);
+        var n = await ReadAsync(rented, 0, dest.Length, ct).ConfigureAwait(false);
         rented.AsMemory(0, n).CopyTo(dest);
         return n;
       }
@@ -321,7 +332,7 @@ public sealed class TlsTransportFactory : ITransportFactory
 
     private async Task WriteAsyncWithRent(byte[] rented, int len, CancellationToken ct)
     {
-      try { await WriteAsync(rented, 0, len, ct); }
+      try { await WriteAsync(rented, 0, len, ct).ConfigureAwait(false); }
       finally { ArrayPool<byte>.Shared.Return(rented); }
     }
 
@@ -331,10 +342,24 @@ public sealed class TlsTransportFactory : ITransportFactory
       _disposed = true;
       if (disposing)
       {
-        try { _protocol.Close(); }
+        // Close() rewrites record-layer state, so it must not overlap an in-flight
+        // OfferInput or encrypt. Skip the close_notify rather than corrupt a decrypt
+        // that is still running: the socket is going away regardless.
+        var locked = _protocolLock.Wait(CloseLockTimeout);
+        try
+        {
+          if (locked)
+            _protocol.Close();
+          else
+            _logger.LogDebug("TLS close skipped: protocol still in use");
+        }
         catch (Exception ex)
         {
-          System.Diagnostics.Debug.WriteLine($"TlsClientProtocol.Close failed: {ex}");
+          _logger.LogDebug(ex, "TlsClientProtocol.Close failed");
+        }
+        finally
+        {
+          if (locked) _protocolLock.Release();
         }
       }
       base.Dispose(disposing);
@@ -346,7 +371,7 @@ public sealed class TlsTransportFactory : ITransportFactory
   private static readonly SignatureAndHashAlgorithm PinnedSignatureAlgorithm =
     new(HashAlgorithm.Intrinsic, SignatureAlgorithm.rsa_pss_rsae_sha256);
 
-  // Exactly one TLS 1.3 cipher suite — narrows attack surface to a single modern AEAD.
+  // Exactly one TLS 1.3 cipher suite - narrows attack surface to a single modern AEAD.
   private static readonly int[] PinnedCipherSuites = [CipherSuite.TLS_AES_128_GCM_SHA256];
 
   private sealed class PinnedTlsClient : DefaultTlsClient

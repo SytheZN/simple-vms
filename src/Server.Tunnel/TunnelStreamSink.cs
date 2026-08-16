@@ -34,9 +34,19 @@ internal sealed class TunnelStreamSink : IStreamSink
   private async Task SendAsync(byte[] data, CancellationToken ct)
   {
     if (!_open) return;
+    if (ct.IsCancellationRequested)
+    {
+      _open = false;
+      return;
+    }
+
     try
     {
       await _muxer.SendAsync(_streamId, 0, data, ct);
+    }
+    catch (OperationCanceledException)
+    {
+      _open = false;
     }
     catch (IOException)
     {

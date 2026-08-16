@@ -22,6 +22,7 @@ public sealed class TunnelService : ITunnelService, IAsyncDisposable
       TimeSpan.FromSeconds(30)
     ];
   private static readonly TimeSpan ReprobeInterval = TimeSpan.FromSeconds(60);
+  private static readonly TimeSpan TeardownDrainTimeout = TimeSpan.FromSeconds(5);
 
   private readonly ICredentialStore _credentials;
   private readonly ITransportFactory _transport;
@@ -77,7 +78,7 @@ public sealed class TunnelService : ITunnelService, IAsyncDisposable
     _lifecycleCts?.Dispose();
     _autoReconnect = true;
     _lifecycleCts = new CancellationTokenSource();
-    await ConnectCoreAsync(ct);
+    await ConnectCoreAsync(ct).ConfigureAwait(false);
     _logger.LogDebug("ConnectAsync completed");
   }
 
@@ -86,11 +87,11 @@ public sealed class TunnelService : ITunnelService, IAsyncDisposable
     _logger.LogDebug("DisconnectAsync started");
     _autoReconnect = false;
     _lifecycleCts?.Cancel();
-    await TeardownConnectionAsync();
+    await TeardownConnectionAsync().ConfigureAwait(false);
     if (_reconnectLoop != null)
     {
       _logger.LogDebug("Awaiting reconnect loop completion");
-      try { await _reconnectLoop.WaitAsync(ct); }
+      try { await _reconnectLoop.WaitAsync(ct).ConfigureAwait(false); }
       catch (OperationCanceledException) { }
     }
     _reconnectLoop = null;
@@ -124,16 +125,16 @@ public sealed class TunnelService : ITunnelService, IAsyncDisposable
     {
 
     _logger.LogDebug("Loading credentials");
-    var creds = await _credentials.LoadAsync();
+    var creds = await _credentials.LoadAsync().ConfigureAwait(false);
     if (creds == null)
       throw new InvalidOperationException("No credentials available");
     _logger.LogDebug(
       "Credentials loaded, {AddressCount} addresses available", creds.Addresses.Length);
 
-    var (connection, addressIndex) = await ConnectToServerAsync(creds, ct);
+    var (connection, addressIndex) = await ConnectToServerAsync(creds, ct).ConfigureAwait(false);
 
     _logger.LogDebug("Exchanging protocol version");
-    if (!await ExchangeVersionAsync(connection.Stream, ct))
+    if (!await ExchangeVersionAsync(connection.Stream, ct).ConfigureAwait(false))
     {
       _logger.LogWarning("Protocol version mismatch, disposing connection");
       connection.Dispose();
@@ -166,7 +167,7 @@ public sealed class TunnelService : ITunnelService, IAsyncDisposable
       },
       _logger, connectionCts.Token);
 
-    _readLoop = RunReadLoopAsync(muxer, connectionCts.Token);
+    _readLoop = Task.Run(() => RunReadLoopAsync(muxer, connectionCts.Token), connectionCts.Token);
 
     if (_options.ReprobeEnabled && addressIndex > 0)
     {
@@ -191,7 +192,7 @@ public sealed class TunnelService : ITunnelService, IAsyncDisposable
     _logger.LogDebug("Read loop started");
     try
     {
-      await muxer.RunReadLoopAsync(ct);
+      await muxer.RunReadLoopAsync(ct).ConfigureAwait(false);
     }
     catch (OperationCanceledException)
     {
@@ -213,7 +214,7 @@ public sealed class TunnelService : ITunnelService, IAsyncDisposable
   private async Task ReconnectLoopAsync()
   {
     _logger.LogDebug("ReconnectLoopAsync entry");
-    await TeardownConnectionAsync();
+    await TeardownConnectionAsync().ConfigureAwait(false);
     SetState(ConnectionState.Disconnected);
 
     var token = _lifecycleCts?.Token ?? CancellationToken.None;
@@ -225,7 +226,7 @@ public sealed class TunnelService : ITunnelService, IAsyncDisposable
         "Reconnect attempt {Attempt}, backoff {DelayMs}ms",
         attempt + 1, delay.TotalMilliseconds);
 
-      try { await Task.Delay(delay, token); }
+      try { await Task.Delay(delay, token).ConfigureAwait(false); }
       catch (OperationCanceledException)
       {
         _logger.LogDebug("Reconnect loop cancelled during backoff");
@@ -240,7 +241,7 @@ public sealed class TunnelService : ITunnelService, IAsyncDisposable
 
       try
       {
-        await ConnectCoreAsync(token);
+        await ConnectCoreAsync(token).ConfigureAwait(false);
         _logger.LogDebug("Reconnect succeeded on attempt {Attempt}", attempt + 1);
         return;
       }
@@ -270,7 +271,7 @@ public sealed class TunnelService : ITunnelService, IAsyncDisposable
       ct.ThrowIfCancellationRequested();
       try
       {
-        var connection = await _transport.ConnectAsync(creds.Addresses[hint], creds, ct);
+        var connection = await _transport.ConnectAsync(creds.Addresses[hint], creds, ct).ConfigureAwait(false);
         _logger.LogInformation("Connected to preferred address {Address}", creds.Addresses[hint]);
         return (connection, hint);
       }
@@ -289,7 +290,7 @@ public sealed class TunnelService : ITunnelService, IAsyncDisposable
 
       try
       {
-        var connection = await _transport.ConnectAsync(creds.Addresses[i], creds, ct);
+        var connection = await _transport.ConnectAsync(creds.Addresses[i], creds, ct).ConfigureAwait(false);
         _logger.LogInformation("Connected to {Address}", creds.Addresses[i]);
         return (connection, i);
       }
@@ -313,13 +314,13 @@ public sealed class TunnelService : ITunnelService, IAsyncDisposable
     var frame = new byte[MessageEnvelope.MuxHeaderSize + 4];
     MessageEnvelope.WriteMuxHeader(frame, 0, 0, 4);
     versionPayload.CopyTo(frame.AsSpan(MessageEnvelope.MuxHeaderSize));
-    await transport.WriteAsync(frame, ct);
+    await transport.WriteAsync(frame, ct).ConfigureAwait(false);
 
     byte[] responseHeader;
     try
     {
       responseHeader = new byte[MessageEnvelope.MuxHeaderSize];
-      await transport.ReadExactlyAsync(responseHeader, ct);
+      await transport.ReadExactlyAsync(responseHeader, ct).ConfigureAwait(false);
     }
     catch (EndOfStreamException)
     {
@@ -331,7 +332,7 @@ public sealed class TunnelService : ITunnelService, IAsyncDisposable
       return false;
 
     var responsePayload = new byte[payloadLength];
-    await transport.ReadExactlyAsync(responsePayload, ct);
+    await transport.ReadExactlyAsync(responsePayload, ct).ConfigureAwait(false);
     var serverVersion = BinaryPrimitives.ReadUInt32LittleEndian(responsePayload);
 
     return serverVersion == ProtocolVersion;
@@ -344,7 +345,7 @@ public sealed class TunnelService : ITunnelService, IAsyncDisposable
       "Reprobe loop started, checking {Count} earlier addresses", currentIndex);
     while (!ct.IsCancellationRequested)
     {
-      try { await Task.Delay(ReprobeInterval, ct); }
+      try { await Task.Delay(ReprobeInterval, ct).ConfigureAwait(false); }
       catch (OperationCanceledException) { return; }
 
       for (var i = 0; i < currentIndex; i++)
@@ -355,7 +356,7 @@ public sealed class TunnelService : ITunnelService, IAsyncDisposable
           var (host, port) = TlsTransportFactory.ParseAddress(creds.Addresses[i]);
           using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
           probeCts.CancelAfter(TimeSpan.FromSeconds(3));
-          await probe.ConnectAsync(host, port, probeCts.Token);
+          await probe.ConnectAsync(host, port, probeCts.Token).ConfigureAwait(false);
 
           _logger.LogInformation(
             "Earlier address {Address} reachable, reconnecting", creds.Addresses[i]);
@@ -401,20 +402,35 @@ public sealed class TunnelService : ITunnelService, IAsyncDisposable
     cts?.Cancel();
 
     if (muxer != null)
-      await muxer.DisposeAsync();
+      await muxer.DisposeAsync().ConfigureAwait(false);
 
-    if (readLoop != null)
-      _ = readLoop.ContinueWith(_ => { }, TaskScheduler.Default);
-    if (keepalive != null)
-      _ = keepalive.ContinueWith(_ => { }, TaskScheduler.Default);
-    if (reprobe != null)
-      _ = reprobe.ContinueWith(_ => { }, TaskScheduler.Default);
+    // Disposing the connection closes the TLS protocol object. Anything still driving it
+    // must be off it first, or Close() mutates the record layer under an in-flight decrypt
+    // and every subsequent record fails its MAC.
+    await DrainAsync(readLoop).ConfigureAwait(false);
+    await DrainAsync(keepalive).ConfigureAwait(false);
+    await DrainAsync(reprobe).ConfigureAwait(false);
 
     if (connection != null)
-      await connection.DisposeAsync();
+      await connection.DisposeAsync().ConfigureAwait(false);
     cts?.Dispose();
 
     _logger.LogDebug("TeardownConnectionAsync completed");
+  }
+
+  private async Task DrainAsync(Task? task)
+  {
+    if (task == null) return;
+
+    try { await task.WaitAsync(TeardownDrainTimeout).ConfigureAwait(false); }
+    catch (TimeoutException)
+    {
+      _logger.LogWarning("Teardown timed out waiting for a connection task to stop");
+    }
+    catch (Exception ex)
+    {
+      _logger.LogDebug(ex, "Connection task faulted during teardown");
+    }
   }
 
   private void SetState(ConnectionState state)
@@ -431,10 +447,10 @@ public sealed class TunnelService : ITunnelService, IAsyncDisposable
     _disposed = true;
     _autoReconnect = false;
     _lifecycleCts?.Cancel();
-    await TeardownConnectionAsync();
+    await TeardownConnectionAsync().ConfigureAwait(false);
     if (_reconnectLoop != null)
     {
-      try { await _reconnectLoop; }
+      try { await _reconnectLoop.ConfigureAwait(false); }
       catch (OperationCanceledException) { }
     }
     _lifecycleCts?.Dispose();

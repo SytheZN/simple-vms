@@ -105,14 +105,31 @@ public sealed class StreamMuxer : IAsyncDisposable
       int read;
       try
       {
-        read = await _transport.ReadAtLeastAsync(header, MessageEnvelope.MuxHeaderSize, false, ct);
+        read = await _transport.ReadAtLeastAsync(header, MessageEnvelope.MuxHeaderSize, false, ct)
+          .ConfigureAwait(false);
       }
-      catch (EndOfStreamException) { break; }
-      catch (OperationCanceledException) { break; }
-      catch (IOException) { break; }
+      catch (EndOfStreamException)
+      {
+        _logger.LogDebug("StreamMuxer: read loop exit - peer closed transport (header)");
+        break;
+      }
+      catch (OperationCanceledException)
+      {
+        _logger.LogDebug("StreamMuxer: read loop exit - cancelled (header)");
+        break;
+      }
+      catch (IOException ex)
+      {
+        _logger.LogDebug(ex, "StreamMuxer: read loop exit - IO error (header)");
+        break;
+      }
 
       if (read < MessageEnvelope.MuxHeaderSize)
+      {
+        _logger.LogDebug("StreamMuxer: read loop exit - short header read {Read}/{Expected}",
+          read, MessageEnvelope.MuxHeaderSize);
         break;
+      }
 
       var (streamId, flags, payloadLength) = MessageEnvelope.ReadMuxHeader(header);
 
@@ -122,11 +139,27 @@ public sealed class StreamMuxer : IAsyncDisposable
         var buf = new byte[payloadLength];
         try
         {
-          await _transport.ReadExactlyAsync(buf, ct);
+          await _transport.ReadExactlyAsync(buf, ct).ConfigureAwait(false);
         }
-        catch (EndOfStreamException) { break; }
-        catch (OperationCanceledException) { break; }
-        catch (IOException) { break; }
+        catch (EndOfStreamException)
+        {
+          _logger.LogDebug(
+            "StreamMuxer: read loop exit - peer closed transport mid-payload"
+            + " (stream {StreamId}, {Length} bytes expected)", streamId, payloadLength);
+          break;
+        }
+        catch (OperationCanceledException)
+        {
+          _logger.LogDebug("StreamMuxer: read loop exit - cancelled mid-payload (stream {StreamId})",
+            streamId);
+          break;
+        }
+        catch (IOException ex)
+        {
+          _logger.LogDebug(ex, "StreamMuxer: read loop exit - IO error mid-payload (stream {StreamId})",
+            streamId);
+          break;
+        }
         payload = buf;
       }
 
@@ -180,7 +213,8 @@ public sealed class StreamMuxer : IAsyncDisposable
         }
 
         if (remaining.Length > 0)
-          await WriteWithBacklogLogAsync(entry.Channel, streamId, new MuxMessage(typeFlags, remaining), ct);
+          await WriteWithBacklogLogAsync(entry.Channel, streamId, new MuxMessage(typeFlags, remaining), ct)
+            .ConfigureAwait(false);
 
         if (isFin)
           CompleteAndRemove(streamId);
@@ -195,8 +229,12 @@ public sealed class StreamMuxer : IAsyncDisposable
         continue;
       }
 
-      await WriteWithBacklogLogAsync(entry.Channel, streamId, new MuxMessage(typeFlags, payload), ct);
+      await WriteWithBacklogLogAsync(entry.Channel, streamId, new MuxMessage(typeFlags, payload), ct)
+        .ConfigureAwait(false);
     }
+
+    if (ct.IsCancellationRequested)
+      _logger.LogDebug("StreamMuxer: read loop exit - connection token cancelled");
 
     List<uint> toClose;
     lock (_lock) toClose = [.. _streams.Keys];
@@ -209,7 +247,7 @@ public sealed class StreamMuxer : IAsyncDisposable
     if (channel.Writer.TryWrite(msg)) return;
     _logger.LogDebug("StreamMuxer: stream {StreamId} channel full ({Count}/256), mux read loop blocked",
       streamId, channel.Reader.Count);
-    await channel.Writer.WriteAsync(msg, ct);
+    await channel.Writer.WriteAsync(msg, ct).ConfigureAwait(false);
   }
 
   public async Task SendAsync(
@@ -225,10 +263,14 @@ public sealed class StreamMuxer : IAsyncDisposable
 
       // Single write so header and payload land in the same TLS record
       // (frames above the TLS plaintext max will still fan out).
-      await _writeLock.WaitAsync(ct);
+      await _writeLock.WaitAsync(ct).ConfigureAwait(false);
       try
       {
-        await _transport.WriteAsync(frame.AsMemory(0, total), ct);
+        // Cancellation is honoured up to the moment the frame starts going out, never
+        // during it: aborting mid-frame leaves a partial record on the shared transport
+        // and desyncs the peer's decrypt for every record after it.
+        await _transport.WriteAsync(frame.AsMemory(0, total), CancellationToken.None)
+          .ConfigureAwait(false);
       }
       finally
       {
@@ -262,7 +304,7 @@ public sealed class StreamMuxer : IAsyncDisposable
 
     foreach (var task in tasks)
     {
-      try { await task; }
+      try { await task.ConfigureAwait(false); }
       catch (OperationCanceledException) { }
       catch (Exception) { }
     }
