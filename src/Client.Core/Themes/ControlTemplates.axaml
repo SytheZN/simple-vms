@@ -1,5 +1,6 @@
 <Styles xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:Client.Core.Controls">
 
   <!-- Window -->
   <Style Selector="Window">
@@ -107,13 +108,24 @@
           <ScrollBar x:Name="PART_HorizontalScrollBar"
                      DockPanel.Dock="Bottom"
                      Orientation="Horizontal" />
-          <ScrollContentPresenter x:Name="PART_ContentPresenter"
-                                   Background="{TemplateBinding Background}"
-                                   Content="{TemplateBinding Content}"
-                                   Padding="{TemplateBinding Padding}" />
+          <controls:SoftEndScrollContentPresenter x:Name="PART_ContentPresenter"
+                                                  Background="{TemplateBinding Background}"
+                                                  Content="{TemplateBinding Content}"
+                                                  Padding="{TemplateBinding Padding}">
+            <controls:SoftEndScrollContentPresenter.GestureRecognizers>
+              <ScrollGestureRecognizer
+                  CanHorizontallyScroll="{Binding CanHorizontallyScroll, ElementName=PART_ContentPresenter}"
+                  CanVerticallyScroll="{Binding CanVerticallyScroll, ElementName=PART_ContentPresenter}"
+                  IsScrollInertiaEnabled="{Binding (ScrollViewer.IsScrollInertiaEnabled), ElementName=PART_ContentPresenter}" />
+            </controls:SoftEndScrollContentPresenter.GestureRecognizers>
+          </controls:SoftEndScrollContentPresenter>
         </DockPanel>
       </ControlTemplate>
     </Setter>
+  </Style>
+
+  <Style Selector="ScrollViewer.soft-ends /template/ controls|SoftEndScrollContentPresenter#PART_ContentPresenter">
+    <Setter Property="SoftEnds" Value="True" />
   </Style>
 
   <!-- ScrollBar (vertical) -->

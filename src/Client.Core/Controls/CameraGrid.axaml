@@ -29,7 +29,7 @@
     </Style>
   </UserControl.Styles>
 
-  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+  <ScrollViewer Classes="soft-ends" HorizontalScrollBarVisibility="Disabled">
   <ItemsControl x:Name="GridItems"
                 ItemsSource="{Binding Cameras}"
                 VerticalAlignment="Top">

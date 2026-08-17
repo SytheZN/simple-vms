@@ -87,6 +87,115 @@ public class GalleryViewModelTests
     Assert.That(vm.Cameras, Has.Count.EqualTo(1));
   }
 
+  /// <summary>
+  /// SCENARIO:
+  /// A reload returns the same cameras with one status changed
+  ///
+  /// ACTION:
+  /// Load once, then load again with a changed status on the second camera
+  ///
+  /// EXPECTED RESULT:
+  /// The unchanged camera keeps its original instance (no container rebuild) and only
+  /// the changed one is replaced
+  /// </summary>
+  [Test]
+  public async Task Reload_ReplacesOnlyChangedCameras()
+  {
+    var first = MakeCamera("Cam1", "192.168.1.1", "online");
+    var second = MakeCamera("Cam2", "192.168.1.2", "online");
+
+    var api = new GalleryApi { CameraList = [first, second] };
+    var vm = new GalleryViewModel(api, new FakeStreamTunnel(), new FakeEventService(),
+      NullLogger<GalleryViewModel>.Instance);
+
+    await vm.LoadAsync(CancellationToken.None);
+    var unchangedBefore = vm.Cameras[0];
+
+    api.CameraList =
+    [
+      MakeCamera(first.Id, "Cam1", "192.168.1.1", "online"),
+      MakeCamera(second.Id, "Cam2", "192.168.1.2", "offline")
+    ];
+    await vm.LoadAsync(CancellationToken.None);
+
+    Assert.Multiple(() =>
+    {
+      Assert.That(vm.Cameras, Has.Count.EqualTo(2));
+      Assert.That(vm.Cameras[0], Is.SameAs(unchangedBefore));
+      Assert.That(vm.Cameras[1].Status, Is.EqualTo("offline"));
+    });
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A reload adds one camera and removes another
+  ///
+  /// ACTION:
+  /// Load two cameras, then load a list dropping the first and appending a third
+  ///
+  /// EXPECTED RESULT:
+  /// The surviving camera keeps its instance; the collection matches the new list order
+  /// </summary>
+  [Test]
+  public async Task Reload_AddsAndRemovesInPlace()
+  {
+    var first = MakeCamera("Cam1", "192.168.1.1", "online");
+    var second = MakeCamera("Cam2", "192.168.1.2", "online");
+
+    var api = new GalleryApi { CameraList = [first, second] };
+    var vm = new GalleryViewModel(api, new FakeStreamTunnel(), new FakeEventService(),
+      NullLogger<GalleryViewModel>.Instance);
+
+    await vm.LoadAsync(CancellationToken.None);
+    var survivor = vm.Cameras[1];
+
+    api.CameraList = [second, MakeCamera("Cam3", "192.168.1.3", "online")];
+    await vm.LoadAsync(CancellationToken.None);
+
+    Assert.Multiple(() =>
+    {
+      Assert.That(vm.Cameras, Has.Count.EqualTo(2));
+      Assert.That(vm.Cameras[0], Is.SameAs(survivor));
+      Assert.That(vm.Cameras[1].Name, Is.EqualTo("Cam3"));
+    });
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A refresh runs while cameras are already displayed
+  ///
+  /// ACTION:
+  /// Load once, then load again
+  ///
+  /// EXPECTED RESULT:
+  /// The second load never sets IsLoading, so the refresh happens without showing the spinner
+  /// </summary>
+  [Test]
+  public async Task Reload_WithExistingCameras_NeverShowsSpinner()
+  {
+    var api = new GalleryApi { CameraList = [MakeCamera("Cam1", "192.168.1.1", "online")] };
+    var vm = new GalleryViewModel(api, new FakeStreamTunnel(), new FakeEventService(),
+      NullLogger<GalleryViewModel>.Instance);
+
+    await vm.LoadAsync(CancellationToken.None);
+
+    var sawLoading = false;
+    vm.PropertyChanged += (_, e) =>
+    {
+      if (e.PropertyName == nameof(GalleryViewModel.IsLoading) && vm.IsLoading) sawLoading = true;
+    };
+
+    await vm.LoadAsync(CancellationToken.None);
+
+    Assert.That(sawLoading, Is.False);
+  }
+
+  private static CameraDto MakeCamera(Guid id, string name, string address, string status) => new()
+  {
+    Id = id, Name = name, Address = address,
+    Status = status, ProviderId = "onvif", Streams = [], Capabilities = []
+  };
+
   private static CameraDto MakeCamera(string name, string address, string status) => new()
   {
     Id = Guid.NewGuid(), Name = name, Address = address,

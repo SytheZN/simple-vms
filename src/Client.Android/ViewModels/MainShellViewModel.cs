@@ -19,7 +19,8 @@ public sealed class MainShellViewModel : ViewModelBase, IDisposable
 
   private ViewKind _currentView = ViewKind.Enrollment;
   private Guid? _selectedCameraId;
-  private ViewModelBase? _currentViewModel;
+  private GalleryViewModel? _galleryViewModel;
+  private ViewModelBase? _overlayViewModel;
   private ConnectionState _connectionState;
   private bool _isWideLayout;
   private bool _isSidebarCollapsed;
@@ -111,11 +112,23 @@ public sealed class MainShellViewModel : ViewModelBase, IDisposable
     }
   }
 
-  public ViewModelBase? CurrentViewModel
+  public GalleryViewModel? Gallery
   {
-    get => _currentViewModel;
-    private set => SetProperty(ref _currentViewModel, value);
+    get => _galleryViewModel;
+    private set => SetProperty(ref _galleryViewModel, value);
   }
+
+  public ViewModelBase? Overlay
+  {
+    get => _overlayViewModel;
+    private set
+    {
+      if (SetProperty(ref _overlayViewModel, value))
+        OnPropertyChanged(nameof(IsGalleryVisible));
+    }
+  }
+
+  public bool IsGalleryVisible => _overlayViewModel == null;
 
   public ConnectionState ConnectionState
   {
@@ -171,19 +184,30 @@ public sealed class MainShellViewModel : ViewModelBase, IDisposable
   public ICommand ToggleSidebarCommand { get; }
   public ICommand ToggleFullscreenCommand { get; }
 
+  // The gallery view is kept alive underneath whatever is pushed over it so that returning to it
+  // does not rebuild the grid: a rebuilt grid loses its scroll offset and re-runs the column
+  // layout. Everything else is transient and disposed as it is replaced.
   public void NavigateTo(ViewKind view)
   {
     _logger.LogDebug("NavigateTo {View}", view);
-    DisposeCurrentViewModel();
+    DisposeOverlayViewModel();
     CurrentView = view;
-    CurrentViewModel = view switch
+
+    if (view == ViewKind.Enrollment)
+      DisposeGalleryViewModel();
+    else
+      Gallery ??= Resolve<GalleryViewModel>();
+
+    Overlay = view switch
     {
-      ViewKind.Gallery => Resolve<GalleryViewModel>(),
       ViewKind.Camera => Resolve<CameraViewModel>(),
       ViewKind.Settings => Resolve<SettingsViewModel>(),
       ViewKind.Enrollment => Resolve<EnrollmentViewModel>(),
       _ => null
     };
+
+    if (view == ViewKind.Gallery && Gallery != null)
+      _ = Gallery.LoadAsync(CancellationToken.None);
   }
 
   public void NavigateToCamera(Guid cameraId)
@@ -215,13 +239,19 @@ public sealed class MainShellViewModel : ViewModelBase, IDisposable
   private T Resolve<T>() where T : notnull =>
     (T)_services.GetService(typeof(T))!;
 
-  private void DisposeCurrentViewModel()
+  private void DisposeOverlayViewModel()
   {
-    switch (_currentViewModel)
+    switch (_overlayViewModel)
     {
       case IAsyncDisposable ad: _ = ad.DisposeAsync(); break;
       case IDisposable d: d.Dispose(); break;
     }
+  }
+
+  private void DisposeGalleryViewModel()
+  {
+    _galleryViewModel?.Dispose();
+    Gallery = null;
   }
 
   private void OnTunnelStateChanged(ConnectionState state) =>
@@ -232,7 +262,8 @@ public sealed class MainShellViewModel : ViewModelBase, IDisposable
     _tunnel.StateChanged -= OnTunnelStateChanged;
     if (Avalonia.Application.Current is { } app)
       app.ActualThemeVariantChanged -= _themeVariantChangedHandler;
-    DisposeCurrentViewModel();
+    DisposeOverlayViewModel();
+    DisposeGalleryViewModel();
   }
 
   private sealed class RelayCommand(Action execute) : ICommand

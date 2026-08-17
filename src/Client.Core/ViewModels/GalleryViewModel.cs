@@ -60,15 +60,13 @@ public sealed class GalleryViewModel : ViewModelBase, IDisposable
       return;
     }
     _logger.LogDebug("Loading cameras");
-    RunOnUiThread(() => IsLoading = true);
+    RunOnUiThread(() => IsLoading = Cameras.Count == 0);
     var result = await _api.GetCamerasAsync(ct: ct);
     result.Switch(
       cameras => RunOnUiThread(() =>
       {
         ClearError();
-        Cameras.Clear();
-        foreach (var camera in cameras)
-          Cameras.Add(camera);
+        Reconcile(cameras);
         IsLoading = false;
         _logger.LogDebug("Loaded {Count} cameras", cameras.Count);
       }),
@@ -81,6 +79,72 @@ public sealed class GalleryViewModel : ViewModelBase, IDisposable
           SetError(error);
         });
       });
+  }
+
+  private void Reconcile(IReadOnlyList<CameraDto> incoming)
+  {
+    for (var i = Cameras.Count - 1; i >= 0; i--)
+      if (!incoming.Any(c => c.Id == Cameras[i].Id))
+        Cameras.RemoveAt(i);
+
+    for (var i = 0; i < incoming.Count; i++)
+    {
+      var camera = incoming[i];
+      var existing = IndexOfCamera(camera.Id);
+      if (existing < 0)
+      {
+        Cameras.Insert(i, camera);
+        continue;
+      }
+      if (existing != i) Cameras.Move(existing, i);
+      if (!SameContent(Cameras[i], camera)) Cameras[i] = camera;
+    }
+  }
+
+  private int IndexOfCamera(Guid id)
+  {
+    for (var i = 0; i < Cameras.Count; i++)
+      if (Cameras[i].Id == id) return i;
+    return -1;
+  }
+
+  private static bool SameContent(CameraDto a, CameraDto b) =>
+    a.Name == b.Name &&
+    a.Address == b.Address &&
+    a.Status == b.Status &&
+    a.ProviderId == b.ProviderId &&
+    a.SegmentDuration == b.SegmentDuration &&
+    a.RetentionMode == b.RetentionMode &&
+    a.RetentionValue == b.RetentionValue &&
+    a.Capabilities.SequenceEqual(b.Capabilities) &&
+    a.Streams.SequenceEqual(b.Streams, StreamProfileComparer.Instance) &&
+    SameConfig(a.Config, b.Config);
+
+  private static bool SameConfig(Dictionary<string, string>? a, Dictionary<string, string>? b)
+  {
+    if (a == null || b == null) return a == b;
+    if (a.Count != b.Count) return false;
+    foreach (var (key, value) in a)
+      if (!b.TryGetValue(key, out var other) || other != value) return false;
+    return true;
+  }
+
+  private sealed class StreamProfileComparer : IEqualityComparer<StreamProfileDto>
+  {
+    public static readonly StreamProfileComparer Instance = new();
+
+    public bool Equals(StreamProfileDto? a, StreamProfileDto? b) =>
+      a != null && b != null &&
+      a.Profile == b.Profile &&
+      a.Kind == b.Kind &&
+      a.Codec == b.Codec &&
+      a.Resolution == b.Resolution &&
+      a.Fps == b.Fps &&
+      a.RecordingEnabled == b.RecordingEnabled;
+
+    public int GetHashCode(StreamProfileDto profile) =>
+      HashCode.Combine(profile.Profile, profile.Kind, profile.Codec,
+        profile.Resolution, profile.Fps, profile.RecordingEnabled);
   }
 
   private void OnStateChanged(ConnectionState state)

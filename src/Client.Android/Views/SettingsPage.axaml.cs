@@ -29,6 +29,7 @@ public sealed partial class SettingsPage : UserControl
     _startOnBootToggle = this.FindControl<ToggleButton>("StartOnBootToggle");
 
     this.FindControl<Button>("DisconnectButton")!.Click += OnDisconnect;
+    this.FindControl<Button>("ShareLogButton")!.Click += OnShareLog;
 
     if (_startOnBootToggle != null)
       _startOnBootToggle.IsCheckedChanged += OnStartOnBootChanged;
@@ -103,6 +104,10 @@ public sealed partial class SettingsPage : UserControl
         .NavigateTo(MainShellViewModel.ViewKind.Enrollment);
     }
   }
+
+  private void OnShareLog(object? sender, RoutedEventArgs e) =>
+    (Avalonia.Application.Current as AndroidApp)?.Services
+      .GetService<AndroidLogShareService>()?.Share();
 
   private AndroidSettings? GetAndroidSettings() =>
     (Avalonia.Application.Current as AndroidApp)?.Services.GetService<AndroidSettings>();

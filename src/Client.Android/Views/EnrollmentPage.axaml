@@ -4,7 +4,7 @@
              xmlns:controls="using:Client.Core.Controls"
              x:Class="Client.Android.Views.EnrollmentPage"
              x:DataType="vm:EnrollmentViewModel">
-  <ScrollViewer>
+  <ScrollViewer Classes="soft-ends">
     <Border Classes="card" HorizontalAlignment="Stretch" VerticalAlignment="Center" MaxWidth="640" Padding="24" Margin="16">
       <StackPanel Spacing="16">
         <TextBlock Text="Add Server" Classes="section-heading" />

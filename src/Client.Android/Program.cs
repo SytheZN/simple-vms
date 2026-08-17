@@ -47,6 +47,10 @@ public static class Program
       new AndroidCredentialStore(context, sp.GetRequiredService<ILogger<AndroidCredentialStore>>()));
     services.AddSingleton<INotificationService>(_ => new AndroidNotificationService(context));
     services.AddSingleton(_ => new AndroidSettings(context));
+    services.AddSingleton(sp => new AndroidLogShareService(
+      context,
+      sp.GetRequiredService<DiagnosticsInfo>(),
+      sp.GetRequiredService<ILogger<AndroidLogShareService>>()));
     services.AddSingleton<IQrScannerService>(_ => new AndroidQrScannerService(context));
     services.AddSingleton<MainShellViewModel>();
 

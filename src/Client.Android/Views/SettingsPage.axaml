@@ -4,7 +4,7 @@
              xmlns:controls="using:Client.Core.Controls"
              x:Class="Client.Android.Views.SettingsPage"
              x:DataType="vm:SettingsViewModel">
-  <ScrollViewer Background="Transparent">
+  <ScrollViewer Classes="soft-ends" Background="Transparent">
     <StackPanel Spacing="16" MaxWidth="640">
 
       <Border Classes="card">
@@ -64,6 +64,14 @@
           <SelectableTextBlock Text="{Binding LogFilePath}"
                                Foreground="{DynamicResource TextMutedBrush}"
                                FontSize="{DynamicResource TextSm}" TextWrapping="Wrap" />
+
+          <Button Classes="btn btn-secondary btn-sm" x:Name="ShareLogButton" Margin="0 8 0 0"
+                  HorizontalAlignment="Left">
+            <StackPanel Orientation="Horizontal" Spacing="4">
+              <controls:PhosphorIcon Kind="Share" Width="14" Height="14" />
+              <TextBlock Text="Share" />
+            </StackPanel>
+          </Button>
         </StackPanel>
       </Border>
 

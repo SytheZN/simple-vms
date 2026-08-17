@@ -148,8 +148,12 @@
       </Button>
     </Border>
 
-    <ContentControl Content="{Binding CurrentViewModel}"
-                    Background="{Binding RootBackground}"
-                    Padding="{Binding ContentPadding}" />
+    <Panel Background="{Binding RootBackground}">
+      <ContentControl Content="{Binding Gallery}"
+                      IsVisible="{Binding IsGalleryVisible}"
+                      Padding="{Binding ContentPadding}" />
+      <ContentControl Content="{Binding Overlay}"
+                      Padding="{Binding ContentPadding}" />
+    </Panel>
   </DockPanel>
 </UserControl>

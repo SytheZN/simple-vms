@@ -51,7 +51,7 @@ public sealed partial class GalleryPage : UserControl
       vm.PropertyChanged += OnVmPropertyChanged;
       vm.Cameras.CollectionChanged += OnCamerasChanged;
       vm.CameraEventReceived += OnCameraEvent;
-      _ = vm.LoadAsync(CancellationToken.None);
+      UpdateEmptyState();
     }
   }
 
