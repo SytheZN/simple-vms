@@ -19,7 +19,7 @@ dotnet publish "$SOLUTION_DIR/src/Server/Server.csproj" -c Release -o "$OUT_DIR/
 
 for proj in "$SOLUTION_DIR"/src/plugins/*/*/*.csproj; do
   name="$(basename "$(dirname "$proj")")"
-  dotnet publish "$proj" -c Release -o "$OUT_DIR/server/plugins/$name" "${RID_ARGS[@]}" "${VERSION_ARGS[@]}"
+  dotnet publish "$proj" -c Release -o "$OUT_DIR/server/plugins/$name" "${VERSION_ARGS[@]}"
 done
 
 rid="${BUILD_RID:-local}"
