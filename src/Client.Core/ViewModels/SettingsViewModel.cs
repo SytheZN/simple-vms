@@ -15,6 +15,7 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
   private ConnectionState _connectionState;
   private string[]? _addresses;
   private Guid? _clientId;
+  private bool _confirmingUnregister;
 
   public ObservableCollection<NotificationRule> NotificationRules { get; } = [];
 
@@ -36,7 +37,21 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
     private set => SetProperty(ref _clientId, value);
   }
 
+  public bool ConfirmingUnregister
+  {
+    get => _confirmingUnregister;
+    private set
+    {
+      if (SetProperty(ref _confirmingUnregister, value))
+        OnPropertyChanged(nameof(IsNotConfirmingUnregister));
+    }
+  }
+
+  public bool IsNotConfirmingUnregister => !_confirmingUnregister;
+
   public string? LogFilePath => _diagnostics.LogFilePath;
+
+  public string Version => _diagnostics.Version;
 
   public SettingsViewModel(
     ITunnelService tunnel,
@@ -67,8 +82,32 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
     _router.UpdateRules(NotificationRules.ToList());
   }
 
-  public async Task DisconnectAsync()
+  /// <summary>
+  /// Drops the tunnel and dials again from the first address rather than the one that last worked,
+  /// which is the only way back when the server was unreachable at the address in use. The live
+  /// stream and event subscriptions re-establish themselves off the connection state change.
+  /// </summary>
+  public async Task ReconnectAsync()
   {
+    ClearError();
+    try
+    {
+      await _tunnel.DisconnectAsync();
+      await _tunnel.ConnectAsync(new ConnectionOptions(), CancellationToken.None);
+    }
+    catch (Exception ex)
+    {
+      ErrorMessage = $"Reconnect failed: {ex.Message}";
+    }
+  }
+
+  public void BeginUnregister() => ConfirmingUnregister = true;
+
+  public void CancelUnregister() => ConfirmingUnregister = false;
+
+  public async Task UnregisterAsync()
+  {
+    ConfirmingUnregister = false;
     await _tunnel.DisconnectAsync();
     await _credentials.ClearAsync();
     Addresses = null;

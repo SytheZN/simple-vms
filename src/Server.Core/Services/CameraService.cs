@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Server.Plugins;
 using Shared.Models;
@@ -7,12 +8,13 @@ using Shared.Models.Events;
 
 namespace Server.Core.Services;
 
-public sealed class CameraService
+public sealed class CameraService : IHostedService
 {
   private readonly IPluginHost _plugins;
   private readonly CameraStatusTracker _status;
   private readonly IEventBus _eventBus;
   private readonly ILogger<CameraService> _logger;
+  private CancellationTokenSource? _eventCts;
 
   public CameraService(IPluginHost plugins, CameraStatusTracker status, IEventBus eventBus, ILogger<CameraService> logger)
   {
@@ -20,6 +22,69 @@ public sealed class CameraService
     _status = status;
     _eventBus = eventBus;
     _logger = logger;
+  }
+
+  public Task StartAsync(CancellationToken cancellationToken)
+  {
+    _eventCts = new CancellationTokenSource();
+    WatchPipelineConfigMismatch(_eventCts.Token);
+    return Task.CompletedTask;
+  }
+
+  public Task StopAsync(CancellationToken cancellationToken)
+  {
+    _eventCts?.Cancel();
+    _eventCts?.Dispose();
+    _eventCts = null;
+    return Task.CompletedTask;
+  }
+
+  /// <summary>
+  /// Stored stream metadata belongs to the camera provider, so a stream that no longer matches what
+  /// was probed is re-read from the provider rather than inferred from the bitstream.
+  /// </summary>
+  private void WatchPipelineConfigMismatch(CancellationToken ct)
+  {
+    _ = Task.Run(async () =>
+    {
+      await foreach (var evt in _eventBus.SubscribeAsync<PipelineConfigMismatch>(ct))
+      {
+        try
+        {
+          var cameraId = await FindCameraByStreamUriAsync(evt.Uri, ct);
+          if (cameraId == null)
+          {
+            _logger.LogWarning("No camera owns stream {Uri}; cannot refresh after it changed", evt.Uri);
+            continue;
+          }
+
+          var refreshed = await RefreshAsync(cameraId.Value, ct);
+          if (refreshed.IsT1)
+            _logger.LogError("Refresh failed for camera {CameraId} after {Uri} changed: {Message}",
+              cameraId, evt.Uri, refreshed.AsT1.Message);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+          _logger.LogError(ex, "Failed to refresh camera after {Uri} changed", evt.Uri);
+        }
+      }
+    }, ct);
+  }
+
+  private async Task<Guid?> FindCameraByStreamUriAsync(string uri, CancellationToken ct)
+  {
+    var camerasResult = await _plugins.DataProvider.Cameras.GetAllAsync(ct);
+    if (camerasResult.IsT1) return null;
+
+    foreach (var camera in camerasResult.AsT0)
+    {
+      var streams = await _plugins.DataProvider.Streams.GetByCameraIdAsync(camera.Id, ct);
+      if (streams.IsT1) continue;
+      if (streams.AsT0.Any(s => s.Uri == uri))
+        return camera.Id;
+    }
+
+    return null;
   }
 
   public async Task<OneOf<IReadOnlyList<CameraDto>, Error>> GetAllAsync(
@@ -41,7 +106,9 @@ public sealed class CameraService
             s =>
             {
               var byId = s.ToDictionary(x => x.Id);
-              return s.Select(x => ToStreamDto(x, id => byId.TryGetValue(id, out var v) ? v : null)).ToList();
+              return s.Where(x => x.DeletedAt == null)
+                .Select(x => ToStreamDto(x, id => byId.TryGetValue(id, out var v) ? v : null))
+                .ToList();
             },
             _ => new List<StreamProfileDto>());
 
@@ -110,6 +177,7 @@ public sealed class CameraService
       {
         Profile = s.Profile,
         Kind = s.Kind,
+        FormatId = s.FormatId,
         Codec = s.Codec ?? "",
         Resolution = s.Resolution ?? "",
         Fps = s.Fps ?? 0,
@@ -419,6 +487,7 @@ public sealed class CameraService
     {
       Profile = s.Profile,
       Kind = s.Kind,
+      FormatId = s.FormatId,
       Codec = s.Codec ?? "",
       Resolution = s.Resolution ?? "",
       Fps = s.Fps ?? 0m,

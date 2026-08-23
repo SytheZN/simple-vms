@@ -119,6 +119,10 @@ const selectedStream = computed(() =>
   camera.value?.streams.find(s => s.profile === selectedProfile.value)
 )
 
+const qualityStreams = computed(() =>
+  camera.value?.streams.filter(s => s.kind === 'quality') ?? []
+)
+
 const currentTimeDisplay = computed(() => {
   if (playerState.value.timestampUs <= 0) return '--'
   return new Date(playerState.value.timestampUs / 1000).toLocaleString([], {
@@ -131,7 +135,7 @@ async function loadCamera() {
   loading.value = true
   try {
     camera.value = await api.cameras.get(cameraId.value)
-    const profiles = camera.value.streams.map(s => s.profile)
+    const profiles = qualityStreams.value.map(s => s.profile)
     if (profiles.length > 0 && !profiles.includes(selectedProfile.value)) {
       selectedProfile.value = profiles[0]
     }
@@ -157,7 +161,8 @@ async function startStream() {
 
 function cycleProfile() {
   if (!camera.value || !player.value) return
-  const profiles = camera.value.streams
+  const profiles = qualityStreams.value
+  if (profiles.length === 0) return
   const idx = profiles.findIndex(s => s.profile === selectedProfile.value)
   const next = profiles[(idx + 1) % profiles.length].profile
   selectedProfile.value = next

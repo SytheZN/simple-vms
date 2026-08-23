@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Shared.Models;
+using Shared.Models.Events;
 using Shared.Models.Formats;
 
 namespace Capture.Rtsp;
@@ -10,6 +11,7 @@ internal sealed class RtspSession : IAsyncDisposable
   private readonly string _uri;
   private readonly string? _username;
   private readonly string? _password;
+  private readonly IEventBus? _eventBus;
   private readonly ILogger _logger;
   private readonly ConcurrentDictionary<int, Action<ReadOnlyMemory<byte>>> _channelHandlers = new();
   private readonly List<TrackRegistration> _tracks = [];
@@ -19,30 +21,58 @@ internal sealed class RtspSession : IAsyncDisposable
   private CancellationTokenSource? _readCts;
   private Task? _readLoop;
   private string? _lastSdp;
+  private IReadOnlyList<SdpMediaDescription>? _descriptions;
   private int _demandCount;
   private bool _disposed;
 
   public string Uri => _uri;
+  public bool TransportEnded => _readLoop is { IsCompleted: true };
 
-  public RtspSession(string uri, string? username, string? password, ILogger logger)
+  public RtspSession(
+    string uri, string? username, string? password, IEventBus? eventBus, ILogger logger)
   {
     _uri = uri;
     _username = username;
     _password = password;
+    _eventBus = eventBus;
     _logger = logger;
   }
 
   public async Task<TrackRegistration> EnsureTrackAsync(string mediaType, CancellationToken ct)
   {
-    var existing = _tracks.FirstOrDefault(t => t.MediaType == mediaType);
-    if (existing != null)
-      return existing;
-
     var client = new RtspClient();
     await client.ConnectAndDescribeAsync(_uri, _username, _password, ct);
     _lastSdp = client.LastSdp;
 
     var descriptions = SdpParser.Parse(_lastSdp!);
+
+    if (_descriptions != null && !DescriptionsMatch(_descriptions, descriptions))
+    {
+      _logger.LogInformation("Stream description changed for {Uri}; discarding probed tracks", _uri);
+      _tracks.Clear();
+      _channelHandlers.Clear();
+      _descriptions = descriptions;
+      await client.DisposeAsync();
+
+      if (_eventBus != null)
+        await _eventBus.PublishAsync(new PipelineConfigMismatch
+        {
+          Uri = _uri,
+          Timestamp = DateTimeOffset.UtcNow.ToUnixMicroseconds()
+        }, ct);
+
+      throw new InvalidOperationException(
+        $"Stream description for {_uri} no longer matches the probed tracks");
+    }
+    _descriptions = descriptions;
+
+    var existing = _tracks.FirstOrDefault(t => t.MediaType == mediaType);
+    if (existing != null)
+    {
+      await client.DisposeAsync();
+      return existing;
+    }
+
     var media = descriptions.FirstOrDefault(m => m.MediaType == mediaType)
       ?? throw new InvalidOperationException($"No {mediaType} track found in SDP");
 
@@ -66,13 +96,36 @@ internal sealed class RtspSession : IAsyncDisposable
     return track;
   }
 
+  private static bool DescriptionsMatch(
+    IReadOnlyList<SdpMediaDescription> previous, IReadOnlyList<SdpMediaDescription> current)
+  {
+    if (previous.Count != current.Count) return false;
+
+    for (var i = 0; i < previous.Count; i++)
+    {
+      if (previous[i].MediaType != current[i].MediaType
+        || previous[i].Codec != current[i].Codec
+        || previous[i].ClockRate != current[i].ClockRate
+        || previous[i].ControlUri != current[i].ControlUri
+        || !FormatParametersMatch(previous[i].FormatParameters, current[i].FormatParameters))
+        return false;
+    }
+
+    return true;
+  }
+
+  private static bool FormatParametersMatch(
+    Dictionary<string, string> previous, Dictionary<string, string> current) =>
+    previous.Count == current.Count
+      && previous.All(p => current.TryGetValue(p.Key, out var value) && value == p.Value);
+
   public async Task AddDemandAsync(CancellationToken ct)
   {
     await _demandLock.WaitAsync(ct);
     try
     {
       _demandCount++;
-      if (_demandCount == 1)
+      if (_demandCount == 1 || TransportEnded)
         await ConnectAllAsync(ct);
     }
     finally

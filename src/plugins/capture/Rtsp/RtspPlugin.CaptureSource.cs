@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Logging;
 using Shared.Models;
 
 namespace Capture.Rtsp;
@@ -24,6 +25,7 @@ public sealed partial class RtspPlugin : ICaptureSource
           info.Uri,
           info.Credentials?.GetValueOrDefault("username"),
           info.Credentials?.GetValueOrDefault("password"),
+          EventBus,
           Logger));
 
         var track = await session.EnsureTrackAsync("video", ct);

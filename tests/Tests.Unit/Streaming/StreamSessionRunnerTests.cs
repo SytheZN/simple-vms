@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Server.Streaming;
+using Shared.Models.Formats;
 using Shared.Protocol;
 using Tests.Unit.Mocks;
 
@@ -211,6 +212,108 @@ public class StreamSessionRunnerLiveTests
     }));
   }
 
+  /// <summary>
+  /// SCENARIO:
+  /// A live stream's source stops, as happens when the pipeline behind it is torn down
+  ///
+  /// ACTION:
+  /// Run live against a pipeline whose mux stream completes
+  ///
+  /// EXPECTED RESULT:
+  /// Sink receives Ended, so the client learns the stream stopped rather than waiting on a
+  /// connection that will never produce another frame
+  /// </summary>
+  [Test]
+  public async Task RunLive_MuxStreamEnds_SendsEnded()
+  {
+    var sink = new TestStreamSink();
+    var registry = new StreamTapRegistry();
+    var cameraId = Guid.NewGuid();
+    registry.RegisterPipeline(new StubMuxPipeline(cameraId, "main", new StubMuxStream()));
+
+    await StreamSessionRunner.RunLiveAsync(
+      cameraId, "main", sink, registry,
+      NullLogger.Instance, CancellationToken.None);
+
+    Assert.That(sink.Statuses, Is.EqualTo(new[]
+    {
+      StreamStatus.Ack, StreamStatus.Live, StreamStatus.Ended
+    }));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// The client switches away from live, cancelling the operation while the source is healthy
+  ///
+  /// ACTION:
+  /// Run live against a mux stream that never completes, then cancel
+  ///
+  /// EXPECTED RESULT:
+  /// No Ended is sent - the stream did not stop, the client stopped asking for it
+  /// </summary>
+  [Test]
+  public async Task RunLive_Cancelled_DoesNotSendEnded()
+  {
+    var sink = new TestStreamSink();
+    var registry = new StreamTapRegistry();
+    var cameraId = Guid.NewGuid();
+    registry.RegisterPipeline(
+      new StubMuxPipeline(cameraId, "main", new StubMuxStream(blockUntilCancelled: true)));
+
+    using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+
+    await StreamSessionRunner.RunLiveAsync(
+      cameraId, "main", sink, registry, NullLogger.Instance, cts.Token);
+
+    Assert.That(sink.Statuses, Does.Not.Contain(StreamStatus.Ended));
+  }
+
+  private sealed class StubMuxPipeline(Guid cameraId, string profile, IMuxStream mux) : IPipeline
+  {
+    public Guid CameraId => cameraId;
+    public string Profile => profile;
+    public bool IsConstructed => true;
+    public bool Recordable => true;
+    public ReadOnlyMemory<byte> MuxHeader => ReadOnlyMemory<byte>.Empty;
+    public MuxStreamInfo? MuxInfo => null;
+
+    [System.Diagnostics.CodeAnalysis.RequiresDynamicCode(
+      "Pipeline construction uses dynamic fan-out types")]
+    public Task<OneOf<Success, Error>> ConstructAsync(CancellationToken ct) =>
+      Task.FromResult<OneOf<Success, Error>>(new Success());
+
+    public Task<OneOf<IDataStream, Error>> SubscribeDataAsync(CancellationToken ct) =>
+      throw new NotImplementedException();
+
+    public Task<OneOf<IMuxStream, Error>> SubscribeMuxAsync(CancellationToken ct) =>
+      Task.FromResult(OneOf<IMuxStream, Error>.FromT0(mux));
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+  }
+
+  private sealed class StubMuxStream(bool blockUntilCancelled = false) : IMuxStream
+  {
+    public MuxStreamInfo Info { get; } = new()
+    {
+      DataFormat = "fmp4",
+      MimeType = "video/mp4",
+      FileExtension = "mp4",
+      Resolution = "1920x1080",
+      Fps = 30
+    };
+
+    public ReadOnlyMemory<byte> Header => ReadOnlyMemory<byte>.Empty;
+    public Type FrameType => typeof(Fmp4Fragment);
+
+    public async IAsyncEnumerable<IDataUnit> ReadAsync(
+      [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+      if (blockUntilCancelled)
+        await Task.Delay(Timeout.Infinite, ct);
+
+      yield break;
+    }
+  }
 }
 
 [TestFixture]

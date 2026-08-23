@@ -105,7 +105,7 @@ public class SettingsViewModelTests
   /// Tunnel is disconnected, credentials are cleared, fields are null
   /// </summary>
   [Test]
-  public async Task Disconnect_ClearsCredentialsAndDisconnects()
+  public async Task Unregister_ClearsCredentialsAndDisconnects()
   {
     var credStore = new MockCredentialStore
     {
@@ -119,13 +119,102 @@ public class SettingsViewModelTests
     await vm.LoadAsync();
     Assert.That(vm.Addresses, Is.Not.Null);
 
-    await vm.DisconnectAsync();
+    await vm.UnregisterAsync();
 
     Assert.That(vm.Addresses, Is.Null);
     Assert.That(vm.ClientId, Is.Null);
     Assert.That(credStore.Data, Is.Null);
     Assert.That(tunnel.State, Is.EqualTo(ConnectionState.Disconnected));
   }
+
+  /// <summary>
+  /// SCENARIO:
+  /// The user asks to unregister, which cannot be undone without a fresh enrolment token
+  ///
+  /// ACTION:
+  /// Call BeginUnregister
+  ///
+  /// EXPECTED RESULT:
+  /// The confirmation is raised and nothing is cleared yet
+  /// </summary>
+  [Test]
+  public async Task BeginUnregister_AsksForConfirmationWithoutClearing()
+  {
+    var credStore = new MockCredentialStore
+    {
+      Data = new CredentialData("ca", "cert", "key", ["addr:4433"], Guid.NewGuid())
+    };
+    var vm = CreateViewModel(credStore, new FakeStreamTunnel());
+    await vm.LoadAsync();
+
+    vm.BeginUnregister();
+
+    Assert.Multiple(() =>
+    {
+      Assert.That(vm.ConfirmingUnregister, Is.True);
+      Assert.That(vm.IsNotConfirmingUnregister, Is.False);
+      Assert.That(credStore.Data, Is.Not.Null);
+      Assert.That(vm.Addresses, Is.Not.Null);
+    });
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// The user backs out of the unregister confirmation
+  ///
+  /// ACTION:
+  /// Call BeginUnregister then CancelUnregister
+  ///
+  /// EXPECTED RESULT:
+  /// The confirmation is withdrawn and the credentials survive
+  /// </summary>
+  [Test]
+  public async Task CancelUnregister_KeepsCredentials()
+  {
+    var credStore = new MockCredentialStore
+    {
+      Data = new CredentialData("ca", "cert", "key", ["addr:4433"], Guid.NewGuid())
+    };
+    var vm = CreateViewModel(credStore, new FakeStreamTunnel());
+    await vm.LoadAsync();
+
+    vm.BeginUnregister();
+    vm.CancelUnregister();
+
+    Assert.Multiple(() =>
+    {
+      Assert.That(vm.ConfirmingUnregister, Is.False);
+      Assert.That(credStore.Data, Is.Not.Null);
+    });
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// The tunnel is connected to an address that has since become unreachable
+  ///
+  /// ACTION:
+  /// Call ReconnectAsync
+  ///
+  /// EXPECTED RESULT:
+  /// The tunnel is dialled again rather than left on the dead connection
+  /// </summary>
+  [Test]
+  public async Task Reconnect_RedialsTheTunnel()
+  {
+    var tunnel = new FakeStreamTunnel();
+    var vm = CreateViewModel(new MockCredentialStore(), tunnel);
+
+    await vm.ReconnectAsync();
+
+    Assert.That(tunnel.State, Is.EqualTo(ConnectionState.Connected));
+  }
+
+  private static SettingsViewModel CreateViewModel(
+    MockCredentialStore credStore, FakeStreamTunnel tunnel) =>
+    new(tunnel, credStore,
+      new NotificationRouter(new FakeEventService(), new MockNotificationService(),
+        NullLogger<NotificationRouter>.Instance),
+      new DiagnosticsInfo(null));
 
   /// <summary>
   /// SCENARIO:
@@ -184,5 +273,28 @@ public class SettingsViewModelTests
     var vm = new SettingsViewModel(tunnel, credStore, router, new DiagnosticsInfo("/tmp/client.log"));
 
     Assert.That(vm.LogFilePath, Is.EqualTo("/tmp/client.log"));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// The diagnostics panel reports which build of the client is running
+  ///
+  /// ACTION:
+  /// Construct the view model and read Version
+  ///
+  /// EXPECTED RESULT:
+  /// A version is reported rather than left blank, so a user can quote it in a bug report
+  /// </summary>
+  [Test]
+  public void Version_IsReported()
+  {
+    var credStore = new MockCredentialStore();
+    var tunnel = new FakeStreamTunnel();
+    var router = new NotificationRouter(
+      new FakeEventService(), new MockNotificationService(), NullLogger<NotificationRouter>.Instance);
+
+    var vm = new SettingsViewModel(tunnel, credStore, router, new DiagnosticsInfo(null));
+
+    Assert.That(vm.Version, Is.Not.Empty);
   }
 }

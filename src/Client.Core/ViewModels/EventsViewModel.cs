@@ -117,6 +117,7 @@ public sealed class EventsViewModel : ViewModelBase, IDisposable
   private void OnRealtimeEvent(EventChannelMessage msg, EventChannelFlags flags)
   {
     if ((flags & EventChannelFlags.Start) == 0) return;
+    if (msg.Type is "status" or "removed") return;
 
     if (_filterCameraId != null && _filterCameraId != msg.CameraId) return;
     if (_filterType != null && _filterType != msg.Type) return;

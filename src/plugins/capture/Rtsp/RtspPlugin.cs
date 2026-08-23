@@ -7,6 +7,7 @@ namespace Capture.Rtsp;
 public sealed partial class RtspPlugin : IPlugin
 {
   internal ILogger Logger { get; private set; } = NullLogger.Instance;
+  internal IEventBus? EventBus { get; private set; }
 
   public PluginMetadata Metadata { get; } = new()
   {
@@ -19,6 +20,7 @@ public sealed partial class RtspPlugin : IPlugin
   public OneOf<Success, Error> Initialize(PluginContext context)
   {
     Logger = context.LoggerFactory.CreateLogger("Connection");
+    EventBus = context.EventBus;
     return new Success();
   }
 

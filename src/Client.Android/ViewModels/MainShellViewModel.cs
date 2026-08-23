@@ -208,6 +208,8 @@ public sealed class MainShellViewModel : ViewModelBase, IDisposable
 
     if (view == ViewKind.Gallery && Gallery != null)
       _ = Gallery.LoadAsync(CancellationToken.None);
+    else
+      Gallery?.Suspend();
   }
 
   public void NavigateToCamera(Guid cameraId)

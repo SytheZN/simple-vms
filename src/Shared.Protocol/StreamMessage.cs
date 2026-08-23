@@ -24,6 +24,7 @@ public enum StreamStatus : byte
   Error = 0x04,
   Live = 0x05,
   Recording = 0x06,
+  Ended = 0x07,
 }
 
 [Flags]

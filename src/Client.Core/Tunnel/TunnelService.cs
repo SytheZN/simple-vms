@@ -78,7 +78,20 @@ public sealed class TunnelService : ITunnelService, IAsyncDisposable
     _lifecycleCts?.Dispose();
     _autoReconnect = true;
     _lifecycleCts = new CancellationTokenSource();
-    await ConnectCoreAsync(ct).ConfigureAwait(false);
+
+    // Retries are otherwise armed only by a read loop ending, and no read loop exists until a
+    // connection has been established once. A client started before its server would stay down
+    // until it was restarted.
+    try
+    {
+      await ConnectCoreAsync(ct).ConfigureAwait(false);
+    }
+    catch when (!ct.IsCancellationRequested)
+    {
+      _reconnectLoop = ReconnectLoopAsync();
+      throw;
+    }
+
     _logger.LogDebug("ConnectAsync completed");
   }
 
@@ -214,13 +227,18 @@ public sealed class TunnelService : ITunnelService, IAsyncDisposable
   private async Task ReconnectLoopAsync()
   {
     _logger.LogDebug("ReconnectLoopAsync entry");
+
+    SetState(ConnectionState.Connecting);
     await TeardownConnectionAsync().ConfigureAwait(false);
-    SetState(ConnectionState.Disconnected);
 
     var token = _lifecycleCts?.Token ?? CancellationToken.None;
 
     for (var attempt = 0; _autoReconnect && !token.IsCancellationRequested; attempt++)
     {
+      // Held across the backoff, not just the attempt in flight. A failed attempt leaves the state
+      // disconnected, which would otherwise read as given up while the next one is pending.
+      SetState(ConnectionState.Connecting);
+
       var delay = BackoffSteps[Math.Min(attempt, BackoffSteps.Length - 1)];
       _logger.LogDebug(
         "Reconnect attempt {Attempt}, backoff {DelayMs}ms",

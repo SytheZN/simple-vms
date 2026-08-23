@@ -115,7 +115,10 @@ public static class StreamSessionRunner
         }
       }
     }
-    catch (OperationCanceledException) { }
+    catch (OperationCanceledException) { return; }
+
+    if (!ct.IsCancellationRequested)
+      await sink.SendStatusAsync(StreamStatus.Ended, ct);
   }
 
   public static async Task RunFetchAsync(

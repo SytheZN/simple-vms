@@ -7,13 +7,18 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="Thumbnail/fixtures/**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../../src/Shared.Models/Shared.Models.csproj" />
     <ProjectReference Include="../../src/Shared.Api/Shared.Api.csproj" />
     <ProjectReference Include="../../src/Shared.Protocol/Shared.Protocol.csproj" />
+    <ProjectReference Include="../../src/plugins/analyzer/Thumbnail/Thumbnail.csproj" />
     <ProjectReference Include="../../src/plugins/cameras/Onvif/Onvif.csproj" />
     <ProjectReference Include="../../src/plugins/capture/Rtsp/Rtsp.csproj" />
     <ProjectReference Include="../../src/Server.Streaming/Server.Streaming.csproj" />
     <ProjectReference Include="../../src/plugins/format/Fmp4/Fmp4.csproj" />
+    <ProjectReference Include="../../src/plugins/format/Mjpeg/Mjpeg.csproj" />
     <ProjectReference Include="../../src/plugins/storage/Filesystem/Filesystem.csproj" />
     <ProjectReference Include="../../src/Server.Recording/Server.Recording.csproj" />
     <ProjectReference Include="../../src/Server.Api/Server.Api.csproj" />

@@ -15,6 +15,7 @@ public static class ApiExtensions
     services.AddSingleton<ConnectionTracker>();
     services.AddSingleton<EnrollmentService>();
     services.AddSingleton<CameraService>();
+    services.AddHostedService(sp => sp.GetRequiredService<CameraService>());
     services.AddSingleton<ClientService>();
     services.AddSingleton<DiscoveryService>();
     services.AddSingleton<RecordingService>();
@@ -48,6 +49,7 @@ public static class ApiExtensions
   {
     SnapshotEndpoint.Map(app);
     StreamEndpoints.Map(app);
+    EventEndpoints.Map(app);
     DispatchEndpoint.Map(app);
     return app;
   }

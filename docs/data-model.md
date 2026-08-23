@@ -91,6 +91,8 @@ A camera event (motion, tamper, analytics, disconnect, etc.).
 | `EndTime` | ulong? | Unix microseconds (null if instantaneous or ongoing) |
 | `Metadata` | map? | Type-specific data (opaque to core) |
 
+Events originate from the camera, or from the server: `added` when a camera is added, `config` when it is reconfigured, `disconnect` and `connect` when it drops and returns.
+
 ### Client
 
 An enrolled client device.

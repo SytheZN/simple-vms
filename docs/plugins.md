@@ -148,7 +148,7 @@ public sealed class MuxStreamInfo
     public required string MimeType { get; init; }
     public required string FileExtension { get; init; }
     public required string Resolution { get; init; }
-    public required decimal Fps { get; init; }
+    public required int Fps { get; init; }
 }
 ```
 
@@ -187,6 +187,7 @@ public interface IStreamConnection : IAsyncDisposable
 {
     StreamInfo Info { get; }
     IDataStream DataStream { get; }
+    Task Completed { get; }
 }
 ```
 
@@ -325,8 +326,11 @@ public interface IDataStreamAnalyzerStreamOutput
 public sealed record DerivedStreamSpec : StreamSpec
 {
     public required string ParentProfile { get; init; }
+    public bool Recordable { get; init; } = true;
 }
 ```
+
+`Recordable` is cleared for streams the analyzer regenerates on demand (live previews); the recorder skips them.
 
 `GetDerivedStreams` returns the derived streams the plugin's current configuration would produce for this camera. See [data-model.md](data-model.md) for derived stream lifecycle.
 

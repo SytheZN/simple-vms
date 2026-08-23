@@ -330,10 +330,9 @@ public sealed class TunnelService
         case StreamTypes.EventChannel:
           try
           {
-            await EventChannelHandler.RunAsync(reader,
+            await EventChannelHandler.RunAsync(
               (flags, payload, c) => muxer.SendAsync(streamId, flags, payload, c),
-              _eventBus,
-              _loggerFactory.CreateLogger("EventChannel"), ct);
+              _eventBus, ct);
           }
           finally
           {

@@ -293,6 +293,11 @@
   box-shadow: var(--shadow-card);
 }
 
+.card-flash {
+  border-color: var(--color-warning);
+  box-shadow: 0 0 0 var(--border-width) var(--color-warning);
+}
+
 .toast {
   display: flex;
   align-items: center;

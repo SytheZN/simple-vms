@@ -16,6 +16,7 @@ export const Status = {
   Error: 0x04,
   Live: 0x05,
   Recording: 0x06,
+  Ended: 0x07,
 } as const
 
 export function encodeLive(profile: string): ArrayBuffer {

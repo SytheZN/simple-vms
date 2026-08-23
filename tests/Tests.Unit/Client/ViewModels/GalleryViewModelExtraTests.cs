@@ -26,7 +26,7 @@ public class GalleryViewModelExtraTests
   {
     var api = new GalleryApi { CameraList = [MakeCamera("Cam", "1.2.3.4", "online")] };
     var tunnel = new FakeStreamTunnel { State = ConnectionState.Disconnected };
-    var vm = new GalleryViewModel(api, tunnel, new FakeEventService(),
+    var vm = new GalleryViewModel(api, tunnel, new FakeEventService(), new FakeGalleryThumbnails(),
       NullLogger<GalleryViewModel>.Instance);
 
     await vm.LoadAsync(CancellationToken.None);
@@ -54,7 +54,7 @@ public class GalleryViewModelExtraTests
   {
     var api = new GalleryApi { ReturnError = true };
     var tunnel = new FakeStreamTunnel();
-    var vm = new GalleryViewModel(api, tunnel, new FakeEventService(),
+    var vm = new GalleryViewModel(api, tunnel, new FakeEventService(), new FakeGalleryThumbnails(),
       NullLogger<GalleryViewModel>.Instance);
 
     await vm.LoadAsync(CancellationToken.None);
@@ -81,7 +81,8 @@ public class GalleryViewModelExtraTests
   public void SelectedCamera_FiresPropertyChanged()
   {
     var vm = new GalleryViewModel(new GalleryApi(), new FakeStreamTunnel(),
-      new FakeEventService(), NullLogger<GalleryViewModel>.Instance);
+      new FakeEventService(), new FakeGalleryThumbnails(),
+      NullLogger<GalleryViewModel>.Instance);
     var changed = new List<string>();
     vm.PropertyChanged += (_, e) => changed.Add(e.PropertyName!);
 
@@ -110,7 +111,7 @@ public class GalleryViewModelExtraTests
   {
     var events = new FakeEventService();
     var vm = new GalleryViewModel(new GalleryApi(), new FakeStreamTunnel(),
-      events, NullLogger<GalleryViewModel>.Instance);
+      events, new FakeGalleryThumbnails(), NullLogger<GalleryViewModel>.Instance);
 
     Guid? observed = null;
     vm.CameraEventReceived += id => observed = id;
@@ -141,7 +142,7 @@ public class GalleryViewModelExtraTests
   {
     var events = new FakeEventService();
     var vm = new GalleryViewModel(new GalleryApi(), new FakeStreamTunnel(),
-      events, NullLogger<GalleryViewModel>.Instance);
+      events, new FakeGalleryThumbnails(), NullLogger<GalleryViewModel>.Instance);
 
     var fired = false;
     vm.CameraEventReceived += _ => fired = true;
@@ -172,7 +173,8 @@ public class GalleryViewModelExtraTests
     var api = new GalleryApi { CameraList = [MakeCamera("X", "1.2.3.4", "online")] };
     var events = new FakeEventService();
     var tunnel = new FakeStreamTunnel();
-    var vm = new GalleryViewModel(api, tunnel, events, NullLogger<GalleryViewModel>.Instance);
+    var vm = new GalleryViewModel(api, tunnel, events, new FakeGalleryThumbnails(),
+      NullLogger<GalleryViewModel>.Instance);
 
     var fired = false;
     vm.CameraEventReceived += _ => fired = true;

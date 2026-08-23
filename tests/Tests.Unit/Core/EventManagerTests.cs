@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Server.Core;
+using Server.Plugins;
 using Shared.Models.Events;
 using Tests.Unit.Mocks;
 
@@ -171,6 +172,258 @@ public class EventManagerTests
     Assert.That(sink.SentEvents, Has.Count.EqualTo(1));
   }
 
+  /// <summary>
+  /// SCENARIO:
+  /// A camera event is persisted to history
+  ///
+  /// ACTION:
+  /// Call ProcessEventAsync with the event
+  ///
+  /// EXPECTED RESULT:
+  /// CameraEventRecorded carries the row as written, identifier included, so a client shown it
+  /// finds the same event when it queries
+  /// </summary>
+  [Test]
+  public async Task ProcessEvent_Persisted_PublishesTheRow()
+  {
+    var data = new FakeDataProvider();
+    var eventBus = new FakeEventBus();
+    var host = new FakePluginHost { DataProvider = data };
+    var manager = new EventManager(host, eventBus, NullLogger.Instance);
+
+    var evt = new CameraEvent
+    {
+      Id = Guid.NewGuid(),
+      CameraId = Guid.NewGuid(),
+      Type = "tamper",
+      StartTime = 1000
+    };
+
+    await manager.ProcessEventAsync(evt, CancellationToken.None);
+
+    var recorded = eventBus.Published.OfType<CameraEventRecorded>().ToList();
+    Assert.That(recorded, Has.Count.EqualTo(1));
+    Assert.That(recorded[0].Id, Is.EqualTo(evt.Id));
+    Assert.That(recorded[0].Type, Is.EqualTo("tamper"));
+    Assert.That(recorded[0].Ended, Is.False);
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A motion event arrives reporting that motion stopped
+  ///
+  /// ACTION:
+  /// Call ProcessEventAsync with active=False metadata
+  ///
+  /// EXPECTED RESULT:
+  /// The recorded row is flagged as closing the duration event
+  /// </summary>
+  [Test]
+  public async Task ProcessEvent_MotionInactive_PublishesRowAsEnded()
+  {
+    var data = new FakeDataProvider();
+    var eventBus = new FakeEventBus();
+    var host = new FakePluginHost { DataProvider = data };
+    var manager = new EventManager(host, eventBus, NullLogger.Instance);
+
+    await manager.ProcessEventAsync(new CameraEvent
+    {
+      Id = Guid.NewGuid(),
+      CameraId = Guid.NewGuid(),
+      Type = "motion",
+      StartTime = 6000,
+      Metadata = new Dictionary<string, string> { ["active"] = "False" }
+    }, CancellationToken.None);
+
+    var recorded = eventBus.Published.OfType<CameraEventRecorded>().Single();
+    Assert.That(recorded.Ended, Is.True);
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A camera is added
+  ///
+  /// ACTION:
+  /// Publish CameraAdded on the bus the running manager is watching
+  ///
+  /// EXPECTED RESULT:
+  /// An "added" event is written to history
+  /// </summary>
+  [Test]
+  public async Task CameraAdded_RecordsAdded()
+  {
+    var data = new FakeDataProvider();
+    var eventBus = new EventBus();
+    var cameraId = Guid.NewGuid();
+
+    await using var manager = await StartManagerAsync(data, eventBus);
+
+    await eventBus.PublishAsync(new CameraAdded
+    {
+      CameraId = cameraId,
+      Timestamp = 2_000_000
+    }, CancellationToken.None);
+    await Task.Delay(100);
+
+    Assert.That(data.CreatedEvents, Has.Count.EqualTo(1));
+    Assert.That(data.CreatedEvents[0].Type, Is.EqualTo("added"));
+    Assert.That(data.CreatedEvents[0].CameraId, Is.EqualTo(cameraId));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A camera drops and its pipeline reports offline with reason "disconnected"
+  ///
+  /// ACTION:
+  /// Publish CameraStatusChanged on the bus the running manager is watching
+  ///
+  /// EXPECTED RESULT:
+  /// A "disconnect" event is written to history naming the profile
+  /// </summary>
+  [Test]
+  public async Task StatusChanged_Disconnected_RecordsDisconnect()
+  {
+    var data = new FakeDataProvider();
+    var eventBus = new EventBus();
+    var cameraId = Guid.NewGuid();
+
+    await using var manager = await StartManagerAsync(data, eventBus);
+
+    await PublishStatusAsync(eventBus, cameraId, "offline", "disconnected");
+
+    Assert.That(data.CreatedEvents, Has.Count.EqualTo(1));
+    Assert.That(data.CreatedEvents[0].Type, Is.EqualTo("disconnect"));
+    Assert.That(data.CreatedEvents[0].CameraId, Is.EqualTo(cameraId));
+    Assert.That(data.CreatedEvents[0].Metadata!["profile"], Is.EqualTo("main"));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// The last consumer of a stream goes away, so the pipeline reports offline with "no demand"
+  ///
+  /// ACTION:
+  /// Publish CameraStatusChanged on the bus the running manager is watching
+  ///
+  /// EXPECTED RESULT:
+  /// Nothing is written, because the camera did not go anywhere
+  /// </summary>
+  [Test]
+  public async Task StatusChanged_NoDemand_IsNotRecorded()
+  {
+    var data = new FakeDataProvider();
+    var eventBus = new EventBus();
+
+    await using var manager = await StartManagerAsync(data, eventBus);
+
+    await PublishStatusAsync(eventBus, Guid.NewGuid(), "offline", "no demand");
+
+    Assert.That(data.CreatedEvents, Is.Empty);
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A camera that was recorded as disconnected comes back
+  ///
+  /// ACTION:
+  /// Publish a disconnected status followed by an online status
+  ///
+  /// EXPECTED RESULT:
+  /// The recovery is recorded as "connect" after the "disconnect"
+  /// </summary>
+  [Test]
+  public async Task StatusChanged_OnlineAfterDisconnect_RecordsConnect()
+  {
+    var data = new FakeDataProvider();
+    var eventBus = new EventBus();
+    var cameraId = Guid.NewGuid();
+
+    await using var manager = await StartManagerAsync(data, eventBus);
+
+    await PublishStatusAsync(eventBus, cameraId, "offline", "disconnected");
+    await PublishStatusAsync(eventBus, cameraId, "online", null);
+
+    Assert.That(data.CreatedEvents.Select(e => e.Type),
+      Is.EqualTo(new[] { "disconnect", "connect" }));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A pipeline connects because a viewer arrived, with no preceding disconnect
+  ///
+  /// ACTION:
+  /// Publish an online status on the bus the running manager is watching
+  ///
+  /// EXPECTED RESULT:
+  /// Nothing is written, because a connect only means something after a drop
+  /// </summary>
+  [Test]
+  public async Task StatusChanged_OnlineWithoutDisconnect_IsNotRecorded()
+  {
+    var data = new FakeDataProvider();
+    var eventBus = new EventBus();
+
+    await using var manager = await StartManagerAsync(data, eventBus);
+
+    await PublishStatusAsync(eventBus, Guid.NewGuid(), "online", null);
+
+    Assert.That(data.CreatedEvents, Is.Empty);
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A camera is reconfigured
+  ///
+  /// ACTION:
+  /// Publish CameraConfigChanged on the bus the running manager is watching
+  ///
+  /// EXPECTED RESULT:
+  /// A "config" event is written to history
+  /// </summary>
+  [Test]
+  public async Task ConfigChanged_RecordsConfig()
+  {
+    var data = new FakeDataProvider();
+    var eventBus = new EventBus();
+    var cameraId = Guid.NewGuid();
+
+    await using var manager = await StartManagerAsync(data, eventBus);
+
+    await eventBus.PublishAsync(new CameraConfigChanged
+    {
+      CameraId = cameraId,
+      Timestamp = 4_000_000
+    }, CancellationToken.None);
+    await Task.Delay(100);
+
+    Assert.That(data.CreatedEvents, Has.Count.EqualTo(1));
+    Assert.That(data.CreatedEvents[0].Type, Is.EqualTo("config"));
+    Assert.That(data.CreatedEvents[0].CameraId, Is.EqualTo(cameraId));
+  }
+
+  private static async Task<EventManager> StartManagerAsync(
+    FakeDataProvider data, IEventBus eventBus)
+  {
+    var manager = new EventManager(
+      new FakePluginHost { DataProvider = data }, eventBus, NullLogger.Instance);
+    await manager.StartAsync(CancellationToken.None);
+    await Task.Delay(50);
+    return manager;
+  }
+
+  private static async Task PublishStatusAsync(
+    IEventBus eventBus, Guid cameraId, string status, string? reason)
+  {
+    await eventBus.PublishAsync(new CameraStatusChanged
+    {
+      CameraId = cameraId,
+      Profile = "main",
+      Status = status,
+      Reason = reason,
+      Timestamp = 3_000_000
+    }, CancellationToken.None);
+    await Task.Delay(100);
+  }
+
   private sealed class PassFilter : IEventFilter
   {
     public string FilterId => "pass";
@@ -216,7 +469,7 @@ public class EventManagerTests
   private sealed class FakeDataProvider : IDataProvider
   {
     public string ProviderId => "fake";
-    public ICameraRepository Cameras => throw new NotImplementedException();
+    public ICameraRepository Cameras { get; } = new EmptyCameraRepo();
     public IStreamRepository Streams => throw new NotImplementedException();
     public ISegmentRepository Segments => throw new NotImplementedException();
     public IKeyframeRepository Keyframes => throw new NotImplementedException();
@@ -226,6 +479,24 @@ public class EventManagerTests
     public IDataStore GetDataStore(string pluginId) => throw new NotImplementedException();
 
     public List<CameraEvent> CreatedEvents => ((FakeEventRepo)Events).Created;
+  }
+
+  private sealed class EmptyCameraRepo : ICameraRepository
+  {
+    public Task<OneOf<IReadOnlyList<Camera>, Error>> GetAllAsync(CancellationToken ct = default) =>
+      Task.FromResult<OneOf<IReadOnlyList<Camera>, Error>>(Array.Empty<Camera>());
+
+    public Task<OneOf<Camera, Error>> GetByIdAsync(Guid id, CancellationToken ct = default) =>
+      Task.FromResult<OneOf<Camera, Error>>(
+        Error.Create(0, 0, Result.NotFound, $"Camera {id} not found"));
+    public Task<OneOf<Camera, Error>> GetByAddressAsync(string address, CancellationToken ct = default) =>
+      throw new NotImplementedException();
+    public Task<OneOf<Success, Error>> CreateAsync(Camera camera, CancellationToken ct = default) =>
+      throw new NotImplementedException();
+    public Task<OneOf<Success, Error>> UpdateAsync(Camera camera, CancellationToken ct = default) =>
+      throw new NotImplementedException();
+    public Task<OneOf<Success, Error>> DeleteAsync(Guid id, CancellationToken ct = default) =>
+      throw new NotImplementedException();
   }
 
   private sealed class FakeEventRepo : IEventRepository

@@ -168,6 +168,41 @@ public class TunnelServiceTests
     await service.DisconnectAsync();
   }
 
+  /// <summary>
+  /// SCENARIO:
+  /// The client is started before its server, so the very first connect fails
+  ///
+  /// ACTION:
+  /// Connect against a transport that refuses, then let the server come up
+  ///
+  /// EXPECTED RESULT:
+  /// The initial call reports the failure, and the tunnel connects itself once the server is
+  /// reachable rather than staying down until the app is restarted
+  /// </summary>
+  [Test]
+  public async Task Connect_FirstAttemptFails_RetriesUntilServerAvailable()
+  {
+    var creds = new MockCredentialStore { Data = TestCreds };
+    var transport = new MockTransportFactory();
+    foreach (var address in TestCreds.Addresses)
+      transport.FailAddresses.Add(address);
+
+    var service = new TunnelService(creds, transport, NullLogger<TunnelService>.Instance);
+
+    Assert.ThrowsAsync<InvalidOperationException>(
+      () => service.ConnectAsync(new(), CancellationToken.None));
+
+    transport.FailAddresses.Clear();
+
+    var deadline = DateTime.UtcNow.AddSeconds(5);
+    while (service.State != ConnectionState.Connected && DateTime.UtcNow < deadline)
+      await Task.Delay(50);
+
+    Assert.That(service.State, Is.EqualTo(ConnectionState.Connected));
+
+    await service.DisconnectAsync();
+  }
+
   internal sealed class MockTransportFactory : ITransportFactory
   {
     public HashSet<string> FailAddresses { get; } = [];

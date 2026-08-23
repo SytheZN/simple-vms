@@ -55,20 +55,26 @@ public sealed class ClientLifecycleService
 
     _logger.LogInformation("Connecting to tunnel (preferred index {Index}, reprobe {Reprobe})",
       options.LastSuccessfulIndex, options.ReprobeEnabled);
+    var connected = true;
     try { await _tunnel.ConnectAsync(options, ct); }
     catch (Exception ex)
     {
-      _logger.LogError(ex, "Auto-connect failed");
-      return new AutoConnectOutcome(AutoConnectStatus.TunnelFailed, -1);
+      connected = false;
+      _logger.LogError(ex, "Auto-connect failed, retrying in the background");
     }
 
-    _logger.LogInformation("Tunnel connected at index {Index}, starting event service",
-      _tunnel.ConnectedAddressIndex);
+    // Started either way: the tunnel keeps retrying, and the event service has to be running for
+    // it to resubscribe when one of those attempts lands.
     try { await _events.StartAsync(ct); }
     catch (Exception ex)
     {
-      _logger.LogError(ex, "Event service failed to start after tunnel connect");
+      _logger.LogDebug(ex, "Event service could not subscribe yet");
     }
+
+    if (!connected)
+      return new AutoConnectOutcome(AutoConnectStatus.TunnelFailed, -1);
+
+    _logger.LogInformation("Tunnel connected at index {Index}", _tunnel.ConnectedAddressIndex);
     return new AutoConnectOutcome(AutoConnectStatus.Connected, _tunnel.ConnectedAddressIndex);
   }
 

@@ -126,6 +126,122 @@ public class RecordingManagerTests
     await manager.DisposeAsync();
   }
 
+  /// <summary>
+  /// SCENARIO:
+  /// A camera has a recording-enabled root stream and a derived metadata stream whose
+  /// pipeline declares itself non-recordable (a live preview)
+  ///
+  /// ACTION:
+  /// Call ReconcileAsync for the camera
+  ///
+  /// EXPECTED RESULT:
+  /// Only the root stream gets a writer; the derived stream is skipped despite its root
+  /// being recording-enabled
+  /// </summary>
+  [Test]
+  public async Task ReconcileAsync_NonRecordableDerivedStream_SkipsWriter()
+  {
+    var cameraId = Guid.NewGuid();
+    var rootId = Guid.NewGuid();
+    var data = new FakeDataProvider();
+    data.AddCamera(MakeCamera(cameraId));
+    data.AddStream(MakeStream(rootId, cameraId, recordingEnabled: true));
+    data.AddStream(MakeDerivedStream(cameraId, rootId));
+
+    var tapRegistry = new StreamTapRegistry();
+    tapRegistry.RegisterPipeline(new FakePipeline
+    {
+      CameraId = cameraId,
+      Profile = "main-thumbnail",
+      Recordable = false
+    });
+
+    var host = new FakePluginHost { DataProvider = data, StorageProviders = [new FakeStorage()] };
+    var manager = new RecordingManager(host, tapRegistry, new FakeEventBus(), NullLogger.Instance);
+
+    await manager.ReconcileAsync(cameraId, CancellationToken.None);
+
+    Assert.That(manager.WriterCount, Is.EqualTo(1),
+      "Only the root stream should record");
+
+    await manager.DisposeAsync();
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A camera has a recording-enabled root stream and a derived metadata stream whose
+  /// pipeline declares itself recordable
+  ///
+  /// ACTION:
+  /// Call ReconcileAsync for the camera
+  ///
+  /// EXPECTED RESULT:
+  /// Both streams get writers, so the skip is driven by the declaration rather than by
+  /// the stream being derived
+  /// </summary>
+  [Test]
+  public async Task ReconcileAsync_RecordableDerivedStream_StartsWriter()
+  {
+    var cameraId = Guid.NewGuid();
+    var rootId = Guid.NewGuid();
+    var data = new FakeDataProvider();
+    data.AddCamera(MakeCamera(cameraId));
+    data.AddStream(MakeStream(rootId, cameraId, recordingEnabled: true));
+    data.AddStream(MakeDerivedStream(cameraId, rootId));
+
+    var tapRegistry = new StreamTapRegistry();
+    tapRegistry.RegisterPipeline(new FakePipeline
+    {
+      CameraId = cameraId,
+      Profile = "main-thumbnail",
+      Recordable = true
+    });
+
+    var host = new FakePluginHost { DataProvider = data, StorageProviders = [new FakeStorage()] };
+    var manager = new RecordingManager(host, tapRegistry, new FakeEventBus(), NullLogger.Instance);
+
+    await manager.ReconcileAsync(cameraId, CancellationToken.None);
+
+    Assert.That(manager.WriterCount, Is.EqualTo(2));
+
+    await manager.DisposeAsync();
+  }
+
+  private static CameraStream MakeDerivedStream(Guid cameraId, Guid parentId) => new()
+  {
+    Id = Guid.NewGuid(),
+    CameraId = cameraId,
+    Profile = "main-thumbnail",
+    Kind = StreamKind.Metadata,
+    FormatId = "mjpeg",
+    Codec = "mjpg",
+    ParentStreamId = parentId,
+    ProducerId = "thumbnail"
+  };
+
+  private sealed class FakePipeline : IPipeline
+  {
+    public required Guid CameraId { get; init; }
+    public required string Profile { get; init; }
+    public required bool Recordable { get; init; }
+    public bool IsConstructed => true;
+    public ReadOnlyMemory<byte> MuxHeader => ReadOnlyMemory<byte>.Empty;
+    public MuxStreamInfo? MuxInfo => null;
+
+    [System.Diagnostics.CodeAnalysis.RequiresDynamicCode(
+      "Pipeline construction uses dynamic fan-out types")]
+    public Task<OneOf<Success, Error>> ConstructAsync(CancellationToken ct) =>
+      Task.FromResult<OneOf<Success, Error>>(new Success());
+
+    public Task<OneOf<IDataStream, Error>> SubscribeDataAsync(CancellationToken ct) =>
+      throw new NotImplementedException();
+
+    public Task<OneOf<IMuxStream, Error>> SubscribeMuxAsync(CancellationToken ct) =>
+      throw new NotImplementedException();
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+  }
+
   private static Camera MakeCamera(Guid id) => new()
   {
     Id = id,

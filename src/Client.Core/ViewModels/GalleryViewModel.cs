@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using Client.Core.Api;
 using Client.Core.Events;
+using Client.Core.Streaming;
 using Client.Core.Tunnel;
 using Microsoft.Extensions.Logging;
 using Shared.Api;
@@ -13,13 +14,14 @@ public sealed class GalleryViewModel : ViewModelBase, IDisposable
   private readonly IApiClient _api;
   private readonly ITunnelService _tunnel;
   private readonly IEventService _events;
+  private readonly IGalleryThumbnails _thumbnails;
   private readonly ILogger<GalleryViewModel> _logger;
 
   private int _columns = 3;
   private CameraDto? _selectedCamera;
   private bool _isLoading;
 
-  public ObservableCollection<CameraDto> Cameras { get; } = [];
+  public ObservableCollection<CameraTile> Cameras { get; } = [];
 
   public int Columns
   {
@@ -42,11 +44,12 @@ public sealed class GalleryViewModel : ViewModelBase, IDisposable
   public event Action<Guid>? CameraEventReceived;
 
   public GalleryViewModel(IApiClient api, ITunnelService tunnel, IEventService events,
-    ILogger<GalleryViewModel> logger)
+    IGalleryThumbnails thumbnails, ILogger<GalleryViewModel> logger)
   {
     _api = api;
     _tunnel = tunnel;
     _events = events;
+    _thumbnails = thumbnails;
     _logger = logger;
     _tunnel.StateChanged += OnStateChanged;
     _events.OnEvent += OnEvent;
@@ -68,6 +71,7 @@ public sealed class GalleryViewModel : ViewModelBase, IDisposable
         ClearError();
         Reconcile(cameras);
         IsLoading = false;
+        _thumbnails.Sync(Cameras);
         _logger.LogDebug("Loaded {Count} cameras", cameras.Count);
       }),
       error =>
@@ -81,6 +85,12 @@ public sealed class GalleryViewModel : ViewModelBase, IDisposable
       });
   }
 
+  /// <summary>
+  /// Releases the thumbnail streams for a shell that keeps the gallery alive behind another view.
+  /// The next load restores them.
+  /// </summary>
+  public void Suspend() => _thumbnails.Stop();
+
   private void Reconcile(IReadOnlyList<CameraDto> incoming)
   {
     for (var i = Cameras.Count - 1; i >= 0; i--)
@@ -93,11 +103,11 @@ public sealed class GalleryViewModel : ViewModelBase, IDisposable
       var existing = IndexOfCamera(camera.Id);
       if (existing < 0)
       {
-        Cameras.Insert(i, camera);
+        Cameras.Insert(i, new CameraTile(camera));
         continue;
       }
       if (existing != i) Cameras.Move(existing, i);
-      if (!SameContent(Cameras[i], camera)) Cameras[i] = camera;
+      if (!SameContent(Cameras[i].Camera, camera)) Cameras[i].Camera = camera;
     }
   }
 
@@ -137,13 +147,14 @@ public sealed class GalleryViewModel : ViewModelBase, IDisposable
       a != null && b != null &&
       a.Profile == b.Profile &&
       a.Kind == b.Kind &&
+      a.FormatId == b.FormatId &&
       a.Codec == b.Codec &&
       a.Resolution == b.Resolution &&
       a.Fps == b.Fps &&
       a.RecordingEnabled == b.RecordingEnabled;
 
     public int GetHashCode(StreamProfileDto profile) =>
-      HashCode.Combine(profile.Profile, profile.Kind, profile.Codec,
+      HashCode.Combine(profile.Profile, profile.Kind, profile.FormatId, profile.Codec,
         profile.Resolution, profile.Fps, profile.RecordingEnabled);
   }
 
@@ -158,6 +169,12 @@ public sealed class GalleryViewModel : ViewModelBase, IDisposable
 
   private void OnEvent(EventChannelMessage msg, EventChannelFlags flags)
   {
+    if (msg.Type is "config" or "added" or "removed" or "status" or "connect" or "disconnect")
+    {
+      _ = LoadAsync(CancellationToken.None);
+      return;
+    }
+
     if ((flags & EventChannelFlags.Start) == 0) return;
     RunOnUiThread(() => CameraEventReceived?.Invoke(msg.CameraId));
   }
@@ -166,5 +183,6 @@ public sealed class GalleryViewModel : ViewModelBase, IDisposable
   {
     _tunnel.StateChanged -= OnStateChanged;
     _events.OnEvent -= OnEvent;
+    _thumbnails.Stop();
   }
 }

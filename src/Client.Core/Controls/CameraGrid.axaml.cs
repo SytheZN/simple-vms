@@ -16,6 +16,7 @@ public partial class CameraGrid : UserControl
     AvaloniaProperty.Register<CameraGrid, int>(nameof(Columns), 3);
 
   private const double CondensedThreshold = 200;
+  private const double FlashBorderThickness = 2;
 
   private ItemsControl? _gridItems;
   private UniformGrid? _gridPanel;
@@ -91,13 +92,22 @@ public partial class CameraGrid : UserControl
       flashBrush = res as IBrush;
     flashBrush ??= Brushes.Orange;
 
+    // The extra thickness is taken out of the margin so the border grows into the gap between
+    // cards rather than into the content, which would nudge the thumbnail on every flash.
+    var margin = card.Margin;
+    var grown = FlashBorderThickness - card.BorderThickness.Left;
+
     card.BorderBrush = flashBrush;
-    card.BorderThickness = new Thickness(2);
+    card.BorderThickness = new Thickness(FlashBorderThickness);
+    card.Margin = new Thickness(
+      margin.Left - grown, margin.Top - grown,
+      margin.Right - grown, margin.Bottom - grown);
 
     DispatcherTimer.RunOnce(() =>
     {
       card.ClearValue(Border.BorderBrushProperty);
       card.ClearValue(Border.BorderThicknessProperty);
+      card.ClearValue(Border.MarginProperty);
     }, TimeSpan.FromMilliseconds(800));
   }
 

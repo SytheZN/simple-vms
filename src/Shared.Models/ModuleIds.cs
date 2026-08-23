@@ -40,8 +40,11 @@ public static class ModuleIds
   public const ushort LiveStreaming = 0x000D;
   public const ushort ApiWebSocketStream = 0x000E;
   public const ushort Tunnel = 0x000F;
+  public const ushort ApiWebSocketEvents = 0x0010;
 
   public const ushort PluginRtspCapture = 0x1020;
   public const ushort PluginFmp4 = 0x1030;
   public const ushort PluginFilesystemStorage = 0x1040;
+  public const ushort PluginMjpeg = 0x1050;
+  public const ushort PluginThumbnail = 0x1060;
 }

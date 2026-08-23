@@ -12,6 +12,7 @@ public sealed class DerivedStreamPipeline : IPipeline
   private readonly IDataStreamAnalyzer _analyzerIdentity;
   private readonly IDataStreamAnalyzerStreamOutput _analyzer;
   private readonly IStreamFormat _format;
+  private readonly bool _recordable;
   private readonly ILogger _logger;
   private readonly Lock _lock = new();
 
@@ -29,6 +30,7 @@ public sealed class DerivedStreamPipeline : IPipeline
   public string ProducerId => _analyzerIdentity.AnalyzerId;
   public string FormatId => _format.FormatId;
   public bool IsConstructed { get { lock (_lock) return _constructed; } }
+  public bool Recordable => _recordable;
   public ReadOnlyMemory<byte> MuxHeader { get { lock (_lock) return _muxFanOut?.Header ?? ReadOnlyMemory<byte>.Empty; } }
   public MuxStreamInfo? MuxInfo { get { lock (_lock) return _muxFanOut?.Info; } }
 
@@ -39,6 +41,7 @@ public sealed class DerivedStreamPipeline : IPipeline
     IDataStreamAnalyzer analyzerIdentity,
     IDataStreamAnalyzerStreamOutput analyzer,
     IStreamFormat format,
+    bool recordable,
     ILogger logger)
   {
     _cameraId = cameraId;
@@ -47,6 +50,7 @@ public sealed class DerivedStreamPipeline : IPipeline
     _analyzerIdentity = analyzerIdentity;
     _analyzer = analyzer;
     _format = format;
+    _recordable = recordable;
     _logger = logger;
   }
 

@@ -16,6 +16,7 @@ public sealed class EventManager : IAsyncDisposable
   private readonly IEventBus _eventBus;
   private readonly ILogger _logger;
   private readonly ConcurrentDictionary<Guid, (IEventSubscription Subscription, CancellationTokenSource Cts)> _subscriptions = new();
+  private readonly ConcurrentDictionary<(Guid CameraId, string Profile), bool> _disconnected = new();
   private CancellationTokenSource? _eventCts;
   private bool _disposed;
 
@@ -46,6 +47,7 @@ public sealed class EventManager : IAsyncDisposable
     WatchCameraAdded(_eventCts.Token);
     WatchCameraRemoved(_eventCts.Token);
     WatchCameraConfigChanged(_eventCts.Token);
+    WatchCameraStatusChanged(_eventCts.Token);
 
     _logger.LogInformation("Event manager started: {Count} subscription(s)", _subscriptions.Count);
   }
@@ -197,6 +199,8 @@ public sealed class EventManager : IAsyncDisposable
     var createResult = await _plugins.DataProvider.Events.CreateAsync(evt, ct);
     if (createResult.IsT1)
       _logger.LogWarning("Failed to persist event: {Message}", createResult.AsT1.Message);
+    else
+      await PublishRecordedAsync(evt, IsMotionEnd(evt), ct);
 
     foreach (var sink in _plugins.NotificationSinks)
     {
@@ -240,6 +244,23 @@ public sealed class EventManager : IAsyncDisposable
     }
   }
 
+  private static bool IsMotionEnd(CameraEvent evt) =>
+    evt.Type == "motion"
+      && string.Equals(evt.Metadata?.GetValueOrDefault("active"), "False",
+        StringComparison.OrdinalIgnoreCase);
+
+  private Task PublishRecordedAsync(CameraEvent evt, bool ended, CancellationToken ct) =>
+    _eventBus.PublishAsync(new CameraEventRecorded
+    {
+      Id = evt.Id,
+      CameraId = evt.CameraId,
+      Type = evt.Type,
+      Timestamp = evt.StartTime,
+      EndTime = evt.EndTime,
+      Metadata = evt.Metadata,
+      Ended = ended
+    }, ct);
+
   private async Task StopSubscriptionAsync(Guid cameraId)
   {
     if (_subscriptions.TryRemove(cameraId, out var entry))
@@ -257,7 +278,11 @@ public sealed class EventManager : IAsyncDisposable
     {
       await foreach (var evt in _eventBus.SubscribeAsync<CameraAdded>(ct))
       {
-        try { await ReconcileAsync(evt.CameraId, ct); }
+        try
+        {
+          await RecordAsync(evt.CameraId, "added", evt.Timestamp, null, ct);
+          await ReconcileAsync(evt.CameraId, ct);
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
           _logger.LogError(ex, "Failed to reconcile events on CameraAdded for {CameraId}", evt.CameraId);
@@ -289,6 +314,7 @@ public sealed class EventManager : IAsyncDisposable
       {
         try
         {
+          await RecordAsync(evt.CameraId, "config", evt.Timestamp, null, ct);
           await StopSubscriptionAsync(evt.CameraId);
           await ReconcileAsync(evt.CameraId, ct);
         }
@@ -298,6 +324,59 @@ public sealed class EventManager : IAsyncDisposable
         }
       }
     }, ct);
+  }
+
+  private void WatchCameraStatusChanged(CancellationToken ct)
+  {
+    _ = Task.Run(async () =>
+    {
+      await foreach (var evt in _eventBus.SubscribeAsync<CameraStatusChanged>(ct))
+      {
+        try
+        {
+          var key = (evt.CameraId, evt.Profile);
+          var metadata = new Dictionary<string, string> { ["profile"] = evt.Profile };
+
+          if (evt is { Status: "offline", Reason: "disconnected" })
+          {
+            if (_disconnected.TryAdd(key, true))
+              await RecordAsync(evt.CameraId, "disconnect", evt.Timestamp, metadata, ct);
+          }
+          else if (evt.Status == "online" && _disconnected.TryRemove(key, out _))
+          {
+            await RecordAsync(evt.CameraId, "connect", evt.Timestamp, metadata, ct);
+          }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+          _logger.LogError(ex, "Failed to record status change for {CameraId}", evt.CameraId);
+        }
+      }
+    }, ct);
+  }
+
+  private async Task RecordAsync(
+    Guid cameraId, string type, ulong timestamp,
+    Dictionary<string, string>? metadata, CancellationToken ct)
+  {
+    var evt = new CameraEvent
+    {
+      Id = Guid.NewGuid(),
+      CameraId = cameraId,
+      Type = type,
+      StartTime = timestamp,
+      Metadata = metadata
+    };
+
+    var result = await _plugins.DataProvider.Events.CreateAsync(evt, ct);
+    if (result.IsT1)
+    {
+      _logger.LogWarning("Failed to persist '{Type}' event for camera {CameraId}: {Message}",
+        type, cameraId, result.AsT1.Message);
+      return;
+    }
+
+    await PublishRecordedAsync(evt, false, ct);
   }
 
   private static CameraConfiguration BuildConfiguration(Camera camera)

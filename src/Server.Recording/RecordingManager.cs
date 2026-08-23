@@ -116,7 +116,7 @@ public sealed class RecordingManager : IAsyncDisposable
     var desiredProfiles = new HashSet<string>();
     var byId = streamsResult.AsT0.ToDictionary(s => s.Id);
 
-    foreach (var stream in streamsResult.AsT0)
+    foreach (var stream in streamsResult.AsT0.Where(s => s.DeletedAt == null))
     {
       var root = stream.Kind == StreamKind.Metadata
         ? Server.Core.StreamHierarchy.ResolveRootStream(
@@ -124,6 +124,9 @@ public sealed class RecordingManager : IAsyncDisposable
         : stream;
 
       if (!root.RecordingEnabled)
+        continue;
+
+      if (_tapRegistry.GetPipeline(cameraId, stream.Profile) is { Recordable: false })
         continue;
 
       desiredProfiles.Add(stream.Profile);
@@ -287,6 +290,11 @@ public sealed class RecordingManager : IAsyncDisposable
       try
       {
         await entry.Writer.RunAsync(muxResult.AsT0, header, ct);
+
+        _logger.LogDebug(
+          "Mux stream ended for camera {CameraId} profile '{Profile}', dropping writer",
+          cameraId, profile);
+        await StopWriterAsync(cameraId, profile);
         return;
       }
       catch (OperationCanceledException)

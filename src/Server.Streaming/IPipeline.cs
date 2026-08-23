@@ -8,6 +8,7 @@ public interface IPipeline : IAsyncDisposable
   Guid CameraId { get; }
   string Profile { get; }
   bool IsConstructed { get; }
+  bool Recordable { get; }
   ReadOnlyMemory<byte> MuxHeader { get; }
   MuxStreamInfo? MuxInfo { get; }
   [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]

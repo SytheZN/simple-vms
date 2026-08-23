@@ -267,6 +267,15 @@ Client opens a single long-lived stream to subscribe to events. The server sends
 | `endTime` | ulong? | Event end in Unix microseconds, null if instantaneous or ongoing |
 | `metadata` | map? | Type-specific metadata |
 
+Messages carrying an event that was written to history use that row's `id`, so a later query returns the same event. Alongside those reported by the camera, the server writes `added`, `config`, `connect` and `disconnect`.
+
+**Notices**, which carry no history row and tell a client its view has gone stale:
+
+| Type | Description |
+|------|-------------|
+| `removed` | A camera was removed |
+| `status` | A pipeline went online or offline. Metadata carries `status`, `profile`, and `reason` where set |
+
 **Flags:**
 
 | Bit | Name | Description |

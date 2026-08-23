@@ -1,17 +1,20 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
 
 const route = useRoute()
 const router = useRouter()
 const ready = ref(false)
-const settingsExpanded = ref(false)
 
 const isSettingsPage = computed(() =>
   typeof route.name === 'string' && route.name.startsWith('settings-'))
 
-const settingsOpen = computed(() => settingsExpanded.value || isSettingsPage.value)
+const settingsOpen = ref(isSettingsPage.value)
+
+watch(isSettingsPage, active => {
+  if (active) settingsOpen.value = true
+})
 
 const isSetupRoute = (name: unknown) =>
   name === 'setup' || name === 'setup-complete'
@@ -67,7 +70,7 @@ onMounted(async () => {
       <router-link to="/clients" class="nav-link" active-class="nav-link-active">
         <i class="ph ph-devices icon-sm"></i> Clients
       </router-link>
-      <a href="#" class="nav-link" :class="{ 'nav-link-active': isSettingsPage }" @click.prevent="settingsExpanded = !settingsExpanded">
+      <a href="#" class="nav-link" :class="{ 'nav-link-active': isSettingsPage }" @click.prevent="settingsOpen = !settingsOpen">
         <i class="ph ph-gear icon-sm"></i> Settings
         <i class="ph ph-caret-down icon-sm nav-link-toggle" :class="{ 'nav-link-toggle-open': settingsOpen }"></i>
       </a>

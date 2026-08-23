@@ -40,25 +40,27 @@
       <controls:Spinner Size="32" HorizontalAlignment="Center" />
     </Panel>
 
-    <!-- Empty state -->
-    <StackPanel x:Name="EmptyState"
-                IsVisible="False"
-                HorizontalAlignment="Center"
-                VerticalAlignment="Center"
-                Spacing="{DynamicResource Space3}"
-                Margin="0 48">
-      <controls:PhosphorIcon Kind="VideoCameraSlash"
-                                  Width="{DynamicResource IconXl}"
-                                  Height="{DynamicResource IconXl}"
-                                  Foreground="{DynamicResource TextMutedBrush}"
-                                  HorizontalAlignment="Center" />
-      <TextBlock Text="No cameras found."
-                 Classes="text-muted"
-                 HorizontalAlignment="Center" />
-    </StackPanel>
+    <Panel>
+      <!-- Camera grid -->
+      <controls:CameraGrid x:Name="Grid"
+                            Columns="{Binding Columns}" />
 
-    <!-- Camera grid -->
-    <controls:CameraGrid x:Name="Grid"
-                          Columns="{Binding Columns}" />
+      <!-- Empty state -->
+      <StackPanel x:Name="EmptyState"
+                  IsVisible="False"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Center"
+                  Spacing="{DynamicResource Space3}"
+                  Margin="0 48">
+        <controls:PhosphorIcon Kind="VideoCameraSlash"
+                                    Width="{DynamicResource IconXl}"
+                                    Height="{DynamicResource IconXl}"
+                                    Foreground="{DynamicResource TextMutedBrush}"
+                                    HorizontalAlignment="Center" />
+        <TextBlock Text="No cameras found."
+                   Classes="text-muted"
+                   HorizontalAlignment="Center" />
+      </StackPanel>
+    </Panel>
   </DockPanel>
 </UserControl>

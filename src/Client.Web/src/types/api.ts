@@ -21,11 +21,21 @@ export type StreamKind = 'quality' | 'metadata'
 export interface StreamProfile {
   profile: string
   kind: StreamKind
+  formatId: string
   codec: string
   resolution: string
   fps: number
   bitrate?: number
   recordingEnabled: boolean
+}
+
+export interface LiveEvent {
+  id: string
+  cameraId: string
+  type: string
+  startTime: number
+  metadata?: Record<string, string>
+  ended: boolean
 }
 
 export interface CameraListItem {

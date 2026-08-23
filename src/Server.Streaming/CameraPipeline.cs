@@ -23,7 +23,6 @@ public sealed class CameraPipeline : IPipeline
   private IStreamConnection? _connection;
   private CancellationTokenSource? _feedCts;
   private Task? _feedLoop;
-  private Type? _constructedFrameType;
   private bool _constructed;
   private bool _disposed;
 
@@ -31,11 +30,10 @@ public sealed class CameraPipeline : IPipeline
   public string Profile => _profile;
   public string ConnectionUri => _connectionInfo.Uri;
   public bool IsConstructed { get { lock (_lock) return _constructed; } }
+  public bool Recordable => true;
   public bool IsActive { get { lock (_lock) return _connection != null; } }
   public MuxStreamInfo? MuxInfo { get { lock (_lock) return _muxFanOut?.Info; } }
   public ReadOnlyMemory<byte> MuxHeader { get { lock (_lock) return _muxFanOut?.Header ?? ReadOnlyMemory<byte>.Empty; } }
-
-  public Action? OnParameterMismatch { get; set; }
 
   internal static readonly TimeSpan[] BackoffDelays =
   [
@@ -124,7 +122,6 @@ public sealed class CameraPipeline : IPipeline
       _dataFanOut = fanOut;
       _muxFanOut = muxFanOut;
       _muxSubscription = muxSub;
-      _constructedFrameType = dataStream.FrameType;
       _constructed = true;
     }
 
@@ -203,13 +200,12 @@ public sealed class CameraPipeline : IPipeline
 
     var connection = connectResult.AsT0;
 
-    if (connection.DataStream.FrameType != _constructedFrameType)
+    if (_dataFanOut is IDataStream fanOut && fanOut.FrameType != connection.DataStream.FrameType)
     {
-      _logger.LogWarning(
-        "Stream parameter mismatch for camera {CameraId} profile '{Profile}': expected {Expected}, got {Actual}",
-        _cameraId, _profile, _constructedFrameType?.Name, connection.DataStream.FrameType.Name);
+      _logger.LogDebug(
+        "Refusing connection for camera {CameraId} profile '{Profile}': stream carries {Actual}, pipeline carries {Expected}",
+        _cameraId, _profile, connection.DataStream.FrameType.Name, fanOut.FrameType.Name);
       await connection.DisposeAsync();
-      OnParameterMismatch?.Invoke();
       return;
     }
 

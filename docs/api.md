@@ -404,6 +404,21 @@ Query events.
 
 Get a single event's full details.
 
+#### GET /api/v1/events/stream
+
+WebSocket upgrade. Delivers the event channel described in [protocol.md](protocol.md) to clients that do not use the tunnel. The server sends only; it does not read from the socket.
+
+**Event messages (server > client)**, JSON:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | Guid | Event identifier |
+| `cameraId` | Guid | Source camera |
+| `type` | string | Event type |
+| `startTime` | ulong | Unix microseconds |
+| `metadata` | object? | Type-specific data |
+| `ended` | bool | Event ended (carried in the frame flags on the tunnel) |
+
 ---
 
 ### Retention
@@ -621,6 +636,8 @@ WebSocket upgrade. Opens a bidirectional streaming session for the specified cam
 |-----------|------|--------|
 | `0x01` | Init | profile (length-prefixed UTF-8), data (init segment, format-defined) |
 | `0x02` | Gop | flags (byte), profile (length-prefixed UTF-8), timestamp (uint64 BE), data (mux fragment) |
-| `0x03` | Status | status byte: Ack (0x00), FetchComplete (0x01), Gap (0x02 + from/to uint64 BE), Error (0x04), Live (0x05), Recording (0x06) |
+| `0x03` | Status | status byte: Ack (0x00), FetchComplete (0x01), Gap (0x02 + from/to uint64 BE), Error (0x04), Live (0x05), Recording (0x06), Ended (0x07) |
 
 The client sends a `Live` command to start receiving the live stream, or a `Fetch` command to request recorded data for a time range. The server responds with `Init` (when the format defines one), followed by `Gop` messages (mux fragments), and `Status` messages to signal mode, gaps, and fetch completion. The client can switch between live and playback at any time by sending a new command.
+
+`Ended` signals that a live stream's source stopped, as happens when its pipeline is rebuilt. The socket stays open for a new command. `Error` signals that the stream could not be served.

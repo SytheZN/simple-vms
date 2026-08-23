@@ -5,6 +5,7 @@
   <ItemGroup>
     <ProjectReference Include="../Shared.Models/Shared.Models.csproj" />
     <ProjectReference Include="../Shared.Api/Shared.Api.csproj" />
+    <ProjectReference Include="../Shared.Protocol/Shared.Protocol.csproj" />
     <ProjectReference Include="../Server.Plugins/Server.Plugins.csproj" />
   </ItemGroup>
 </Project>

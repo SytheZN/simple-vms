@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <InternalsVisibleTo Include="Tests.Unit" />
+    <InternalsVisibleTo Include="ThumbnailBench" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../Shared.Models/Shared.Models.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="BitMiracle.LibJpeg.NET" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="OneOf" />
+  </ItemGroup>
+</Project>

@@ -33,12 +33,33 @@
             </ItemsControl.ItemTemplate>
           </ItemsControl>
 
-          <Button Classes="btn btn-danger btn-sm" x:Name="DisconnectButton" Margin="0 8 0 0">
+          <Button Classes="btn btn-secondary btn-sm" x:Name="ReconnectButton"
+                  Margin="0 8 0 0">
+            <TextBlock Text="Force reconnect" />
+          </Button>
+
+          <Button Classes="btn btn-danger btn-sm" x:Name="UnregisterButton"
+                  IsVisible="{Binding IsNotConfirmingUnregister}"
+                  Margin="0 24 0 0">
             <StackPanel Orientation="Horizontal" Spacing="4">
               <controls:PhosphorIcon Kind="SignOut" Width="14" Height="14" />
-              <TextBlock Text="Disconnect" />
+              <TextBlock Text="Unregister" />
             </StackPanel>
           </Button>
+
+          <StackPanel Spacing="8" Margin="0 24 0 0"
+                      IsVisible="{Binding ConfirmingUnregister}">
+            <TextBlock Text="Unregistering deletes this client's credentials. You will need to enrol again with a new token before you can reach the server."
+                       Classes="text-muted" FontSize="{DynamicResource TextSm}"
+                       TextWrapping="Wrap" />
+            <!-- Cancel first: a second tap landing where Unregister was must not confirm. -->
+            <Button Classes="btn btn-secondary btn-sm" x:Name="CancelUnregisterButton">
+              <TextBlock Text="Cancel" />
+            </Button>
+            <Button Classes="btn btn-danger btn-sm" x:Name="ConfirmUnregisterButton">
+              <TextBlock Text="Unregister" />
+            </Button>
+          </StackPanel>
         </StackPanel>
       </Border>
 
@@ -57,21 +78,29 @@
         </StackPanel>
       </Border>
 
-      <Border Classes="card" IsVisible="{Binding LogFilePath, Converter={x:Static ObjectConverters.IsNotNull}}">
+      <Border Classes="card">
         <StackPanel Spacing="12">
           <TextBlock Text="Diagnostics" Classes="section-heading" />
-          <TextBlock Text="LOG FILE" Classes="section-subheading" Margin="0 8 0 0" />
-          <SelectableTextBlock Text="{Binding LogFilePath}"
+          <TextBlock Text="VERSION" Classes="section-subheading" Margin="0 8 0 0" />
+          <SelectableTextBlock Text="{Binding Version}"
                                Foreground="{DynamicResource TextMutedBrush}"
-                               FontSize="{DynamicResource TextSm}" TextWrapping="Wrap" />
+                               FontSize="{DynamicResource TextSm}" />
 
-          <Button Classes="btn btn-secondary btn-sm" x:Name="ShareLogButton" Margin="0 8 0 0"
-                  HorizontalAlignment="Left">
-            <StackPanel Orientation="Horizontal" Spacing="4">
-              <controls:PhosphorIcon Kind="Share" Width="14" Height="14" />
-              <TextBlock Text="Share" />
-            </StackPanel>
-          </Button>
+          <StackPanel Spacing="12"
+                      IsVisible="{Binding LogFilePath, Converter={x:Static ObjectConverters.IsNotNull}}">
+            <TextBlock Text="LOG FILE" Classes="section-subheading" Margin="0 8 0 0" />
+            <SelectableTextBlock Text="{Binding LogFilePath}"
+                                 Foreground="{DynamicResource TextMutedBrush}"
+                                 FontSize="{DynamicResource TextSm}" TextWrapping="Wrap" />
+
+            <Button Classes="btn btn-secondary btn-sm" x:Name="ShareLogButton" Margin="0 8 0 0"
+                    HorizontalAlignment="Left">
+              <StackPanel Orientation="Horizontal" Spacing="4">
+                <controls:PhosphorIcon Kind="Share" Width="14" Height="14" />
+                <TextBlock Text="Share" />
+              </StackPanel>
+            </Button>
+          </StackPanel>
         </StackPanel>
       </Border>
 

@@ -10,6 +10,7 @@
     <controls:StatusToIconKindConverter x:Key="StatusToIconKind" />
     <controls:StatusToBadgeBackgroundConverter x:Key="StatusToBadgeBg" />
     <controls:StatusToBadgeForegroundConverter x:Key="StatusToBadgeFg" />
+    <controls:QualityStreamsConverter x:Key="QualityStreams" />
   </UserControl.Resources>
 
   <UserControl.Styles>
@@ -39,7 +40,7 @@
       </ItemsPanelTemplate>
     </ItemsControl.ItemsPanel>
     <ItemsControl.ItemTemplate>
-      <DataTemplate x:DataType="dto:CameraDto">
+      <DataTemplate x:DataType="vm:CameraTile">
         <Border Margin="{DynamicResource MarginSpace1}"
                 Classes="card"
                 Padding="0"
@@ -50,12 +51,14 @@
             <!-- Thumbnail area (16:9) with top corner radius to match card -->
             <Border CornerRadius="{DynamicResource RadiusLgInnerTop}" ClipToBounds="True">
               <controls:AspectRatioPanel Background="{DynamicResource SurfaceSunkenBrush}">
-                <controls:PhosphorIcon Kind="{Binding Status, Converter={StaticResource StatusToIconKind}}"
+                <controls:PhosphorIcon Kind="{Binding Camera.Status, Converter={StaticResource StatusToIconKind}}"
                                             Width="{DynamicResource IconXl}"
                                             Height="{DynamicResource IconXl}"
                                             Foreground="{DynamicResource TextMutedBrush}"
                                             HorizontalAlignment="Center"
-                                            VerticalAlignment="Center" />
+                                            VerticalAlignment="Center"
+                                            IsVisible="{Binding Thumbnail, Converter={x:Static ObjectConverters.IsNull}}" />
+                <Image Source="{Binding Thumbnail}" Stretch="Uniform" />
               </controls:AspectRatioPanel>
             </Border>
             <!-- Info -->
@@ -66,12 +69,12 @@
                         Classes="status-badge"
                         Padding="{DynamicResource PaddingBadge}"
                         CornerRadius="{DynamicResource RadiusFull}"
-                        Background="{Binding Status, Converter={StaticResource StatusToBadgeBg}}"
+                        Background="{Binding Camera.Status, Converter={StaticResource StatusToBadgeBg}}"
                         VerticalAlignment="Center">
-                  <TextBlock Text="{Binding Status}"
+                  <TextBlock Text="{Binding Camera.Status}"
                              FontSize="{DynamicResource TextXs}"
                              FontFamily="{DynamicResource SansMediumFont}"
-                             Foreground="{Binding Status, Converter={StaticResource StatusToBadgeFg}}" />
+                             Foreground="{Binding Camera.Status, Converter={StaticResource StatusToBadgeFg}}" />
                 </Border>
                 <!-- Status dot (shown when condensed) -->
                 <Ellipse DockPanel.Dock="Right"
@@ -79,14 +82,15 @@
                          Width="8" Height="8"
                          VerticalAlignment="Center"
                          Margin="4 0 0 0"
-                         Fill="{Binding Status, Converter={StaticResource StatusToBadgeFg}}" />
-                <TextBlock Text="{Binding Name}"
+                         Fill="{Binding Camera.Status, Converter={StaticResource StatusToBadgeFg}}" />
+                <TextBlock Text="{Binding Camera.Name}"
                            Classes="label"
                            VerticalAlignment="Center"
                            TextTrimming="CharacterEllipsis" />
               </DockPanel>
               <!-- Stream info (hidden when condensed) -->
-              <ItemsControl Classes="stream-info" ItemsSource="{Binding Streams}">
+              <ItemsControl Classes="stream-info"
+                            ItemsSource="{Binding Camera.Streams, Converter={StaticResource QualityStreams}}">
                 <ItemsControl.ItemsPanel>
                   <ItemsPanelTemplate>
                     <StackPanel Orientation="Horizontal" Spacing="{DynamicResource Space2}" />

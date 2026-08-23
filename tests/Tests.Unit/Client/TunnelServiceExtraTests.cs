@@ -51,8 +51,8 @@ public class TunnelServiceExtraTests
   /// Mark every credential address as failing in the transport, ConnectAsync
   ///
   /// EXPECTED RESULT:
-  /// Throws InvalidOperationException with the address count in the message;
-  /// State settles back to Disconnected
+  /// Throws InvalidOperationException with the address count in the message, and stays Connecting
+  /// because the retry loop is still working through the addresses
   /// </summary>
   [Test]
   public void Connect_AllAddressesFail_Throws()
@@ -66,7 +66,7 @@ public class TunnelServiceExtraTests
     Assert.Multiple(() =>
     {
       Assert.That(ex!.Message, Does.Contain("3"));
-      Assert.That(service.State, Is.EqualTo(ConnectionState.Disconnected));
+      Assert.That(service.State, Is.EqualTo(ConnectionState.Connecting));
     });
   }
 

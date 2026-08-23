@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Shared.Api;
+using Shared.Models;
 using System.Diagnostics.CodeAnalysis;
 
 namespace Client.Core.Controls;
@@ -31,6 +32,9 @@ public partial class StreamQualitySelector : UserControl
 
   public event Action<string>? ProfileChanged;
 
+  private List<StreamProfileDto> QualityStreams =>
+    Streams?.Where(s => s.Kind == StreamKind.Quality).ToList() ?? [];
+
   public StreamQualitySelector()
   {
     InitializeComponent();
@@ -49,8 +53,8 @@ public partial class StreamQualitySelector : UserControl
 
   private void OnCycleClick(object? sender, RoutedEventArgs e)
   {
-    var streams = Streams;
-    if (streams == null || streams.Count <= 1) return;
+    var streams = QualityStreams;
+    if (streams.Count <= 1) return;
 
     var profiles = streams.Select(s => s.Profile).ToList();
     var idx = profiles.IndexOf(SelectedProfile);
@@ -64,8 +68,8 @@ public partial class StreamQualitySelector : UserControl
   {
     if (_label == null) return;
 
-    var streams = Streams;
-    if (streams == null || streams.Count == 0)
+    var streams = QualityStreams;
+    if (streams.Count == 0)
     {
       _label.Text = "n/a";
       return;

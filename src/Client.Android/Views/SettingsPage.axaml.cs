@@ -28,7 +28,10 @@ public sealed partial class SettingsPage : UserControl
     _statusLabel = this.FindControl<TextBlock>("StatusLabel");
     _startOnBootToggle = this.FindControl<ToggleButton>("StartOnBootToggle");
 
-    this.FindControl<Button>("DisconnectButton")!.Click += OnDisconnect;
+    this.FindControl<Button>("ReconnectButton")!.Click += OnReconnect;
+    this.FindControl<Button>("UnregisterButton")!.Click += OnUnregisterRequested;
+    this.FindControl<Button>("ConfirmUnregisterButton")!.Click += OnUnregisterConfirmed;
+    this.FindControl<Button>("CancelUnregisterButton")!.Click += OnUnregisterCancelled;
     this.FindControl<Button>("ShareLogButton")!.Click += OnShareLog;
 
     if (_startOnBootToggle != null)
@@ -87,15 +90,27 @@ public sealed partial class SettingsPage : UserControl
     settings.StartOnBoot = _startOnBootToggle.IsChecked == true;
   }
 
-  private void OnDisconnect(object? sender, RoutedEventArgs e)
+  private void OnReconnect(object? sender, RoutedEventArgs e)
   {
-    if (DataContext is not SettingsViewModel vm) return;
-    _ = Disconnect(vm);
+    if (DataContext is SettingsViewModel vm)
+      _ = vm.ReconnectAsync();
   }
 
-  private static async Task Disconnect(SettingsViewModel vm)
+  private void OnUnregisterRequested(object? sender, RoutedEventArgs e) =>
+    (DataContext as SettingsViewModel)?.BeginUnregister();
+
+  private void OnUnregisterCancelled(object? sender, RoutedEventArgs e) =>
+    (DataContext as SettingsViewModel)?.CancelUnregister();
+
+  private void OnUnregisterConfirmed(object? sender, RoutedEventArgs e)
   {
-    await vm.DisconnectAsync();
+    if (DataContext is not SettingsViewModel vm) return;
+    _ = Unregister(vm);
+  }
+
+  private static async Task Unregister(SettingsViewModel vm)
+  {
+    await vm.UnregisterAsync();
     if (Avalonia.Application.Current is AndroidApp app)
     {
       if (app.AndroidContext != null)

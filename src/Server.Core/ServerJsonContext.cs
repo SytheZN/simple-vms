@@ -33,6 +33,7 @@ namespace Server.Core;
 [JsonSerializable(typeof(TimelineSpanDto))]
 [JsonSerializable(typeof(TimelineEventDto))]
 [JsonSerializable(typeof(EventDto))]
+[JsonSerializable(typeof(LiveEventDto))]
 [JsonSerializable(typeof(IReadOnlyList<EventDto>))]
 [JsonSerializable(typeof(List<EventDto>))]
 [JsonSerializable(typeof(RetentionPolicy))]

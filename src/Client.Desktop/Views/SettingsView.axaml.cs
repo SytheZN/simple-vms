@@ -56,7 +56,10 @@ public partial class SettingsView : UserControl
     var reprobeToggle = this.FindControl<ToggleButton>("ReprobeToggle")!;
     var minimizeToggle = this.FindControl<ToggleButton>("MinimizeOnCloseToggle")!;
 
-    this.FindControl<Button>("DisconnectButton")!.Click += OnDisconnect;
+    this.FindControl<Button>("ReconnectButton")!.Click += OnReconnect;
+    this.FindControl<Button>("UnregisterButton")!.Click += OnUnregisterRequested;
+    this.FindControl<Button>("ConfirmUnregisterButton")!.Click += OnUnregisterConfirmed;
+    this.FindControl<Button>("CancelUnregisterButton")!.Click += OnUnregisterCancelled;
 
     reprobeToggle.IsCheckedChanged += (_, _) =>
     {
@@ -120,10 +123,22 @@ public partial class SettingsView : UserControl
     };
   }
 
-  private async void OnDisconnect(object? sender, RoutedEventArgs e)
+  private async void OnReconnect(object? sender, RoutedEventArgs e)
+  {
+    if (DataContext is SettingsViewModel vm)
+      await vm.ReconnectAsync();
+  }
+
+  private void OnUnregisterRequested(object? sender, RoutedEventArgs e) =>
+    (DataContext as SettingsViewModel)?.BeginUnregister();
+
+  private void OnUnregisterCancelled(object? sender, RoutedEventArgs e) =>
+    (DataContext as SettingsViewModel)?.CancelUnregister();
+
+  private async void OnUnregisterConfirmed(object? sender, RoutedEventArgs e)
   {
     if (DataContext is not SettingsViewModel vm) return;
-    await vm.DisconnectAsync();
+    await vm.UnregisterAsync();
     var main = TopLevel.GetTopLevel(this)?.DataContext as MainWindowViewModel;
     main?.NavigateTo(MainWindowViewModel.ViewKind.Enrollment);
   }

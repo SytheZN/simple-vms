@@ -283,26 +283,6 @@ public class CameraPipelineTests
     await pipeline.DisposeAsync();
   }
 
-  /// <summary>
-  /// SCENARIO:
-  /// OnParameterMismatch callback is set
-  ///
-  /// ACTION:
-  /// Read the property
-  ///
-  /// EXPECTED RESULT:
-  /// Can be set and retrieved
-  /// </summary>
-  [Test]
-  public void OnParameterMismatch_CanBeSet()
-  {
-    var pipeline = CreatePipeline();
-    var called = false;
-    pipeline.OnParameterMismatch = () => called = true;
-    pipeline.OnParameterMismatch!.Invoke();
-    Assert.That(called, Is.True);
-  }
-
   private static CameraPipeline CreatePipeline(
     MockCaptureSource? captureSource = null,
     MockStreamConnection? connection = null,

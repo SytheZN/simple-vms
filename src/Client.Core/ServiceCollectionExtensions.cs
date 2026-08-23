@@ -20,6 +20,7 @@ public static class ServiceCollectionExtensions
     services.AddSingleton<ILiveStreamService, LiveStreamService>();
     services.AddSingleton<IPlaybackService, PlaybackService>();
     services.AddSingleton<IEventService, EventService>();
+    services.AddSingleton<IGalleryThumbnails, GalleryThumbnailService>();
     services.AddSingleton<NotificationRouter>();
     services.AddSingleton<ClientLifecycleService>();
     services.AddSingleton<DecodePipelineFactory>();
