@@ -94,8 +94,8 @@ public sealed class OnvifEventSubscription : IEventSubscription
         if (n.Source != null)
           foreach (var (k, v) in n.Source)
             metadata[$"source.{k}"] = v;
-        if (n.IsActive.HasValue)
-          metadata["active"] = n.IsActive.Value.ToString();
+        if (n.PropertyOperation != null)
+          metadata["propertyOperation"] = n.PropertyOperation;
 
         yield return new CameraEvent
         {

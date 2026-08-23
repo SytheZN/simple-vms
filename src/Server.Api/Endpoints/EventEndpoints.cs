@@ -65,6 +65,7 @@ public static class EventEndpoints
           CameraId = message.CameraId,
           Type = message.Type,
           StartTime = message.StartTime,
+          EndTime = message.EndTime,
           Metadata = message.Metadata,
           Ended = (flags & EventChannelFlags.End) != 0
         },

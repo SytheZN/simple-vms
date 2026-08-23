@@ -96,6 +96,7 @@ public sealed class EventService(SoapClient soap)
             : null,
         Data = data.Count > 0 ? data : null,
         Source = sourceData.Count > 0 ? sourceData : null,
+        PropertyOperation = message?.Attribute("PropertyOperation")?.Value,
         Timestamp = ParseUtcTime(
           message?.Attribute("UtcTime")?.Value)
       });
@@ -175,5 +176,6 @@ public sealed class OnvifNotification
   public bool? IsActive { get; init; }
   public Dictionary<string, string>? Data { get; init; }
   public Dictionary<string, string>? Source { get; init; }
+  public string? PropertyOperation { get; init; }
   public DateTimeOffset? Timestamp { get; init; }
 }

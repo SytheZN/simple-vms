@@ -34,6 +34,7 @@ export interface LiveEvent {
   cameraId: string
   type: string
   startTime: number
+  endTime?: number
   metadata?: Record<string, string>
   ended: boolean
 }

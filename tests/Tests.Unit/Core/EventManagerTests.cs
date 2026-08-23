@@ -99,7 +99,7 @@ public class EventManagerTests
       CameraId = Guid.NewGuid(),
       Type = "motion",
       StartTime = 5000,
-      Metadata = new Dictionary<string, string> { ["active"] = "True", ["topic"] = "motion" }
+      Metadata = new Dictionary<string, string> { ["State"] = "true", ["topic"] = "motion" }
     };
 
     await manager.ProcessEventAsync(evt, CancellationToken.None);
@@ -110,7 +110,7 @@ public class EventManagerTests
 
   /// <summary>
   /// SCENARIO:
-  /// A motion event with active=False metadata
+  /// A motion event reporting State=false
   ///
   /// ACTION:
   /// Call ProcessEventAsync
@@ -132,7 +132,7 @@ public class EventManagerTests
       CameraId = Guid.NewGuid(),
       Type = "motion",
       StartTime = 6000,
-      Metadata = new Dictionary<string, string> { ["active"] = "False", ["topic"] = "motion" }
+      Metadata = new Dictionary<string, string> { ["State"] = "false", ["topic"] = "motion" }
     };
 
     await manager.ProcessEventAsync(evt, CancellationToken.None);
@@ -210,16 +210,70 @@ public class EventManagerTests
 
   /// <summary>
   /// SCENARIO:
-  /// A motion event arrives reporting that motion stopped
+  /// A motion event starts and later stops on the same camera
   ///
   /// ACTION:
-  /// Call ProcessEventAsync with active=False metadata
+  /// Call ProcessEventAsync with State=true, then again with State=false
   ///
   /// EXPECTED RESULT:
-  /// The recorded row is flagged as closing the duration event
+  /// One row is written and then updated with the end time; the second publish carries the
+  /// same identifier flagged as ended, rather than a second row
   /// </summary>
   [Test]
-  public async Task ProcessEvent_MotionInactive_PublishesRowAsEnded()
+  public async Task ProcessEvent_MotionStartThenStop_ClosesTheSameRow()
+  {
+    var data = new FakeDataProvider();
+    var eventBus = new FakeEventBus();
+    var host = new FakePluginHost { DataProvider = data };
+    var manager = new EventManager(host, eventBus, NullLogger.Instance);
+    var cameraId = Guid.NewGuid();
+    var startId = Guid.NewGuid();
+
+    await manager.ProcessEventAsync(new CameraEvent
+    {
+      Id = startId,
+      CameraId = cameraId,
+      Type = "motion",
+      StartTime = 6000,
+      Metadata = new Dictionary<string, string> { ["State"] = "true" }
+    }, CancellationToken.None);
+
+    await manager.ProcessEventAsync(new CameraEvent
+    {
+      Id = Guid.NewGuid(),
+      CameraId = cameraId,
+      Type = "motion",
+      StartTime = 9000,
+      Metadata = new Dictionary<string, string> { ["State"] = "false" }
+    }, CancellationToken.None);
+
+    var repo = (FakeEventRepo)data.Events;
+    Assert.That(repo.Created, Has.Count.EqualTo(1));
+    Assert.That(repo.Updated, Has.Count.EqualTo(1));
+    Assert.That(repo.Updated[0].Id, Is.EqualTo(startId));
+    Assert.That(repo.Updated[0].EndTime, Is.EqualTo(9000));
+
+    var recorded = eventBus.Published.OfType<CameraEventRecorded>().ToList();
+    Assert.That(recorded, Has.Count.EqualTo(2));
+    Assert.That(recorded[0].Ended, Is.False);
+    Assert.That(recorded[1].Id, Is.EqualTo(startId));
+    Assert.That(recorded[1].Ended, Is.True);
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A camera reports a property as inactive with no matching start, as happens in the state
+  /// snapshot sent on every subscription
+  ///
+  /// ACTION:
+  /// Call ProcessEventAsync with State=false and nothing open for that camera and type
+  ///
+  /// EXPECTED RESULT:
+  /// Nothing is written to history and nothing is published; an end that closes nothing is
+  /// not an event
+  /// </summary>
+  [Test]
+  public async Task ProcessEvent_InactiveWithNothingOpen_IsIgnored()
   {
     var data = new FakeDataProvider();
     var eventBus = new FakeEventBus();
@@ -232,11 +286,13 @@ public class EventManagerTests
       CameraId = Guid.NewGuid(),
       Type = "motion",
       StartTime = 6000,
-      Metadata = new Dictionary<string, string> { ["active"] = "False" }
+      Metadata = new Dictionary<string, string> { ["State"] = "false" }
     }, CancellationToken.None);
 
-    var recorded = eventBus.Published.OfType<CameraEventRecorded>().Single();
-    Assert.That(recorded.Ended, Is.True);
+    var repo = (FakeEventRepo)data.Events;
+    Assert.That(repo.Created, Is.Empty);
+    Assert.That(repo.Updated, Is.Empty);
+    Assert.That(eventBus.Published.OfType<CameraEventRecorded>(), Is.Empty);
   }
 
   /// <summary>
@@ -506,6 +562,14 @@ public class EventManagerTests
     public Task<OneOf<Success, Error>> CreateAsync(CameraEvent evt, CancellationToken ct)
     {
       Created.Add(evt);
+      return Task.FromResult<OneOf<Success, Error>>(new Success());
+    }
+
+    public List<CameraEvent> Updated { get; } = [];
+
+    public Task<OneOf<Success, Error>> UpdateAsync(CameraEvent evt, CancellationToken ct)
+    {
+      Updated.Add(evt);
       return Task.FromResult<OneOf<Success, Error>>(new Success());
     }
 

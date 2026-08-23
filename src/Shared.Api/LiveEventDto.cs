@@ -6,6 +6,7 @@ public sealed class LiveEventDto
   public required Guid CameraId { get; init; }
   public required string Type { get; init; }
   public required ulong StartTime { get; init; }
+  public ulong? EndTime { get; init; }
   public Dictionary<string, string>? Metadata { get; init; }
   public bool Ended { get; init; }
 }

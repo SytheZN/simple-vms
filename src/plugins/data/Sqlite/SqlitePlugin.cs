@@ -31,16 +31,22 @@ public sealed partial class SqliteProvider : IPlugin
     var filename = _config.Get("filename", "server.db");
     var path = Path.Combine(directory, filename);
 
-    var migrateResult = MigrateDatabase(path, _logger);
-    if (migrateResult.IsT1)
-      return Task.FromResult<OneOf<Success, Error>>(migrateResult.AsT1);
+    OpenDatabase(path);
 
-    InitializeProvider(path);
+    var migrateResult = MigrateDatabase(_logger);
+    if (migrateResult.IsT1)
+    {
+      CloseDatabase();
+      return Task.FromResult<OneOf<Success, Error>>(migrateResult.AsT1);
+    }
+
+    InitializeProvider();
     return Task.FromResult<OneOf<Success, Error>>(new Success());
   }
 
   public Task<OneOf<Success, Error>> StopAsync(CancellationToken ct)
   {
+    CloseDatabase();
     return Task.FromResult<OneOf<Success, Error>>(new Success());
   }
 }

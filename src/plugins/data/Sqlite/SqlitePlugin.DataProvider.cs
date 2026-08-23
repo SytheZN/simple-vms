@@ -1,5 +1,6 @@
 using DbUp;
 using DbUp.Engine.Output;
+using DbUp.Sqlite.Helpers;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 
@@ -8,8 +9,11 @@ namespace Data.Sqlite;
 public sealed partial class SqliteProvider : IDataProvider
 {
   private const ushort ModuleId = ModuleIds.PluginSqliteMigration;
+  private static readonly TimeSpan CheckpointInterval = TimeSpan.FromMinutes(5);
+
   private readonly ConnectionQueue _queue = new();
   private SqliteConnection? _connection;
+  private Timer? _checkpointTimer;
 
   public string ProviderId => "sqlite";
 
@@ -21,7 +25,13 @@ public sealed partial class SqliteProvider : IDataProvider
   public IClientRepository Clients { get; private set; } = null!;
   public IConfigRepository Config { get; private set; } = null!;
 
-  internal void InitializeProvider(string databasePath)
+  /// <summary>
+  /// WAL normally indexes itself through a -shm file mapped into memory, which a network
+  /// filesystem cannot provide. EXCLUSIVE locking mode is the supported alternative - the
+  /// index lives on the heap instead - and it only takes effect when set before the first
+  /// WAL access, so every connection to this database must be opened through here.
+  /// </summary>
+  internal void OpenDatabase(string databasePath)
   {
     var dir = Path.GetDirectoryName(databasePath);
     if (dir != null)
@@ -37,28 +47,44 @@ public sealed partial class SqliteProvider : IDataProvider
     _connection = new SqliteConnection(connectionString);
     _connection.Open();
 
-    using (var pragma = _connection.CreateCommand())
-    {
-      pragma.CommandText = "PRAGMA locking_mode = EXCLUSIVE";
-      pragma.ExecuteNonQuery();
-    }
-    using (var pragma = _connection.CreateCommand())
-    {
-      pragma.CommandText = "PRAGMA journal_mode = WAL";
-      pragma.ExecuteNonQuery();
-    }
-    using (var pragma = _connection.CreateCommand())
-    {
-      pragma.CommandText = "PRAGMA synchronous = NORMAL";
-      pragma.ExecuteNonQuery();
-    }
-    using (var pragma = _connection.CreateCommand())
-    {
-      pragma.CommandText = "PRAGMA foreign_keys = ON";
-      pragma.ExecuteNonQuery();
-    }
+    ExecutePragma("PRAGMA locking_mode = EXCLUSIVE");
+    ExecutePragma("PRAGMA journal_mode = WAL");
+    ExecutePragma("PRAGMA synchronous = NORMAL");
+    ExecutePragma("PRAGMA foreign_keys = ON");
+  }
 
-    _queue.Start(work => work(_connection));
+  /// <summary>
+  /// The exclusive lock is held for the lifetime of the connection, so a start that does not
+  /// reach a running provider has to hand the database back or no later attempt can open it.
+  /// </summary>
+  internal void CloseDatabase()
+  {
+    _checkpointTimer?.Dispose();
+    _checkpointTimer = null;
+
+    _connection?.Dispose();
+    _connection = null;
+  }
+
+  internal OneOf<Success, Error> MigrateDatabase(ILogger logger)
+  {
+    var upgrader = DeployChanges.To
+      .SqliteDatabase(new SharedConnection(_connection!))
+      .WithScripts(MigrationScripts.All)
+      .LogTo(new MigrationLog(logger))
+      .Build();
+
+    var result = upgrader.PerformUpgrade();
+    if (!result.Successful)
+      return Error.Create(ModuleId, 0x0001, Result.InternalError,
+        $"Migration failed at '{result.ErrorScript?.Name}': {result.Error}");
+
+    return new Success();
+  }
+
+  internal void InitializeProvider()
+  {
+    _queue.Start(work => work(_connection!));
 
     Cameras = new CameraRepository(_queue);
     Streams = new StreamRepository(_queue);
@@ -67,38 +93,42 @@ public sealed partial class SqliteProvider : IDataProvider
     Events = new EventRepository(_queue);
     Clients = new ClientRepository(_queue);
     Config = new ConfigRepository(_queue);
+
+    _checkpointTimer = new Timer(
+      _ => Checkpoint(), null, CheckpointInterval, CheckpointInterval);
+  }
+
+  /// <summary>
+  /// An unbounded WAL is recovery work the next start inherits, paid at the latency of
+  /// whatever storage the database sits on. Checkpointing through the queue keeps it
+  /// serialised with every other statement on the single connection.
+  /// </summary>
+  private void Checkpoint()
+  {
+    _ = _queue.ExecuteAsync(connection =>
+    {
+      using var command = connection.CreateCommand();
+      command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE)";
+      command.ExecuteNonQuery();
+      return true;
+    }, CancellationToken.None)
+      .ContinueWith(
+        task => _logger.LogWarning(task.Exception, "WAL checkpoint failed"),
+        CancellationToken.None,
+        TaskContinuationOptions.OnlyOnFaulted,
+        TaskScheduler.Default);
+  }
+
+  private void ExecutePragma(string sql)
+  {
+    using var command = _connection!.CreateCommand();
+    command.CommandText = sql;
+    command.ExecuteNonQuery();
   }
 
   public IDataStore GetDataStore(string pluginId)
   {
     return new DataStore(_queue, pluginId);
-  }
-
-  internal OneOf<Success, Error> MigrateDatabase(string databasePath, ILogger logger)
-  {
-    var dir = Path.GetDirectoryName(databasePath);
-    if (dir != null)
-      Directory.CreateDirectory(dir);
-
-    var connectionString = new SqliteConnectionStringBuilder
-    {
-      DataSource = databasePath,
-      Mode = SqliteOpenMode.ReadWriteCreate,
-      Pooling = false
-    }.ToString();
-
-    var upgrader = DeployChanges.To
-      .SqliteDatabase(connectionString)
-      .WithScripts(MigrationScripts.All)
-      .LogTo(new MigrationLog(logger))
-      .Build();
-
-    var result = upgrader.PerformUpgrade();
-    if (!result.Successful)
-      return Error.Create(ModuleId, 0x0001, Result.InternalError,
-        $"Migration failed at '{result.ErrorScript?.Name}': {result.Error.Message}");
-
-    return new Success();
   }
 
   private sealed class MigrationLog(ILogger logger) : IUpgradeLog

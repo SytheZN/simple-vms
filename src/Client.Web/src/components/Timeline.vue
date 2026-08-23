@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { api } from '@/api/client'
 import type { TimelineSpan, TimelineEvent } from '@/types/api'
+import { eventMarkerClass, timelineEventTitle } from '@/lib/events'
 
 const props = defineProps<{
   cameraId: string
@@ -369,9 +370,10 @@ onUnmounted(() => {
         <div
           v-for="evt in events"
           :key="evt.id"
-          class="timeline-marker timeline-alert"
+          class="timeline-marker"
+          :class="eventMarkerClass(evt.type)"
           :style="{ left: timestampToPercent(evt.startTime) + '%' }"
-          :title="evt.type"
+          :title="timelineEventTitle(evt)"
         ></div>
 
         <div
@@ -399,7 +401,11 @@ onUnmounted(() => {
     <div class="flex items-center gap-4 text-xs text-text-muted">
       <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 timeline-span-recording rounded-sm"></span> Recording</span>
       <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 timeline-span-motion rounded-sm"></span> Motion</span>
-      <span class="flex items-center gap-1"><span class="inline-block w-3 h-0.5 timeline-alert"></span> Alert</span>
+      <span class="flex items-center gap-1"><span class="inline-block w-3 h-0.5 timeline-event-warning"></span> Motion</span>
+      <span class="flex items-center gap-1"><span class="inline-block w-3 h-0.5 timeline-event-danger"></span> Fault</span>
+      <span class="flex items-center gap-1"><span class="inline-block w-3 h-0.5 timeline-event-success"></span> Restored</span>
+      <span class="flex items-center gap-1"><span class="inline-block w-3 h-0.5 timeline-event-info"></span> Event</span>
+      <span class="flex items-center gap-1"><span class="inline-block w-3 h-0.5 timeline-event-muted"></span> System</span>
     </div>
   </div>
 </template>

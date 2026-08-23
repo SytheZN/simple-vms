@@ -4,7 +4,10 @@ namespace Data.Sqlite;
 
 internal static class MigrationScripts
 {
-  public static SqlScript[] All => [Initial, StreamsDerived];
+  public static SqlScript[] All => [
+    Initial,
+    StreamsDerived
+  ];
 
   private static SqlScript Initial => new("0001_initial", """
     CREATE TABLE IF NOT EXISTS cameras (

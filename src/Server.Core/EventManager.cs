@@ -10,6 +10,7 @@ namespace Server.Core;
 public sealed class EventManager : IAsyncDisposable
 {
   private const int MaxConsecutiveFailures = 5;
+  private const int MaxOpenEventsPerCamera = 64;
   private static readonly int[] BackoffSeconds = [1, 2, 4, 8, 15];
 
   private readonly IPluginHost _plugins;
@@ -17,6 +18,7 @@ public sealed class EventManager : IAsyncDisposable
   private readonly ILogger _logger;
   private readonly ConcurrentDictionary<Guid, (IEventSubscription Subscription, CancellationTokenSource Cts)> _subscriptions = new();
   private readonly ConcurrentDictionary<(Guid CameraId, string Profile), bool> _disconnected = new();
+  private readonly ConcurrentDictionary<(Guid CameraId, string Type, string Source), CameraEvent> _openEvents = new();
   private CancellationTokenSource? _eventCts;
   private bool _disposed;
 
@@ -196,11 +198,7 @@ public sealed class EventManager : IAsyncDisposable
       }
     }
 
-    var createResult = await _plugins.DataProvider.Events.CreateAsync(evt, ct);
-    if (createResult.IsT1)
-      _logger.LogWarning("Failed to persist event: {Message}", createResult.AsT1.Message);
-    else
-      await PublishRecordedAsync(evt, IsMotionEnd(evt), ct);
+    await RecordStateChangeAsync(evt, ct);
 
     foreach (var sink in _plugins.NotificationSinks)
     {
@@ -224,8 +222,8 @@ public sealed class EventManager : IAsyncDisposable
 
     if (evt.Type == "motion")
     {
-      var isActive = evt.Metadata?.GetValueOrDefault("active");
-      if (string.Equals(isActive, "True", StringComparison.OrdinalIgnoreCase))
+      var isActive = ActiveState(evt);
+      if (isActive == true)
       {
         await _eventBus.PublishAsync(new MotionDetected
         {
@@ -233,7 +231,7 @@ public sealed class EventManager : IAsyncDisposable
           Timestamp = evt.StartTime
         }, ct);
       }
-      else if (string.Equals(isActive, "False", StringComparison.OrdinalIgnoreCase))
+      else if (isActive == false)
       {
         await _eventBus.PublishAsync(new MotionEnded
         {
@@ -244,10 +242,88 @@ public sealed class EventManager : IAsyncDisposable
     }
   }
 
-  private static bool IsMotionEnd(CameraEvent evt) =>
-    evt.Type == "motion"
-      && string.Equals(evt.Metadata?.GetValueOrDefault("active"), "False",
-        StringComparison.OrdinalIgnoreCase);
+  private async Task RecordStateChangeAsync(CameraEvent evt, CancellationToken ct)
+  {
+    var active = ActiveState(evt);
+    var key = OpenKey(evt);
+
+    if (active == false)
+    {
+      if (!_openEvents.TryRemove(key, out var started))
+      {
+        _logger.LogDebug(
+          "Ignoring inactive '{Type}' report for camera {CameraId} with nothing open",
+          evt.Type, evt.CameraId);
+        return;
+      }
+
+      started.EndTime = evt.StartTime;
+      var updateResult = await _plugins.DataProvider.Events.UpdateAsync(started, ct);
+      if (updateResult.IsT1)
+        _logger.LogWarning("Failed to close event: {Message}", updateResult.AsT1.Message);
+      else
+        await PublishRecordedAsync(started, true, ct);
+      return;
+    }
+
+    if (active == true && _openEvents.ContainsKey(key))
+      return;
+
+    var createResult = await _plugins.DataProvider.Events.CreateAsync(evt, ct);
+    if (createResult.IsT1)
+    {
+      _logger.LogWarning("Failed to persist event: {Message}", createResult.AsT1.Message);
+      return;
+    }
+
+    if (active == true)
+      TrackOpen(evt);
+
+    await PublishRecordedAsync(evt, false, ct);
+  }
+
+  private void TrackOpen(CameraEvent evt)
+  {
+    _openEvents[OpenKey(evt)] = evt;
+
+    var forCamera = _openEvents
+      .Where(entry => entry.Key.CameraId == evt.CameraId)
+      .ToList();
+    if (forCamera.Count <= MaxOpenEventsPerCamera)
+      return;
+
+    foreach (var stale in forCamera
+      .OrderBy(entry => entry.Value.StartTime)
+      .Take(forCamera.Count - MaxOpenEventsPerCamera))
+    {
+      if (_openEvents.TryRemove(stale.Key, out _))
+        _logger.LogWarning(
+          "Camera {CameraId} has more than {Max} unclosed '{Type}' events; abandoning oldest",
+          evt.CameraId, MaxOpenEventsPerCamera, stale.Key.Type);
+    }
+  }
+
+  private static bool? ActiveState(CameraEvent evt)
+  {
+    var state = evt.Metadata?.GetValueOrDefault("State")
+      ?? evt.Metadata?.GetValueOrDefault("IsMotion");
+    if (state == null) return null;
+    if (string.Equals(state, "true", StringComparison.OrdinalIgnoreCase)) return true;
+    if (string.Equals(state, "false", StringComparison.OrdinalIgnoreCase)) return false;
+    return null;
+  }
+
+  private static (Guid, string, string) OpenKey(CameraEvent evt)
+  {
+    var source = evt.Metadata == null
+      ? string.Empty
+      : string.Join('|', evt.Metadata
+        .Where(pair => pair.Key.StartsWith("source.", StringComparison.Ordinal))
+        .OrderBy(pair => pair.Key, StringComparer.Ordinal)
+        .Select(pair => $"{pair.Key}={pair.Value}"));
+
+    return (evt.CameraId, evt.Type, source);
+  }
 
   private Task PublishRecordedAsync(CameraEvent evt, bool ended, CancellationToken ct) =>
     _eventBus.PublishAsync(new CameraEventRecorded

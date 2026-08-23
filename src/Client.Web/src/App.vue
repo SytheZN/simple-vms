@@ -56,7 +56,7 @@ onMounted(async () => {
   <div v-else-if="isSetupRoute(route.name)" class="min-h-screen bg-surface font-sans">
     <router-view />
   </div>
-  <div v-else class="min-h-screen bg-surface font-sans flex">
+  <div v-else class="h-screen bg-surface font-sans flex">
     <nav class="nav-sidebar">
       <div class="text-lg font-bold text-primary px-3 py-3 mb-2">
         <i class="ph ph-shield-check icon-md"></i> sVMS

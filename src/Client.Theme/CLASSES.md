@@ -195,11 +195,17 @@ Content uses `card` with `relative` to sit above backdrop.
 | `timeline-marker` | Base for point markers (set left via style) |
 | `timeline-playhead` | Playhead marker |
 | `timeline-alert` | Alert marker |
+| `timeline-event-danger` | Event marker, danger tone |
+| `timeline-event-warning` | Event marker, warning tone |
+| `timeline-event-success` | Event marker, success tone |
+| `timeline-event-info` | Event marker, info tone |
+| `timeline-event-muted` | Event marker, muted tone |
 | `timeline-tick` | Time label below bar (set left via style). Tick line is `::before` |
 
 ```html
 <div class="timeline-bar">
   <div class="timeline-span timeline-span-recording" style="left: 0%; width: 35%;"></div>
+  <div class="timeline-marker timeline-event-warning" style="left: 40%;"></div>
   <div class="timeline-marker timeline-playhead" style="left: 85%;"></div>
 </div>
 <div class="relative h-4">

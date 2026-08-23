@@ -197,8 +197,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="space-y-4">
-    <h1 v-if="camera" class="section-heading">{{ camera.name }}</h1>
+  <div class="h-full min-h-0 flex flex-col gap-4">
+    <h1 v-if="camera" class="section-heading shrink-0">{{ camera.name }}</h1>
 
     <div v-if="error || streamer.error.value" class="toast toast-danger">
       <i class="ph ph-x-circle icon-xl"></i>
@@ -213,13 +213,13 @@ onUnmounted(() => {
     </div>
 
     <template v-else-if="camera">
-      <div class="card overflow-hidden">
-        <div ref="playerRef" class="bg-surface-sunken aspect-video relative flex items-center justify-center">
-          <div ref="playerContainerRef" class="w-full h-full"></div>
+      <div class="card overflow-hidden flex-1 min-h-0 flex flex-col">
+        <div ref="playerRef" class="bg-surface-sunken flex-1 min-h-0 relative flex items-center justify-center">
+          <div ref="playerContainerRef" class="w-full h-full flex items-center justify-center"></div>
           <!-- Motion overlay -->
           <canvas
             v-if="motionOverlay"
-            class="absolute inset-0 w-full h-full pointer-events-none"
+            class="absolute inset-0 w-full h-full object-contain pointer-events-none"
             style="image-rendering: pixelated;"
           ></canvas>
           <div
@@ -257,7 +257,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div class="flex items-center gap-3 px-4 py-3 border-t border-border">
+        <div class="flex items-center gap-3 px-4 py-3 border-t border-border shrink-0">
           <button class="btn btn-ghost btn-sm" @click="player?.togglePause()">
             <i class="ph icon-sm" :class="playerState.paused ? 'ph-play' : 'ph-pause'"></i>
           </button>
@@ -311,6 +311,7 @@ onUnmounted(() => {
         </div>
 
         <Timeline
+          class="shrink-0"
           ref="timelineRef"
           :camera-id="cameraId"
           :profile="selectedProfile"

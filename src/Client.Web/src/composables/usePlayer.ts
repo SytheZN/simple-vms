@@ -448,7 +448,7 @@ export function usePlayer(): Player {
 
   function attach(container: HTMLElement, s: Streamer, cameraId: string, profile: string) {
     const canvas = document.createElement('canvas')
-    canvas.className = 'w-full'
+    canvas.className = 'w-full h-full object-contain'
     container.appendChild(canvas)
     renderer.attach(canvas)
     streamer = s

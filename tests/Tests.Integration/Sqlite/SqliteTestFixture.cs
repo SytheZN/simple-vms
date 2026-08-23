@@ -13,20 +13,23 @@ public sealed class SqliteTestFixture
   {
     _dbPath = Path.Combine(Path.GetTempPath(), $"vms-test-{Guid.NewGuid()}.db");
     Provider = new SqliteProvider();
+    Provider.OpenDatabase(_dbPath);
     Migrate();
-    Provider.InitializeProvider(_dbPath);
+    Provider.InitializeProvider();
     return Task.CompletedTask;
   }
 
   public void Migrate()
   {
-    Provider.MigrateDatabase(_dbPath, NullLogger.Instance).Switch(
+    Provider.MigrateDatabase(NullLogger.Instance).Switch(
       _ => { },
       error => Assert.Fail($"Migration failed: {error.Message}"));
   }
 
   public void TearDown()
   {
+    Provider.CloseDatabase();
+
     foreach (var suffix in new[] { "", "-wal", "-shm" })
     {
       var path = _dbPath + suffix;

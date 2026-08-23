@@ -113,6 +113,41 @@ internal sealed class EventRepository : IEventRepository
     }, ct);
   }
 
+  public Task<OneOf<Success, Error>> UpdateAsync(CameraEvent evt, CancellationToken ct)
+  {
+    return _queue.ExecuteAsync<OneOf<Success, Error>>(conn =>
+    {
+      try
+      {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+          UPDATE events
+          SET camera_id = @cameraId, type = @type, start_time = @startTime,
+              end_time = @endTime, metadata = @metadata
+          WHERE id = @id
+          """;
+        cmd.Parameters.AddWithValue("@id", evt.Id.ToString());
+        cmd.Parameters.AddWithValue("@cameraId", evt.CameraId.ToString());
+        cmd.Parameters.AddWithValue("@type", evt.Type);
+        cmd.Parameters.AddWithValue("@startTime", (long)evt.StartTime);
+        cmd.Parameters.AddWithValue("@endTime",
+          evt.EndTime.HasValue ? (object)(long)evt.EndTime.Value : DBNull.Value);
+        cmd.Parameters.AddWithValue("@metadata",
+          evt.Metadata != null ? (object)evt.Metadata.ToJson() : DBNull.Value);
+
+        if (cmd.ExecuteNonQuery() == 0)
+          return Error.Create(ModuleId, 0x0007, Result.NotFound, $"Event {evt.Id} not found");
+
+        return new Success();
+      }
+      catch (Exception ex)
+      {
+        return Error.Create(ModuleId, 0x0008, Result.InternalError,
+          $"Failed to update event {evt.Id}: {ex.Message}");
+      }
+    }, ct);
+  }
+
   public Task<OneOf<int, Error>> DeleteOlderThanAsync(
     Guid cameraId, ulong cutoff, CancellationToken ct)
   {

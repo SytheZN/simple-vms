@@ -68,7 +68,7 @@ export function usePlayerFallback(): Player {
 
   function createSlot(): MseSlot {
     const vid = document.createElement('video')
-    vid.className = 'w-full'
+    vid.className = 'w-full h-full object-contain'
     vid.muted = true
     vid.autoplay = false
     vid.playsInline = true

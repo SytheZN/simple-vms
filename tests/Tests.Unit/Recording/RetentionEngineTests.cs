@@ -519,6 +519,8 @@ public class RetentionEngineTests
       throw new NotImplementedException();
     public Task<OneOf<Success, Error>> CreateAsync(CameraEvent evt, CancellationToken ct) =>
       throw new NotImplementedException();
+    public Task<OneOf<Success, Error>> UpdateAsync(CameraEvent evt, CancellationToken ct) =>
+      throw new NotImplementedException();
     public Task<OneOf<IReadOnlyList<CameraEvent>, Error>> GetByTimeRangeAsync(
       Guid cameraId, ulong from, ulong to, CancellationToken ct) =>
       throw new NotImplementedException();

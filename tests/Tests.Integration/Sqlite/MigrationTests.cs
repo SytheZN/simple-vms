@@ -20,18 +20,19 @@ public sealed class MigrationTests
   public async Task Migrate_IsIdempotent()
   {
     var path = Path.Combine(Path.GetTempPath(), $"vms-test-migrate-{Guid.NewGuid()}.db");
+    var provider = new SqliteProvider();
     try
     {
-      var provider = new SqliteProvider();
+      provider.OpenDatabase(path);
 
       for (var i = 0; i < 3; i++)
       {
-        provider.MigrateDatabase(path, NullLogger.Instance).Switch(
+        provider.MigrateDatabase(NullLogger.Instance).Switch(
           _ => { },
           error => Assert.Fail($"Migrate {i + 1} failed: {error.Message}"));
       }
 
-      provider.InitializeProvider(path);
+      provider.InitializeProvider();
 
       var camera = SqliteTestFixture.MakeCamera();
       await provider.Cameras.CreateAsync(camera);
@@ -42,6 +43,7 @@ public sealed class MigrationTests
     }
     finally
     {
+      provider.CloseDatabase();
       foreach (var suffix in new[] { "", "-wal", "-shm" })
       {
         var p = path + suffix;
