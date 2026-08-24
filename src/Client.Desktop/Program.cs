@@ -86,8 +86,20 @@ public static class Program
     if (crashed) Environment.Exit(1);
   }
 
-  public static AppBuilder BuildAvaloniaApp() =>
-    AppBuilder.Configure<App>()
-      .UsePlatformDetect()
-      .LogToTrace();
+  public static AppBuilder BuildAvaloniaApp()
+  {
+    var builder = AppBuilder.Configure<App>().UsePlatformDetect();
+
+    if (OperatingSystem.IsLinux())
+      builder = builder.With(new X11PlatformOptions { WmClass = "sVMS" });
+
+    // disabled until csd support is added.
+    //if (IsWaylandSession()) builder = builder.UseWayland();
+
+    return builder.LogToTrace();
+  }
+
+  private static bool IsWaylandSession() =>
+    OperatingSystem.IsLinux()
+    && !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WAYLAND_DISPLAY"));
 }

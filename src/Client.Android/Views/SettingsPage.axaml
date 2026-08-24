@@ -65,6 +65,18 @@
 
       <Border Classes="card">
         <StackPanel Spacing="12">
+          <TextBlock Text="Preferences" Classes="section-heading" />
+          <StackPanel Spacing="2">
+            <TextBlock Text="Stream quality" Classes="label" />
+            <TextBlock Text="Which stream a camera opens on before you switch it"
+                       Classes="text-muted" FontSize="{DynamicResource TextXs}" />
+            <ComboBox x:Name="PreferredQualitySelector" HorizontalAlignment="Stretch" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="card">
+        <StackPanel Spacing="12">
           <TextBlock Text="Background" Classes="section-heading" />
           <DockPanel>
             <ToggleButton Classes="toggle" x:Name="StartOnBootToggle" DockPanel.Dock="Right"

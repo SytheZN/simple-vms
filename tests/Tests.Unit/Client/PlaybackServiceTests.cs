@@ -90,6 +90,7 @@ public class PlaybackServiceTests
 
     GapStatus? receivedGap = null;
     feed.OnGap += gap => receivedGap = gap;
+    feed.Start();
 
     var gapMsg = StreamMessageWriter.SerializeGap(2_000_000, 3_000_000);
     await tunnel.LastChannel!.Writer.WriteAsync(new MuxMessage(0, gapMsg));

@@ -14,7 +14,7 @@ public partial class StreamQualitySelector : UserControl
     AvaloniaProperty.Register<StreamQualitySelector, IReadOnlyList<StreamProfileDto>?>(nameof(Streams));
 
   public static readonly StyledProperty<string> SelectedProfileProperty =
-    AvaloniaProperty.Register<StreamQualitySelector, string>(nameof(SelectedProfile), "main");
+    AvaloniaProperty.Register<StreamQualitySelector, string>(nameof(SelectedProfile), "");
 
   private readonly TextBlock _label;
 

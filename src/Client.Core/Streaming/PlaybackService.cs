@@ -32,7 +32,6 @@ public sealed class PlaybackService : IPlaybackService
     var stream = await _tunnel.OpenStreamAsync(StreamTypes.Playback, payload, ct);
 
     var feed = new VideoFeed(stream, cameraId, profile, _logger);
-    feed.Start(CancellationToken.None);
     return feed;
   }
 

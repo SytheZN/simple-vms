@@ -10,6 +10,28 @@
     <Setter Property="FontSize" Value="{DynamicResource TextBase}" />
   </Style>
 
+  <!-- EmbeddableControlRoot -->
+  <Style Selector="EmbeddableControlRoot">
+    <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+    <Setter Property="FontFamily" Value="{DynamicResource SansFont}" />
+    <Setter Property="FontSize" Value="{DynamicResource TextBase}" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Panel>
+          <Border x:Name="PART_TransparencyFallback" IsHitTestVisible="False" />
+          <Border Background="{TemplateBinding Background}">
+            <VisualLayerManager x:Name="PART_VisualLayerManager">
+              <ContentPresenter x:Name="PART_ContentPresenter"
+                                Content="{TemplateBinding Content}"
+                                ContentTemplate="{TemplateBinding ContentTemplate}" />
+            </VisualLayerManager>
+          </Border>
+        </Panel>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+
   <!-- Button -->
   <Style Selector="Button">
     <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}" />
@@ -93,6 +115,100 @@
   <Style Selector="TextBox:disabled">
     <Setter Property="Opacity" Value="0.5" />
     <Setter Property="Background" Value="{DynamicResource SurfaceSunkenBrush}" />
+  </Style>
+
+  <!-- ComboBox (select.input from theme.css: an input with a chevron on the trailing edge) -->
+  <Style Selector="ComboBox">
+    <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+    <Setter Property="BorderThickness" Value="{DynamicResource BorderWidth}" />
+    <Setter Property="CornerRadius" Value="{DynamicResource RadiusMd}" />
+    <Setter Property="Padding" Value="{DynamicResource PaddingInput}" />
+    <Setter Property="FontSize" Value="{DynamicResource TextSm}" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="HorizontalContentAlignment" Value="Left" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="{TemplateBinding Background}"
+                BorderBrush="{TemplateBinding BorderBrush}"
+                BorderThickness="{TemplateBinding BorderThickness}"
+                CornerRadius="{TemplateBinding CornerRadius}"
+                Padding="{TemplateBinding Padding}">
+          <Grid>
+            <ContentControl Content="{TemplateBinding SelectionBoxItem}"
+                            ContentTemplate="{TemplateBinding ItemTemplate}"
+                            Margin="{DynamicResource PaddingSelectContent}"
+                            HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                            VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+
+            <Path Data="M4,6 L8,10 L12,6"
+                  Stroke="{DynamicResource TextMutedBrush}"
+                  StrokeThickness="2"
+                  StrokeLineCap="Round"
+                  StrokeJoin="Round"
+                  Width="12" Height="12"
+                  Stretch="None"
+                  HorizontalAlignment="Right"
+                  VerticalAlignment="Center" />
+
+            <Popup x:Name="PART_Popup"
+                   IsOpen="{TemplateBinding IsDropDownOpen, Mode=TwoWay}"
+                   PlacementTarget="{Binding RelativeSource={RelativeSource TemplatedParent}}"
+                   MinWidth="{Binding $parent[ComboBox].Bounds.Width}"
+                   Placement="BottomEdgeAlignedLeft"
+                   VerticalOffset="4"
+                   IsLightDismissEnabled="True">
+              <Border Background="{DynamicResource SurfaceRaisedBrush}"
+                      BorderBrush="{DynamicResource BorderBrush}"
+                      BorderThickness="{DynamicResource BorderWidth}"
+                      CornerRadius="{DynamicResource RadiusMd}"
+                      BoxShadow="0 2 8 0 #40000000">
+                <ScrollViewer>
+                  <ItemsPresenter x:Name="PART_ItemsPresenter"
+                                  ItemsPanel="{TemplateBinding ItemsPanel}" />
+                </ScrollViewer>
+              </Border>
+            </Popup>
+          </Grid>
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="ComboBox:focus">
+    <Setter Property="BorderBrush" Value="{DynamicResource PrimaryBrush}" />
+  </Style>
+  <Style Selector="ComboBox:disabled">
+    <Setter Property="Opacity" Value="0.5" />
+    <Setter Property="Background" Value="{DynamicResource SurfaceSunkenBrush}" />
+  </Style>
+
+  <!-- ComboBoxItem -->
+  <Style Selector="ComboBoxItem">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+    <Setter Property="Padding" Value="{DynamicResource PaddingInput}" />
+    <Setter Property="FontSize" Value="{DynamicResource TextSm}" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="HorizontalContentAlignment" Value="Left" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="{TemplateBinding Background}"
+                Padding="{TemplateBinding Padding}">
+          <ContentPresenter Content="{TemplateBinding Content}"
+                            ContentTemplate="{TemplateBinding ContentTemplate}"
+                            HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                            VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="ComboBoxItem:pointerover">
+    <Setter Property="Background" Value="{DynamicResource SurfaceSunkenBrush}" />
+  </Style>
+  <Style Selector="ComboBoxItem:selected">
+    <Setter Property="Background" Value="{DynamicResource PrimaryMutedBrush}" />
   </Style>
 
   <!-- TextBlock: inherit foreground from parent, don't override -->

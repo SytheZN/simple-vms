@@ -249,7 +249,7 @@ public class VideoFeedTests
       Feed = new VideoFeed(Stream, Guid.NewGuid(), "main", NullLogger.Instance);
     }
 
-    public void Start() => Feed.Start(CancellationToken.None);
+    public void Start() => Feed.Start();
     public ValueTask WriteAsync(byte[] payload) =>
       Channel.Writer.WriteAsync(new MuxMessage(0, payload));
 

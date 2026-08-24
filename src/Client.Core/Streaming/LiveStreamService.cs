@@ -30,7 +30,6 @@ public sealed class LiveStreamService : ILiveStreamService, IDisposable
     var stream = await _tunnel.OpenStreamAsync(StreamTypes.LiveSubscribe, payload, ct);
 
     var feed = new VideoFeed(stream, cameraId, profile, _logger);
-    feed.Start(CancellationToken.None);
 
     lock (_lock)
       _subscriptions.Add(new ActiveSubscription(cameraId, profile, feed));

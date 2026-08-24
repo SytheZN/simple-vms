@@ -61,6 +61,33 @@ public class PlayerTests
 
   /// <summary>
   /// SCENARIO:
+  /// A feed reading the wire before its handlers are attached drops whatever arrives, and only
+  /// Init is recoverable afterwards from LastInit
+  ///
+  /// ACTION:
+  /// Go live and inspect the feed at the moment it was started
+  ///
+  /// EXPECTED RESULT:
+  /// The player started the feed, and had already subscribed to its GOPs when it did
+  /// </summary>
+  [Test]
+  public async Task GoLiveAsync_StartsFeedOnlyAfterSubscribingToIt()
+  {
+    var live = new FakeLive();
+    using var player = NewPlayer(live, new FakePlayback());
+    player.Configure(Guid.NewGuid(), "main");
+
+    await player.GoLiveAsync(CancellationToken.None);
+
+    Assert.Multiple(() =>
+    {
+      Assert.That(live.LastFeed!.Started, Is.True);
+      Assert.That(live.LastFeed!.HadGopSubscriberOnStart, Is.True);
+    });
+  }
+
+  /// <summary>
+  /// SCENARIO:
   /// A GOP arrives before the server Ack has cleared ignoreData
   ///
   /// ACTION:
@@ -350,12 +377,20 @@ public class PlayerTests
     public ReadOnlyMemory<byte> LastInit => ReadOnlyMemory<byte>.Empty;
     public bool Disposed { get; private set; }
     public int FetchCount { get; private set; }
+    public bool Started { get; private set; }
+    public bool HadGopSubscriberOnStart { get; private set; }
 
     public event Action<ReadOnlyMemory<byte>>? OnInit;
     public event Action<GopMessage>? OnGop;
     public event Action<StreamStatus>? OnStatus;
     public event Action<GapStatus>? OnGap;
     public event Action? OnCompleted;
+
+    public void Start()
+    {
+      Started = true;
+      HadGopSubscriberOnStart = OnGop != null;
+    }
 
     public void RaiseInit(ReadOnlyMemory<byte> data) => OnInit?.Invoke(data);
     public void RaiseGop(GopMessage gop) => OnGop?.Invoke(gop);

@@ -3,6 +3,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
+using Client.Core.Streaming;
 using Client.Core.Tunnel;
 using Client.Core.ViewModels;
 using Client.Desktop.Services;
@@ -55,6 +56,8 @@ public partial class SettingsView : UserControl
 
     var reprobeToggle = this.FindControl<ToggleButton>("ReprobeToggle")!;
     var minimizeToggle = this.FindControl<ToggleButton>("MinimizeOnCloseToggle")!;
+    var qualitySelector = this.FindControl<ComboBox>("PreferredQualitySelector")!;
+    qualitySelector.ItemsSource = Enum.GetValues<Quality>();
 
     this.FindControl<Button>("ReconnectButton")!.Click += OnReconnect;
     this.FindControl<Button>("UnregisterButton")!.Click += OnUnregisterRequested;
@@ -79,6 +82,14 @@ public partial class SettingsView : UserControl
         mw.MinimizeOnClose = settings.MinimizeOnClose;
     };
 
+    qualitySelector.SelectionChanged += (_, _) =>
+    {
+      var settings = GetSettings();
+      if (settings == null || qualitySelector.SelectedItem is not Quality quality) return;
+      settings.PreferredQuality = quality;
+      _ = settings.SaveAsync();
+    };
+
     BuildShortcutsCard();
 
     DataContextChanged += (_, _) =>
@@ -94,6 +105,7 @@ public partial class SettingsView : UserControl
         {
           reprobeToggle.IsChecked = settings.ReprobeEnabled;
           minimizeToggle.IsChecked = settings.MinimizeOnClose;
+          qualitySelector.SelectedItem = settings.PreferredQuality;
         }
       }
     };

@@ -21,7 +21,7 @@ public sealed class CameraViewModel : ViewModelBase, IAsyncDisposable
   private CameraDto? _camera;
   private IVideoFeed? _motionFeed;
   private Player? _player;
-  private string _selectedProfile = "main";
+  private string _selectedProfile = "";
   private bool _motionOverlay;
   private long _currentPositionUs;
   private bool _isBuffering;
@@ -125,7 +125,7 @@ public sealed class CameraViewModel : ViewModelBase, IAsyncDisposable
     }
   }
 
-  public async Task LoadAsync(Guid cameraId, CancellationToken ct)
+  public async Task LoadAsync(Guid cameraId, Quality preferred, CancellationToken ct)
   {
     _logger.LogDebug("Loading camera {CameraId}", cameraId);
     var result = await _api.GetCameraAsync(cameraId, ct);
@@ -141,6 +141,12 @@ public sealed class CameraViewModel : ViewModelBase, IAsyncDisposable
         _logger.LogWarning("Failed to load camera {CameraId}: {Message}", cameraId, error.Message);
         SetError(error);
       });
+
+    if (_camera != null)
+    {
+      _selectedProfile = _camera.Streams.FirstPreferred(preferred)?.Profile ?? "";
+      OnPropertyChanged(nameof(SelectedProfile));
+    }
 
     if (_camera != null && _player == null)
     {

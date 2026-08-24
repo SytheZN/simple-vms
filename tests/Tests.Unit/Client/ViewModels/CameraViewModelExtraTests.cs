@@ -21,7 +21,10 @@ public class CameraViewModelExtraTests
     Address = "192.168.1.100",
     Status = "online",
     ProviderId = "onvif",
-    Streams = [],
+    Streams = [
+      new StreamProfileDto { Profile = "main", Kind = StreamKind.Quality, FormatId = "fmp4", Codec = "h264", Resolution = "1920x1080", Fps = 30, RecordingEnabled = true },
+      new StreamProfileDto { Profile = "sub", Kind = StreamKind.Quality, FormatId = "fmp4", Codec = "h264", Resolution = "640x360", Fps = 15, RecordingEnabled = true }
+    ],
     Capabilities = []
   };
 
@@ -40,7 +43,7 @@ public class CameraViewModelExtraTests
   {
     var (vm, _, _, _) = NewVm();
 
-    await vm.LoadAsync(Guid.NewGuid(), CancellationToken.None);
+    await vm.LoadAsync(Guid.NewGuid(), Quality.Highest, CancellationToken.None);
 
     Assert.Multiple(() =>
     {
@@ -66,9 +69,9 @@ public class CameraViewModelExtraTests
     var (vm, _, _, api) = NewVm();
     api.Camera = TestCamera;
 
-    await vm.LoadAsync(TestCamera.Id, CancellationToken.None);
+    await vm.LoadAsync(TestCamera.Id, Quality.Highest, CancellationToken.None);
     var firstPlayer = vm.Player;
-    await vm.LoadAsync(TestCamera.Id, CancellationToken.None);
+    await vm.LoadAsync(TestCamera.Id, Quality.Highest, CancellationToken.None);
 
     Assert.That(vm.Player, Is.SameAs(firstPlayer));
   }
@@ -89,7 +92,7 @@ public class CameraViewModelExtraTests
   {
     var (vm, live, _, api) = NewVm();
     api.Camera = TestCamera;
-    await vm.LoadAsync(TestCamera.Id, CancellationToken.None);
+    await vm.LoadAsync(TestCamera.Id, Quality.Highest, CancellationToken.None);
 
     vm.MotionOverlay = true;
     await Task.Delay(50);
@@ -117,7 +120,7 @@ public class CameraViewModelExtraTests
   {
     var (vm, live, _, api) = NewVm();
     api.Camera = TestCamera;
-    await vm.LoadAsync(TestCamera.Id, CancellationToken.None);
+    await vm.LoadAsync(TestCamera.Id, Quality.Highest, CancellationToken.None);
 
     vm.MotionOverlay = true;
     await Task.Delay(50);
@@ -216,7 +219,7 @@ public class CameraViewModelExtraTests
   {
     var (vm, _, _, api) = NewVm();
     api.Camera = TestCamera;
-    await vm.LoadAsync(TestCamera.Id, CancellationToken.None);
+    await vm.LoadAsync(TestCamera.Id, Quality.Highest, CancellationToken.None);
     await vm.GoLiveAsync(CancellationToken.None);
 
     vm.ScrubStart();
@@ -239,7 +242,7 @@ public class CameraViewModelExtraTests
   {
     var (vm, _, playback, api) = NewVm();
     api.Camera = TestCamera;
-    await vm.LoadAsync(TestCamera.Id, CancellationToken.None);
+    await vm.LoadAsync(TestCamera.Id, Quality.Highest, CancellationToken.None);
     await vm.GoLiveAsync(CancellationToken.None);
 
     vm.ScrubStart();
@@ -263,7 +266,7 @@ public class CameraViewModelExtraTests
   {
     var (vm, live, _, api) = NewVm();
     api.Camera = TestCamera;
-    await vm.LoadAsync(TestCamera.Id, CancellationToken.None);
+    await vm.LoadAsync(TestCamera.Id, Quality.Highest, CancellationToken.None);
     vm.MotionOverlay = true;
     await Task.Delay(50);
 

@@ -44,7 +44,7 @@ public class CameraViewModelTests
     var (vm, _, _, api) = CreateVm();
     api.Camera = TestCamera;
 
-    await vm.LoadAsync(TestCamera.Id, CancellationToken.None);
+    await vm.LoadAsync(TestCamera.Id, Quality.Highest, CancellationToken.None);
 
     Assert.That(vm.Camera, Is.Not.Null);
     Assert.That(vm.Camera!.Id, Is.EqualTo(TestCamera.Id));
@@ -67,12 +67,72 @@ public class CameraViewModelTests
     var (vm, live, _, api) = CreateVm();
     api.Camera = TestCamera;
 
-    await vm.LoadAsync(TestCamera.Id, CancellationToken.None);
+    await vm.LoadAsync(TestCamera.Id, Quality.Highest, CancellationToken.None);
     await vm.GoLiveAsync(CancellationToken.None);
 
     Assert.That(live.SubscribeCount, Is.EqualTo(1));
     Assert.That(live.LastProfile, Is.EqualTo("main"));
     Assert.That(vm.IsPlayback, Is.False);
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// The platform prefers the lowest quality stream
+  ///
+  /// ACTION:
+  /// Load with Quality.Lowest, then go live
+  ///
+  /// EXPECTED RESULT:
+  /// The first subscription already uses the low profile; no switch is needed to get there
+  /// </summary>
+  [Test]
+  public async Task Load_PreferringLowest_SubscribesToLowestWithoutSwitching()
+  {
+    var (vm, live, _, api) = CreateVm();
+    api.Camera = TestCamera;
+
+    await vm.LoadAsync(TestCamera.Id, Quality.Lowest, CancellationToken.None);
+    await vm.GoLiveAsync(CancellationToken.None);
+
+    Assert.Multiple(() =>
+    {
+      Assert.That(vm.SelectedProfile, Is.EqualTo("sub"));
+      Assert.That(live.LastProfile, Is.EqualTo("sub"));
+      Assert.That(live.SubscribeCount, Is.EqualTo(1));
+    });
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A camera advertises no quality streams at all
+  ///
+  /// ACTION:
+  /// Load it, then attempt to go live
+  ///
+  /// EXPECTED RESULT:
+  /// No profile is invented; going live fails loudly rather than subscribing to nothing
+  /// </summary>
+  [Test]
+  public async Task Load_NoQualityStreams_LeavesProfileUnsetAndRefusesToStream()
+  {
+    var (vm, live, _, api) = CreateVm();
+    api.Camera = new CameraDto
+    {
+      Id = TestCamera.Id,
+      Name = TestCamera.Name,
+      Address = TestCamera.Address,
+      Status = TestCamera.Status,
+      ProviderId = TestCamera.ProviderId,
+      Streams = [],
+      Capabilities = []
+    };
+
+    await vm.LoadAsync(TestCamera.Id, Quality.Lowest, CancellationToken.None);
+
+    Assert.That(vm.SelectedProfile, Is.Empty);
+    Assert.ThrowsAsync<InvalidOperationException>(
+      () => vm.GoLiveAsync(CancellationToken.None));
+    Assert.That(live.SubscribeCount, Is.Zero);
   }
 
   /// <summary>
@@ -91,7 +151,7 @@ public class CameraViewModelTests
     var (vm, live, playback, api) = CreateVm();
     api.Camera = TestCamera;
 
-    await vm.LoadAsync(TestCamera.Id, CancellationToken.None);
+    await vm.LoadAsync(TestCamera.Id, Quality.Highest, CancellationToken.None);
     await vm.GoLiveAsync(CancellationToken.None);
     await vm.StartPlaybackAsync(1_000_000, 2_000_000, CancellationToken.None);
 
@@ -116,7 +176,7 @@ public class CameraViewModelTests
     var (vm, _, playback, api) = CreateVm();
     api.Camera = TestCamera;
 
-    await vm.LoadAsync(TestCamera.Id, CancellationToken.None);
+    await vm.LoadAsync(TestCamera.Id, Quality.Highest, CancellationToken.None);
     await vm.StartPlaybackAsync(1_000_000, null, CancellationToken.None);
     await vm.SeekAsync(5_000_000, CancellationToken.None);
 
@@ -139,7 +199,7 @@ public class CameraViewModelTests
     var (vm, _, _, api) = CreateVm();
     api.Camera = TestCamera;
 
-    await vm.LoadAsync(TestCamera.Id, CancellationToken.None);
+    await vm.LoadAsync(TestCamera.Id, Quality.Highest, CancellationToken.None);
     await vm.StartPlaybackAsync(1_000_000, null, CancellationToken.None);
 
     vm.SetRate(2.0);
@@ -164,7 +224,7 @@ public class CameraViewModelTests
     var (vm, _, _, api) = CreateVm();
     api.Camera = TestCamera;
 
-    await vm.LoadAsync(TestCamera.Id, CancellationToken.None);
+    await vm.LoadAsync(TestCamera.Id, Quality.Highest, CancellationToken.None);
     await vm.GoLiveAsync(CancellationToken.None);
 
     Assert.That(vm.Player!.Paused, Is.False);
@@ -267,7 +327,7 @@ public class CameraViewModelTests
     var (vm, live, _, api) = CreateVm();
     api.Camera = TestCamera;
 
-    await vm.LoadAsync(TestCamera.Id, CancellationToken.None);
+    await vm.LoadAsync(TestCamera.Id, Quality.Highest, CancellationToken.None);
     await vm.GoLiveAsync(CancellationToken.None);
     Assert.That(live.SubscribeCount, Is.EqualTo(1));
 

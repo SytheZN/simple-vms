@@ -20,7 +20,7 @@ public sealed class Player : IDisposable
   private readonly IPlaybackService _playbackService;
 
   private Guid _cameraId;
-  private string _currentProfile = "main";
+  private string _currentProfile = "";
 
   private IVideoFeed? _feed;
   private CodecParameters? _codecConfig;
@@ -101,6 +101,10 @@ public sealed class Player : IDisposable
   public double MinRate => _minRate;
   public double MaxRate => _maxRate;
   public string CurrentProfile => _currentProfile;
+
+  private string ConfiguredProfile => _currentProfile.Length > 0
+    ? _currentProfile
+    : throw new InvalidOperationException("Configure must be called before streaming");
 
   public void Configure(Guid cameraId, string profile)
   {
@@ -230,6 +234,7 @@ public sealed class Player : IDisposable
     _fetcher.Attach((from, to) => feed.SendFetchAsync(from, to, CancellationToken.None));
     if (!feed.LastInit.IsEmpty)
       HandleInit(feed.LastInit);
+    feed.Start();
   }
 
   private void OnFeedReplaced(IVideoFeed oldFeed, IVideoFeed newFeed)
@@ -253,7 +258,7 @@ public sealed class Player : IDisposable
     _mode = PlayerMode.Live;
     EnterSeeking(0);
     _paused = false;
-    var feed = await _liveService.SubscribeAsync(_cameraId, _currentProfile, ct);
+    var feed = await _liveService.SubscribeAsync(_cameraId, ConfiguredProfile, ct);
     AttachFeed(feed);
   }
 
@@ -263,7 +268,7 @@ public sealed class Player : IDisposable
     await UnsubscribeCurrentAsync();
     _mode = PlayerMode.Playback;
     EnterSeeking(ts);
-    var feed = await _playbackService.StartAsync(_cameraId, _currentProfile, (ulong)ts, null, ct);
+    var feed = await _playbackService.StartAsync(_cameraId, ConfiguredProfile, (ulong)ts, null, ct);
     AttachFeed(feed);
   }
 

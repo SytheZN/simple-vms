@@ -6,6 +6,7 @@ using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Client.Android.Services;
 using Client.Android.ViewModels;
+using Client.Core.Streaming;
 using Client.Core.Tunnel;
 using Client.Core.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,6 +19,7 @@ public sealed partial class SettingsPage : UserControl
   private Ellipse? _statusDot;
   private TextBlock? _statusLabel;
   private ToggleButton? _startOnBootToggle;
+  private ComboBox? _qualitySelector;
   private SettingsViewModel? _subscribed;
 
   public SettingsPage()
@@ -27,6 +29,9 @@ public sealed partial class SettingsPage : UserControl
     _statusDot = this.FindControl<Ellipse>("StatusDot");
     _statusLabel = this.FindControl<TextBlock>("StatusLabel");
     _startOnBootToggle = this.FindControl<ToggleButton>("StartOnBootToggle");
+    _qualitySelector = this.FindControl<ComboBox>("PreferredQualitySelector");
+    if (_qualitySelector != null)
+      _qualitySelector.ItemsSource = Enum.GetValues<Quality>();
 
     this.FindControl<Button>("ReconnectButton")!.Click += OnReconnect;
     this.FindControl<Button>("UnregisterButton")!.Click += OnUnregisterRequested;
@@ -36,6 +41,9 @@ public sealed partial class SettingsPage : UserControl
 
     if (_startOnBootToggle != null)
       _startOnBootToggle.IsCheckedChanged += OnStartOnBootChanged;
+
+    if (_qualitySelector != null)
+      _qualitySelector.SelectionChanged += OnPreferredQualityChanged;
 
     DataContextChanged += (_, _) => Rebind();
     DetachedFromVisualTree += (_, _) => Unsubscribe();
@@ -53,6 +61,15 @@ public sealed partial class SettingsPage : UserControl
     }
     if (_startOnBootToggle != null)
       _startOnBootToggle.IsChecked = GetAndroidSettings()?.StartOnBoot ?? false;
+    if (_qualitySelector != null)
+      _qualitySelector.SelectedItem = GetAndroidSettings()?.PreferredQuality;
+  }
+
+  private void OnPreferredQualityChanged(object? sender, SelectionChangedEventArgs e)
+  {
+    var settings = GetAndroidSettings();
+    if (settings == null || _qualitySelector?.SelectedItem is not Quality quality) return;
+    settings.PreferredQuality = quality;
   }
 
   private void Unsubscribe()

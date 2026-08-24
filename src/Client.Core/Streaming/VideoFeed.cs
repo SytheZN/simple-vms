@@ -4,21 +4,6 @@ using Shared.Protocol;
 
 namespace Client.Core.Streaming;
 
-public interface IVideoFeed : IAsyncDisposable
-{
-  Guid CameraId { get; }
-  string Profile { get; }
-  ReadOnlyMemory<byte> LastInit { get; }
-
-  event Action<ReadOnlyMemory<byte>>? OnInit;
-  event Action<GopMessage>? OnGop;
-  event Action<StreamStatus>? OnStatus;
-  event Action<GapStatus>? OnGap;
-  event Action? OnCompleted;
-
-  Task SendFetchAsync(ulong from, ulong to, CancellationToken ct);
-}
-
 public sealed class VideoFeed : IVideoFeed
 {
   private readonly MuxStream _stream;
@@ -58,9 +43,10 @@ public sealed class VideoFeed : IVideoFeed
     return _stream.SendAsync(0, payload, ct);
   }
 
-  internal void Start(CancellationToken ct)
+  public void Start()
   {
-    _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+    if (_readLoop != null) return;
+    _cts = new CancellationTokenSource();
     _readLoop = FailFast.Run(() => ReadLoopAsync(_cts.Token));
   }
 

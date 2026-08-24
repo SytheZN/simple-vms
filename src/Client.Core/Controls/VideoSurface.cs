@@ -32,12 +32,15 @@ public sealed class VideoSurface : Avalonia.Controls.Control
   protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
   {
     base.OnAttachedToVisualTree(e);
-    if (_player != null && _renderer == null)
+    if (_player == null) return;
+
+    if (_renderer == null)
     {
       _renderer = _player.Renderer;
-      _renderer.Attach(this);
       _renderer.OnVsync += OnRendererVsync;
     }
+
+    _renderer.Attach(this);
   }
 
   protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)

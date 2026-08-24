@@ -32,6 +32,7 @@ public class LiveStreamServiceTests
     GopMessage? receivedGop = null;
     feed.OnInit += data => receivedInit = data;
     feed.OnGop += gop => receivedGop = gop;
+    feed.Start();
 
     var initData = new byte[] { 0x00, 0x00, 0x00, 0x1C };
     var initMsg = StreamMessageWriter.SerializeInit("main", initData);
@@ -71,6 +72,7 @@ public class LiveStreamServiceTests
 
     StreamStatus? receivedStatus = null;
     feed.OnStatus += s => receivedStatus = s;
+    feed.Start();
 
     var statusMsg = StreamMessageWriter.SerializeStatus(StreamStatus.Ack);
     await tunnel.LastChannel!.Writer.WriteAsync(new MuxMessage(0, statusMsg));

@@ -29,7 +29,7 @@ public class PlayerExtraTests
   /// Read MinRate, MaxRate, CurrentProfile, Stride, Direction, Buffering, Paused
   ///
   /// EXPECTED RESULT:
-  /// Defaults: MinRate=1, MaxRate=1, profile is "main", stride=1, direction=1,
+  /// Defaults: MinRate=1, MaxRate=1, no profile until configured, stride=1, direction=1,
   /// not buffering, not paused
   /// </summary>
   [Test]
@@ -41,7 +41,7 @@ public class PlayerExtraTests
     {
       Assert.That(p.MinRate, Is.EqualTo(1));
       Assert.That(p.MaxRate, Is.EqualTo(1));
-      Assert.That(p.CurrentProfile, Is.EqualTo("main"));
+      Assert.That(p.CurrentProfile, Is.Empty);
       Assert.That(p.Stride, Is.EqualTo(1));
       Assert.That(p.Direction, Is.EqualTo(1));
       Assert.That(p.Buffering, Is.False);
@@ -307,6 +307,8 @@ public class PlayerExtraTests
     public event Action<StreamStatus>? OnStatus;
     public event Action<GapStatus>? OnGap;
     public event Action? OnCompleted;
+
+    public void Start() { }
 
     public void RaiseInit(ReadOnlyMemory<byte> d) => OnInit?.Invoke(d);
     public void RaiseGop(GopMessage g) => OnGop?.Invoke(g);

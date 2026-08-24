@@ -7,6 +7,7 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Client.Android.Services;
 using Client.Android.ViewModels;
 using Client.Core.Controls;
 using Client.Core.Decoding.Diagnostics;
@@ -144,7 +145,9 @@ public sealed partial class CameraPage : UserControl
     var ct = _lifetimeCts?.Token ?? CancellationToken.None;
     try
     {
-      await vm.LoadAsync(cameraId, ct);
+      var settings = ((AndroidApp)Avalonia.Application.Current!).Services
+        .GetRequiredService<AndroidSettings>();
+      await vm.LoadAsync(cameraId, settings.PreferredQuality, ct);
       if (_videoPlayer != null) _videoPlayer.Player = vm.Player;
       if (vm.Player != null && _statsOverlay != null)
         _statsOverlay.Diagnostics = vm.Player.Diagnostics;
@@ -153,7 +156,10 @@ public sealed partial class CameraPage : UserControl
       await vm.GoLiveAsync(ct);
 
       if (vm.Camera != null && _qualitySelector != null)
+      {
         _qualitySelector.Streams = vm.Camera.Streams;
+        _qualitySelector.SelectedProfile = vm.SelectedProfile;
+      }
 
       UpdateMode(vm);
       UpdatePlayPauseIcon(vm.IsPaused);

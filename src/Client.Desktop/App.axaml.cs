@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
 using Client.Core;
 using Client.Core.Platform;
 using Client.Core.Tunnel;
@@ -25,15 +26,8 @@ public sealed class App : Application
       settings.Load();
 
       var vm = Services.GetRequiredService<MainWindowViewModel>();
-      var window = new MainWindow { DataContext = vm };
+      var window = new MainWindow { DataContext = vm, MinimizeOnClose = settings.MinimizeOnClose };
       desktop.MainWindow = window;
-
-      var tray = Services.GetRequiredService<TrayService>();
-      tray.Initialize(window);
-
-      var notifications = Services.GetRequiredService<INotificationService>();
-      if (notifications is DesktopNotificationService dns)
-        dns.SetWindow(window);
 
       desktop.ShutdownRequested += async (_, _) =>
       {
@@ -41,18 +35,25 @@ public sealed class App : Application
         await Services.GetRequiredService<ClientLifecycleService>().ShutdownAsync(shutdownCts.Token);
       };
 
-      _ = AutoConnectAsync();
+      Dispatcher.UIThread.Post(() => InitializeAfterFirstFrame(window), DispatcherPriority.Background);
     }
 
     base.OnFrameworkInitializationCompleted();
   }
 
+  private void InitializeAfterFirstFrame(MainWindow window)
+  {
+    Services.GetRequiredService<TrayService>().Initialize(window);
+
+    if (Services.GetRequiredService<INotificationService>() is DesktopNotificationService dns)
+      dns.SetWindow(window);
+
+    _ = AutoConnectAsync();
+  }
+
   private async Task AutoConnectAsync()
   {
     var settings = Services.GetRequiredService<DesktopSettings>();
-
-    if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime { MainWindow: MainWindow mw })
-      mw.MinimizeOnClose = settings.MinimizeOnClose;
 
     var options = new ConnectionOptions(
       settings.LastSuccessfulAddressIndex,

@@ -1,4 +1,5 @@
 using System.Windows.Input;
+using Avalonia.Threading;
 using Client.Core.Platform;
 using Client.Core.Tunnel;
 using Client.Core.ViewModels;
@@ -112,6 +113,8 @@ public sealed class MainWindowViewModel : ViewModelBase, IDisposable
 
   private async Task InitAsync()
   {
+    await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+
     _logger.LogDebug("InitAsync: checking for stored credentials");
     try
     {

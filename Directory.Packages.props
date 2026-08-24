@@ -3,11 +3,12 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="Avalonia" Version="12.0.0" />
-    <PackageVersion Include="Avalonia.Android" Version="12.0.0" />
-    <PackageVersion Include="Avalonia.Desktop" Version="12.0.0" />
-    <PackageVersion Include="Avalonia.Headless.NUnit" Version="12.0.0" />
-    <PackageVersion Include="Avalonia.Skia" Version="12.0.0" />
+    <PackageVersion Include="Avalonia" Version="12.1.1" />
+    <PackageVersion Include="Avalonia.Android" Version="12.1.1" />
+    <PackageVersion Include="Avalonia.Desktop" Version="12.1.1" />
+    <PackageVersion Include="Avalonia.Headless.NUnit" Version="12.1.1" />
+    <PackageVersion Include="Avalonia.Skia" Version="12.1.1" />
+    <PackageVersion Include="Avalonia.Wayland" Version="12.1.1" />
     <PackageVersion Include="BitMiracle.LibJpeg.NET" Version="1.5.324" />
     <PackageVersion Include="BouncyCastle.Cryptography" Version="2.6.2" />
     <PackageVersion Include="coverlet.collector" Version="8.0.1">
@@ -33,9 +34,9 @@
     <PackageVersion Include="Serilog.Extensions.Logging" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageVersion Include="SimpleVms.FFmpeg.Native" Version="8.1.0-9047fa1.30" />
-    <PackageVersion Include="SkiaSharp" Version="3.119.3-preview.1.1" />
+    <PackageVersion Include="SkiaSharp" Version="3.119.4" />
     <PackageVersion Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
-    <PackageVersion Include="Tmds.DBus.Protocol" Version="0.92.0" />
+    <PackageVersion Include="Tmds.DBus.Protocol" Version="0.94.1" />
     <PackageVersion Include="Xamarin.AndroidX.AppCompat" Version="1.7.1.3" />
     <PackageVersion Include="Xamarin.AndroidX.Camera.Camera2" Version="1.5.3.1" />
     <PackageVersion Include="Xamarin.AndroidX.Camera.Lifecycle" Version="1.5.3.1" />

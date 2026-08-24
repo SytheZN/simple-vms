@@ -373,11 +373,25 @@ jobs:
       - name: Authenticate GitHub NuGet feed
         run: dotnet nuget update source github --username "${{ github.actor }}" --password "${{ secrets.GITHUB_TOKEN }}" --store-password-in-clear-text --configfile nuget.config
 
+      - name: Decode signing keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "No ANDROID_KEYSTORE_BASE64 secret; APK will be signed with the debug key."
+            exit 0
+          fi
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          echo "SIMPLEVMS_KEYSTORE=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+
       - name: Publish Android
         env:
           BUILD_VERSION: ${{ needs.build.outputs.version }}
           BUILD_HASH: ${{ needs.build.outputs.hash }}
           BUILD_RID: ${{ matrix.rid }}
+          SIMPLEVMS_KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+          SIMPLEVMS_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          SIMPLEVMS_KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
         run: ./scripts/publish/android.sh
 
       - name: Upload APK

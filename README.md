@@ -14,7 +14,7 @@ A network video management system for home and power users. Supports up to 32 ca
 
 ## Highlights
 
-- **Zero transcoding** -- video passes through as raw data units; the server never decodes or re-encodes
+- **Zero transcoding** -- video passes through as raw data units
 - **Single port access** -- all native client communication (API, live video, playback, events) multiplexed over one TCP/TLS port
 - **Plugin-first architecture** -- capture, storage, formats, analytics, auth, and notifications are all behind extension point interfaces with no privileged internal code paths
 - **Cross-platform clients** -- native desktop (Windows, Linux, macOS), mobile (Android, iOS), and web UI

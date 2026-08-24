@@ -6,6 +6,7 @@ using Avalonia.Interactivity;
 using Avalonia.Media;
 using Client.Core.Controls;
 using Client.Core.ViewModels;
+using Client.Desktop.Services;
 using Client.Desktop.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -211,7 +212,9 @@ public partial class CameraView : UserControl
 
   private async Task InitCoreAsync(CameraViewModel vm, Guid cameraId)
   {
-    await vm.LoadAsync(cameraId, CancellationToken.None);
+    var settings = ((App)Avalonia.Application.Current!).Services
+      .GetRequiredService<DesktopSettings>();
+    await vm.LoadAsync(cameraId, settings.PreferredQuality, CancellationToken.None);
     _videoPlayer.Player = vm.Player;
     if (vm.Player != null)
       _statsOverlay.Diagnostics = vm.Player.Diagnostics;
@@ -220,7 +223,10 @@ public partial class CameraView : UserControl
     await vm.GoLiveAsync(CancellationToken.None);
 
     if (vm.Camera != null)
+    {
       _qualitySelector.Streams = vm.Camera.Streams;
+      _qualitySelector.SelectedProfile = vm.SelectedProfile;
+    }
 
     UpdateMode(vm);
     UpdatePlayPauseIcon(vm.IsPaused);

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Client.Core.Events;
+using Client.Core.Streaming;
 
 namespace Client.Desktop.Services;
 
@@ -14,6 +15,7 @@ public sealed partial class DesktopSettings
   public int GalleryColumns { get; set; } = 3;
   public int LastSuccessfulAddressIndex { get; set; } = -1;
   public bool ReprobeEnabled { get; set; }
+  public Quality PreferredQuality { get; set; } = Quality.Highest;
 
   public void Load()
   {
@@ -37,6 +39,7 @@ public sealed partial class DesktopSettings
     GalleryColumns = data.GalleryColumns > 0 ? data.GalleryColumns : 3;
     LastSuccessfulAddressIndex = data.LastSuccessfulAddressIndex;
     ReprobeEnabled = data.ReprobeEnabled;
+    PreferredQuality = data.PreferredQuality ?? PreferredQuality;
   }
 
   public async Task SaveAsync()
@@ -47,7 +50,8 @@ public sealed partial class DesktopSettings
       MinimizeOnClose = MinimizeOnClose,
       GalleryColumns = GalleryColumns,
       LastSuccessfulAddressIndex = LastSuccessfulAddressIndex,
-      ReprobeEnabled = ReprobeEnabled
+      ReprobeEnabled = ReprobeEnabled,
+      PreferredQuality = PreferredQuality
     };
     var json = JsonSerializer.SerializeToUtf8Bytes(data, DesktopSettingsJsonContext.Default.DesktopSettingsData);
     Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
@@ -72,6 +76,7 @@ public sealed partial class DesktopSettings
     public int GalleryColumns { get; set; }
     public int LastSuccessfulAddressIndex { get; set; }
     public bool ReprobeEnabled { get; set; }
+    public Quality? PreferredQuality { get; set; }
   }
 
   [JsonSourceGenerationOptions(WriteIndented = true, PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]

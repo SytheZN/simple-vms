@@ -10,6 +10,14 @@
     <ApplicationVersion Condition="'$(AndroidVersionCode)' == ''">1</ApplicationVersion>
     <AndroidPackageFormat>apk</AndroidPackageFormat>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release' And '$(SIMPLEVMS_KEYSTORE)' != ''">
+    <AndroidKeyStore>true</AndroidKeyStore>
+    <AndroidSigningKeyStore>$(SIMPLEVMS_KEYSTORE)</AndroidSigningKeyStore>
+    <AndroidSigningStorePass>$(SIMPLEVMS_KEYSTORE_PASS)</AndroidSigningStorePass>
+    <AndroidSigningKeyAlias>$(SIMPLEVMS_KEY_ALIAS)</AndroidSigningKeyAlias>
+    <AndroidSigningKeyPass Condition="'$(SIMPLEVMS_KEY_PASS)' != ''">$(SIMPLEVMS_KEY_PASS)</AndroidSigningKeyPass>
+    <AndroidSigningKeyPass Condition="'$(SIMPLEVMS_KEY_PASS)' == ''">$(SIMPLEVMS_KEYSTORE_PASS)</AndroidSigningKeyPass>
+  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Client.Core/Client.Core.csproj" />
   </ItemGroup>

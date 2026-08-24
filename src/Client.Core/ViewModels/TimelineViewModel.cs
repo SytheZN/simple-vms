@@ -11,7 +11,7 @@ public sealed class TimelineViewModel : ViewModelBase, IDisposable
   private readonly ILogger<TimelineViewModel> _logger;
 
   private Guid _cameraId;
-  private string _profile = "main";
+  private string _profile = "";
   private ulong _currentPosition;
   private double _zoomLevel = 1.0;
   private ulong _visibleFrom;
@@ -63,7 +63,7 @@ public sealed class TimelineViewModel : ViewModelBase, IDisposable
 
   public async Task LoadAsync(CancellationToken ct)
   {
-    if (_cameraId == Guid.Empty) return;
+    if (_cameraId == Guid.Empty || _profile.Length == 0) return;
     if (_visibleFrom == 0 && _visibleTo == 0) return;
 
     var result = await _api.GetTimelineAsync(_cameraId, _visibleFrom, _visibleTo, _profile, ct);

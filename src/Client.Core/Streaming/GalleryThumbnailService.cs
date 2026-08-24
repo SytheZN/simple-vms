@@ -143,6 +143,8 @@ public sealed class GalleryThumbnailService : IGalleryThumbnails, IDisposable
       using var registration = subscription.Token.Register(
         () => finished.TrySetResult(Outcome.Ended));
 
+      feed.Start();
+
       return await finished.Task;
     }
     catch (OperationCanceledException)

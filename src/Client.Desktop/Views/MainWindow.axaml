@@ -8,7 +8,7 @@
         x:DataType="vm:MainWindowViewModel"
         Title="sVMS"
         Icon="avares://Client.Core/Assets/logo/256.png"
-        Width="1280" Height="720"
+        Width="1280" Height="790"
         MinWidth="800" MinHeight="500"
         Background="{DynamicResource SurfaceBrush}">
 
@@ -38,7 +38,7 @@
     <KeyBinding Gesture="Ctrl+D" Command="{Binding ToggleDiagnosticsCommand}" />
   </Window.KeyBindings>
 
-  <DockPanel>
+  <DockPanel Background="{DynamicResource SurfaceBrush}">
     <!-- Nav sidebar -->
     <Border DockPanel.Dock="Left"
             Width="{DynamicResource NavSidebarWidth}"
@@ -99,16 +99,23 @@
     </Border>
 
     <!-- Content area -->
-    <ContentControl Content="{Binding CurrentViewModel}"
-                    Classes.fullscreen="{Binding IsCameraFullscreen}">
-      <ContentControl.Styles>
-        <Style Selector="ContentControl">
-          <Setter Property="Margin" Value="{DynamicResource PaddingCard}" />
-        </Style>
-        <Style Selector="ContentControl.fullscreen">
-          <Setter Property="Margin" Value="0" />
-        </Style>
-      </ContentControl.Styles>
-    </ContentControl>
+    <Panel>
+      <Image Source="avares://Client.Core/Assets/logo/128.png"
+             Width="128" Height="128"
+             HorizontalAlignment="Center" VerticalAlignment="Center"
+             IsVisible="{Binding CurrentViewModel, Converter={x:Static ObjectConverters.IsNull}}" />
+
+      <ContentControl Content="{Binding CurrentViewModel}"
+                      Classes.fullscreen="{Binding IsCameraFullscreen}">
+        <ContentControl.Styles>
+          <Style Selector="ContentControl">
+            <Setter Property="Margin" Value="{DynamicResource PaddingCard}" />
+          </Style>
+          <Style Selector="ContentControl.fullscreen">
+            <Setter Property="Margin" Value="0" />
+          </Style>
+        </ContentControl.Styles>
+      </ContentControl>
+    </Panel>
   </DockPanel>
 </Window>
