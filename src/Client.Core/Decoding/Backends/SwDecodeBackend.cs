@@ -70,9 +70,6 @@ public sealed unsafe class SwDecodeBackend : IDecodeBackend
       }
     }
 
-    // Packet pts is in microseconds (our TimestampUs). FFmpeg needs a timebase
-    // to propagate pts through the decoder; without it, output frames get
-    // AV_NOPTS_VALUE.
     _ctx->pkt_timebase = new AVRational { num = 1, den = 1_000_000 };
 
     var ret = FFAvCodec.avcodec_open2(_ctx, codec, null);
@@ -99,10 +96,6 @@ public sealed unsafe class SwDecodeBackend : IDecodeBackend
     {
       _pkt->data = data;
       _pkt->size = sample.Data.Length;
-      // Bindings declare AVPacket pts/dts/duration as `nint` annotated int64_t:
-      // a widening cast on 64-bit, but on 32-bit it silently truncates. Use
-      // `checked` so a 32-bit build throws OverflowException instead of
-      // producing corrupt timestamps.
       _pkt->pts = checked((nint)sample.TimestampUs);
       _pkt->dts = checked((nint)sample.DecodeTimestampUs);
       _pkt->duration = checked((nint)sample.DurationUs);
@@ -158,8 +151,6 @@ public sealed unsafe class SwDecodeBackend : IDecodeBackend
       _logger.LogTrace("CaptureFrame pts={Pts} best_effort={Best} duration={Duration}",
         (long)src->pts, (long)src->best_effort_timestamp, durationUs);
 
-    // Skip AV_NOPTS_VALUE and zero: without a valid wall-clock the frame
-    // can't be looked up by GetFrame anyway.
     if (timestampUs == AV_NOPTS_VALUE || timestampUs <= 0)
     {
       FFAvUtil.av_free((void*)pixels);

@@ -9,6 +9,9 @@ namespace Cameras.Onvif;
 
 public sealed class OnvifEventSubscription : IEventSubscription
 {
+  private const int MaxConsecutiveContinuingFaults = 5;
+  private static readonly TimeSpan ContinuingFaultRetryDelay = TimeSpan.FromSeconds(1);
+
   private readonly EventService _events;
   private readonly string _eventsUri;
   private readonly Credentials _credentials;
@@ -40,6 +43,7 @@ public sealed class OnvifEventSubscription : IEventSubscription
     [EnumeratorCancellation] CancellationToken ct)
   {
     var renewAt = ComputeRenewAt(_terminationTime);
+    var consecutiveContinuingFaults = 0;
 
     while (!ct.IsCancellationRequested && !_disposed)
     {
@@ -70,9 +74,22 @@ public sealed class OnvifEventSubscription : IEventSubscription
       try
       {
         notifications = await _events.PullMessagesAsync(_pullPointUri, _credentials, ct);
+        consecutiveContinuingFaults = 0;
+      }
+      catch (SoapFaultException ex) when (!ct.IsCancellationRequested
+        && IsPullInProgressFault(ex)
+        && consecutiveContinuingFaults < MaxConsecutiveContinuingFaults)
+      {
+        consecutiveContinuingFaults++;
+        _logger.LogDebug(
+          "PullMessages for camera {CameraId} reported a prior pull still in progress; waiting to retry (attempt {Attempt})",
+          _cameraId, consecutiveContinuingFaults);
+        await Task.Delay(ContinuingFaultRetryDelay, ct);
+        continue;
       }
       catch (SoapFaultException ex) when (!ct.IsCancellationRequested)
       {
+        consecutiveContinuingFaults = 0;
         _logger.LogWarning(ex, "PullMessages failed for camera {CameraId}; recreating pullpoint", _cameraId);
         if (!await TryRecreateAsync(ct))
           await Task.Delay(TimeSpan.FromSeconds(5), ct);
@@ -81,6 +98,7 @@ public sealed class OnvifEventSubscription : IEventSubscription
       }
       catch (Exception) when (!ct.IsCancellationRequested)
       {
+        consecutiveContinuingFaults = 0;
         await Task.Delay(TimeSpan.FromSeconds(5), ct);
         continue;
       }
@@ -125,6 +143,10 @@ public sealed class OnvifEventSubscription : IEventSubscription
       return false;
     }
   }
+
+  private static bool IsPullInProgressFault(SoapFaultException ex) =>
+    ex.Message.Contains("continuing", StringComparison.OrdinalIgnoreCase)
+      || ex.Message.Contains("in progress", StringComparison.OrdinalIgnoreCase);
 
   private static DateTimeOffset ComputeRenewAt(DateTimeOffset terminationTime)
   {

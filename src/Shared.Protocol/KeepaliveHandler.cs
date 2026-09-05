@@ -47,9 +47,9 @@ public static class KeepaliveHandler
 
     timeoutCts.Cancel();
 
-    try { await readerTask; } catch (OperationCanceledException) { }
-    try { await writerTask; } catch (OperationCanceledException) { }
-    try { await timeoutTask; } catch (OperationCanceledException) { }
+    await readerTask.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+    await writerTask.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+    await timeoutTask.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
   }
 
   private static async Task RunReaderAsync(
@@ -63,6 +63,7 @@ public static class KeepaliveHandler
       MuxMessage msg;
       try { msg = await reader.ReadAsync(ct); }
       catch (ChannelClosedException) { break; }
+      catch (OperationCanceledException) { break; }
 
       var keepalive = MessagePackSerializer.Deserialize<KeepaliveMessage>(
         msg.Payload, ProtocolSerializer.Options);
@@ -86,7 +87,8 @@ public static class KeepaliveHandler
   {
     while (!ct.IsCancellationRequested)
     {
-      await Task.Delay(sendInterval, ct);
+      await Task.Delay(sendInterval, ct).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+      if (ct.IsCancellationRequested) return;
 
       if (state.IdleTime < sendInterval)
         continue;
@@ -108,7 +110,8 @@ public static class KeepaliveHandler
   {
     while (!ct.IsCancellationRequested)
     {
-      await Task.Delay(pollInterval, ct);
+      await Task.Delay(pollInterval, ct).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+      if (ct.IsCancellationRequested) return;
 
       if (!state.HasPending)
         continue;

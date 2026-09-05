@@ -3,7 +3,30 @@ import { Fetcher } from '@/media/fetcher'
 import { Decoder } from '@/media/decoder'
 import { CanvasRenderer } from '@/media/canvasRenderer'
 import { parseInitSegment, parseTimescale, demuxGop, type CodecConfig } from '@/media/fmp4'
+import { GopFlag } from '@/media/streamProtocol'
+import { computeNeededGops } from '@/media/decodeController'
+import { FrameTimingRing } from '@/media/frameTiming'
 import type { Streamer } from './useStreamer'
+
+export interface GlobalStats {
+  backend: string
+  state: string
+  mode: string
+  rate: number
+  catchup: number
+  buffering: boolean
+}
+
+export interface PipelineStats {
+  label: string
+  profile: string
+  bufferUs: number
+  positionUs: number
+  fetcherGops: number
+  fetcherBytes: number
+  decoderGops: number
+  decoderFrames: number
+}
 
 export interface Player {
   timestampUs: Ref<number>
@@ -27,6 +50,9 @@ export interface Player {
   goLive: () => void
   setProfile: (profile: string) => void
   stop: () => void
+  globalStats?: () => GlobalStats
+  pipelineStats?: () => PipelineStats
+  copyFrameTimes?: (dest: Float64Array) => number
 }
 
 type State = 'idle' | 'seeking' | 'streaming'
@@ -59,10 +85,13 @@ export function usePlayer(): Player {
   let lastFrameDurationUs = 40000
   let stride = 1
 
+  const frameTiming = new FrameTimingRing()
+
   let seekTargetUs = 0
   let seekRenderTarget = 0
   let seekBuffer: Uint8Array[] = []
   let seekGopTimestamps: number[] = []
+  let seekGopBegins: boolean[] = []
   let seekGapEnd = 0
   let suppressBuffering = false
 
@@ -72,32 +101,14 @@ export function usePlayer(): Player {
     streamer?.goLive(currentProfile)
   }
 
-  function computeNeededGops(ts: number): number[] {
-    const available = fetcher.gopTimestamps()
-    const currentGopIdx = findGopIndex(available, ts)
-    if (currentGopIdx < 0) return []
-
-    const lookahead = Math.max(1, Math.floor(rate.value))
-    const dir = direction.value
-    const needed: number[] = []
-    const behindIdx = currentGopIdx - dir
-    if (behindIdx >= 0 && behindIdx < available.length)
-      needed.push(available[behindIdx])
-    for (let i = 0; i <= lookahead; i++) {
-      const targetIdx = currentGopIdx + (i * dir)
-      if (targetIdx < 0 || targetIdx >= available.length) break
-      needed.push(available[targetIdx])
-    }
-    return needed
-  }
-
   function updatePipeline(ts: number) {
     const windowUs = 30_000_000 * Math.max(1, rate.value)
     const dir = direction.value
     const fromUs = dir === 1 ? ts : ts + windowUs
     const toUs = dir === 1 ? ts + windowUs : ts - windowUs
     fetcher.setTarget(fromUs, toUs)
-    decoder.setTarget(computeNeededGops(ts))
+    decoder.setTarget(computeNeededGops(
+      fetcher.gopTimestamps(), ts, rate.value, direction.value))
   }
 
   const liveCatchupMaxBoost = 0.1
@@ -119,21 +130,8 @@ export function usePlayer(): Player {
     renderer.renderFrame(frame.frame)
     timestampUs.value = frame.timestamp
     if (frame.duration > 0) lastFrameDurationUs = frame.duration
+    frameTiming.mark()
     return true
-  }
-
-  function findGopIndex(timestamps: number[], ts: number): number {
-    if (timestamps.length === 0) return -1
-    let lo = 0
-    let hi = timestamps.length - 1
-    while (lo < hi) {
-      const mid = (lo + hi + 1) >>> 1
-      if (timestamps[mid] <= ts)
-        lo = mid
-      else
-        hi = mid - 1
-    }
-    return timestamps[lo] <= ts ? lo : -1
   }
 
   function startLoop() {
@@ -153,7 +151,9 @@ export function usePlayer(): Player {
 
     if (state === 'seeking') {
       if (seekRenderTarget > 0) {
-        if (renderAt(seekRenderTarget)) {
+        updatePipeline(seekRenderTarget)
+        if (decoder.hasFrameToward(seekRenderTarget, direction.value)
+            && renderAt(seekRenderTarget)) {
           seekRenderTarget = 0
           enterStreaming()
         }
@@ -181,12 +181,16 @@ export function usePlayer(): Player {
     const nextTs = timestampUs.value + steps * effectiveDurationUs * direction.value
 
     if (!renderAt(nextTs)) {
-      if (!suppressBuffering)
+      if (!suppressBuffering) {
+        if (debug && !buffering.value)
+          console.log('player buffering at', timestampUs.value, 'wanted', nextTs)
         buffering.value = true
+      }
       accumUs = 0
       lastTick = performance.now()
       return
     }
+    if (debug && buffering.value) console.log('player resumed at', timestampUs.value)
     buffering.value = false
     suppressBuffering = false
   }
@@ -194,8 +198,10 @@ export function usePlayer(): Player {
   function enterSeeking(ts?: number) {
     stopLoop()
     state = 'seeking'
+    frameTiming.interrupt()
     seekBuffer = []
     seekGopTimestamps = []
+    seekGopBegins = []
     seekGapEnd = 0
     seekTargetUs = ts ?? 0
     seekRenderTarget = 0
@@ -216,9 +222,10 @@ export function usePlayer(): Player {
   function commitSeek() {
     if (debug) console.log('commitSeek', 'chunks:', seekBuffer.length, 'target:', seekTargetUs)
     for (let i = 0; i < seekBuffer.length; i++)
-      fetcher.appendData(seekGopTimestamps[i], seekBuffer[i])
+      fetcher.appendData(seekGopTimestamps[i], seekBuffer[i], seekGopBegins[i])
     seekBuffer = []
     seekGopTimestamps = []
+    seekGopBegins = []
     seekRenderTarget = seekTargetUs
   }
 
@@ -238,23 +245,31 @@ export function usePlayer(): Player {
     if (newestWallClock === 0) return
 
     for (let i = newestIdx; i < seekBuffer.length; i++)
-      fetcher.appendData(seekGopTimestamps[i], seekBuffer[i])
+      fetcher.appendData(seekGopTimestamps[i], seekBuffer[i], seekGopBegins[i])
     const dropped = newestIdx
     seekBuffer = []
     seekGopTimestamps = []
+    seekGopBegins = []
     seekRenderTarget = newestWallClock
     if (debug) console.log('commitLive anchor', newestWallClock, 'droppedStale', dropped)
   }
 
   function handleAck() {
+    if (debug) console.log('player RX ack, data unblocked')
     ignoreData = false
   }
 
-  function handleInit(_profile: string, data: Uint8Array) {
+  function handleInit(profile: string, data: Uint8Array) {
+    if (profile !== currentProfile) return
     if (ignoreData) return
     const newConfig = parseInitSegment(data)
     const newTimescale = parseTimescale(data)
-    if (!newConfig) return
+    if (!newConfig) {
+      console.warn('player init segment parse failed for', profile, data.length, 'bytes')
+      return
+    }
+    if (debug) console.log('player init', profile, newConfig.codec,
+      `${newConfig.width}x${newConfig.height}`, 'timescale', newTimescale)
     timescale = newTimescale
     decoder.setTimescale(newTimescale)
     if (!codecConfig
@@ -266,8 +281,10 @@ export function usePlayer(): Player {
     }
   }
 
-  function handleGop(_profile: string, gopTimestamp: number, data: Uint8Array) {
+  function handleGop(profile: string, gopTimestamp: number, data: Uint8Array, flags: number) {
+    if (profile !== currentProfile) return
     if (ignoreData) return
+    const begin = (flags & GopFlag.Begin) !== 0
 
     switch (state) {
       case 'idle':
@@ -275,10 +292,11 @@ export function usePlayer(): Player {
 
       case 'seeking':
         if (seekRenderTarget > 0) {
-          fetcher.appendData(gopTimestamp, new Uint8Array(data))
+          fetcher.appendData(gopTimestamp, new Uint8Array(data), begin)
         } else {
           seekBuffer.push(new Uint8Array(data))
           seekGopTimestamps.push(gopTimestamp)
+          seekGopBegins.push(begin)
           if (mode.value === 'live')
             commitLive()
           else if (seekBuffer.length === 1)
@@ -287,7 +305,7 @@ export function usePlayer(): Player {
         break
 
       case 'streaming':
-        fetcher.appendData(gopTimestamp, new Uint8Array(data))
+        fetcher.appendData(gopTimestamp, new Uint8Array(data), begin)
         break
     }
   }
@@ -357,6 +375,7 @@ export function usePlayer(): Player {
     if (!paused.value) {
       lastTick = performance.now()
       accumUs = 0
+      frameTiming.interrupt()
     }
   }
 
@@ -499,6 +518,38 @@ export function usePlayer(): Player {
     buffering.value = false
     ignoreData = false
     codecConfig = null
+    frameTiming.reset()
+  }
+
+  function buildGlobalStats(): GlobalStats {
+    return {
+      backend: 'webcodecs / canvas',
+      state,
+      mode: mode.value,
+      rate: rate.value,
+      catchup: liveCatchupMultiplier(),
+      buffering: buffering.value,
+    }
+  }
+
+  function buildPipelineStats(): PipelineStats {
+    const f = fetcher.stats()
+    const d = decoder.stats()
+    const gopTs = fetcher.gopTimestamps()
+    return {
+      label: 'primary',
+      profile: currentProfile,
+      bufferUs: gopTs.length > 0 ? Math.max(0, gopTs[gopTs.length - 1] - timestampUs.value) : 0,
+      positionUs: timestampUs.value,
+      fetcherGops: f.gops,
+      fetcherBytes: f.bytes,
+      decoderGops: d.gops,
+      decoderFrames: d.frames,
+    }
+  }
+
+  function copyFrameTimes(dest: Float64Array): number {
+    return frameTiming.copy(dest)
   }
 
   return {
@@ -522,5 +573,8 @@ export function usePlayer(): Player {
     goLive,
     setProfile,
     stop,
+    globalStats: buildGlobalStats,
+    pipelineStats: buildPipelineStats,
+    copyFrameTimes,
   }
 }

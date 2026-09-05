@@ -7,4 +7,5 @@ public sealed class JpegUnit : IDataUnit
   public required ushort Width { get; init; }
   public required ushort Height { get; init; }
   public bool IsSyncPoint => true;
+  public bool IsHeader => false;
 }

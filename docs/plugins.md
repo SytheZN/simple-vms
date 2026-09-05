@@ -111,6 +111,7 @@ public interface IDataUnit
     ReadOnlyMemory<byte> Data { get; }
     ulong Timestamp { get; }
     bool IsSyncPoint { get; }
+    bool IsHeader { get; }
 }
 
 public interface IDataStream
@@ -128,6 +129,7 @@ public interface IMuxStream
 {
     MuxStreamInfo Info { get; }
     Type FrameType { get; }
+    Action<MuxStreamStats>? OnStats { set; }
 }
 
 public interface IMuxStream<T> : IMuxStream where T : IDataUnit
@@ -150,11 +152,18 @@ public sealed class MuxStreamInfo
     public required string Resolution { get; init; }
     public required int Fps { get; init; }
 }
+
+public sealed class MuxStreamStats
+{
+    public required decimal Fps { get; init; }
+    public required string Resolution { get; init; }
+    public required int BitrateKbps { get; init; }
+}
 ```
 
 `IDataStream<T>` carries producer-side typed data units (raw codec data from capture sources, derived data units from analyzers). `IMuxStream<T>` carries format-encoded container output. The non-generic base interfaces (`IDataStream`, `IMuxStream`) allow the server core to wire the pipeline by matching `FrameType` without knowing the generic type parameter at compile time.
 
-`StreamInfo` describes a producer's data stream. `MuxStreamInfo` describes a format plugin's output. `Resolution` and `Fps` are populated from inspection of the muxed output and may be refreshed from worker statistics over time.
+`StreamInfo` describes a producer's data stream. `MuxStreamInfo` describes a format plugin's output. `Resolution` and `Fps` are populated from inspection of the muxed output and may be refreshed via `IMuxStream.OnStats`, which the host assigns to receive periodic `MuxStreamStats` observed during muxing.
 
 `StreamInfo.FormatParameters` is `object?` - plugins within the same assembly cast it to the expected type (e.g. `H264Parameters`). Plugins in different assemblies that handle the same format reference the shared type from `Shared.Models/Formats/`.
 
@@ -321,6 +330,7 @@ public interface IDataStreamAnalyzerStreamOutput
     IReadOnlyList<DerivedStreamSpec> GetDerivedStreams(Guid cameraId);
     Task<OneOf<IDataStream, Error>> StartStreamAsync(
         Guid cameraId, string parentProfile, CancellationToken ct);
+    bool NeedsRebuild(Guid cameraId, string parentProfile);
 }
 
 public sealed record DerivedStreamSpec : StreamSpec
@@ -337,6 +347,8 @@ public sealed record DerivedStreamSpec : StreamSpec
 `StartStreamAsync` returns the analyzer's output `IDataStream`. Lifecycle is consumer-driven via the iteration cancellation token: when the consumer cancels, the analyzer disposes its parent tap and tears down.
 
 Note: the host calls `StartStreamAsync` twice - a probe at construct time (cancelled immediately) and again on first demand - so implementations must be safe to call repeatedly and defer expensive work until the returned stream is first read.
+
+`NeedsRebuild` returns `true` for any configuration change that cannot be hot-applied. The host tears down the derived pipeline and reconstructs it via `StartStreamAsync`.
 
 #### IDataStreamAnalyzerEventOutput
 

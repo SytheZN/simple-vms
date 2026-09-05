@@ -50,7 +50,7 @@ public class EnrollmentClientTests
     });
 
     var factory = new FakeHttpClientFactory(handler);
-    var client = new EnrollmentClient(factory, NullLogger<EnrollmentClient>.Instance);
+    var client = new EnrollmentClient(factory, new FakeDeviceIdentity(), NullLogger<EnrollmentClient>.Instance);
 
     var result = await client.EnrollAsync("localhost:8080", "A7F2-9K4X", CancellationToken.None);
 
@@ -90,7 +90,7 @@ public class EnrollmentClientTests
     });
 
     var factory = new FakeHttpClientFactory(handler);
-    var client = new EnrollmentClient(factory, NullLogger<EnrollmentClient>.Instance);
+    var client = new EnrollmentClient(factory, new FakeDeviceIdentity(), NullLogger<EnrollmentClient>.Instance);
 
     var result = await client.EnrollAsync("localhost:8080", "BAD-TOKEN", CancellationToken.None);
 
@@ -115,7 +115,7 @@ public class EnrollmentClientTests
     var handler = new FakeHttpHandler(new HttpRequestException("Connection refused"));
 
     var factory = new FakeHttpClientFactory(handler);
-    var client = new EnrollmentClient(factory, NullLogger<EnrollmentClient>.Instance);
+    var client = new EnrollmentClient(factory, new FakeDeviceIdentity(), NullLogger<EnrollmentClient>.Instance);
 
     var result = await client.EnrollAsync("localhost:8080", "TOKEN", CancellationToken.None);
 
@@ -159,7 +159,7 @@ public class EnrollmentClientTests
     });
 
     var factory = new FakeHttpClientFactory(handler);
-    var client = new EnrollmentClient(factory, NullLogger<EnrollmentClient>.Instance);
+    var client = new EnrollmentClient(factory, new FakeDeviceIdentity(), NullLogger<EnrollmentClient>.Instance);
 
     await client.EnrollAsync("myserver:8080", "TEST-TOKEN", CancellationToken.None);
 

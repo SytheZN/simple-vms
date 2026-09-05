@@ -5,6 +5,7 @@ public interface IMuxStream
   MuxStreamInfo Info { get; }
   ReadOnlyMemory<byte> Header { get; }
   Type FrameType { get; }
+  Action<MuxStreamStats>? OnStats { set; }
   IAsyncEnumerable<IDataUnit> ReadAsync(CancellationToken ct);
 }
 

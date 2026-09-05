@@ -75,10 +75,6 @@ public static class EventEndpoints
     }
   }
 
-  /// <summary>
-  /// The feed only writes, so a browser that goes away is invisible until the next event happens to
-  /// be published. Reading alongside it turns the close into an immediate teardown.
-  /// </summary>
   private static async Task WatchForCloseAsync(
     WebSocket webSocket, CancellationTokenSource cts)
   {

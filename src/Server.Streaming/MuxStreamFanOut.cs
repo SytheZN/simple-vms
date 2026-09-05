@@ -19,13 +19,19 @@ public sealed class MuxStreamFanOut<T> : IMuxStream<T>, IMuxStreamFanOut where T
   public ReadOnlyMemory<byte> Header => _source.Header;
   public Type FrameType => typeof(T);
   public int SubscriberCount { get { lock (_lock) return _subscribers.Count; } }
-  public Action? OnDemand { get; set; }
-  public Action? OnEmpty { get; set; }
+  public Action? Changed { get; set; }
   public ILogger? Logger { get; set; }
+  public Action<MuxStreamStats>? OnStats { set => _source.OnStats = value; }
 
   public MuxStreamFanOut(IMuxStream<T> source)
   {
     _source = source;
+  }
+
+  public int GetDemand()
+  {
+    lock (_lock)
+      return _subscribers.Count;
   }
 
   public IMuxStream<T> Subscribe(int capacity = 256)
@@ -39,7 +45,7 @@ public sealed class MuxStreamFanOut<T> : IMuxStream<T>, IMuxStreamFanOut where T
 
     var sub = new Subscriber(channel, waitingForKeyframe: true);
 
-    Action? onDemand = null;
+    bool firstSubscriber;
     lock (_lock)
     {
       if (_currentGop.Count > 0)
@@ -50,31 +56,25 @@ public sealed class MuxStreamFanOut<T> : IMuxStream<T>, IMuxStreamFanOut where T
       }
       _subscribers.Add(sub);
       _snapshot = null;
-      if (_subscribers.Count == 1)
-        onDemand = OnDemand;
+      firstSubscriber = _subscribers.Count == 1;
     }
 
-    if (onDemand != null)
-    {
+    if (firstSubscriber)
       StartReadLoop();
-      onDemand.Invoke();
-    }
+    Changed?.Invoke();
 
     return new ChannelMuxStream<T>(Info, channel.Reader, () =>
     {
-      Action? onEmpty = null;
+      bool lastSubscriber;
       lock (_lock)
       {
         _subscribers.Remove(sub);
         _snapshot = null;
-        if (_subscribers.Count == 0)
-          onEmpty = OnEmpty;
+        lastSubscriber = _subscribers.Count == 0;
       }
-      if (onEmpty != null)
-      {
+      if (lastSubscriber)
         StopReadLoop();
-        onEmpty.Invoke();
-      }
+      Changed?.Invoke();
     });
   }
 
@@ -181,7 +181,7 @@ public sealed class MuxStreamFanOut<T> : IMuxStream<T>, IMuxStreamFanOut where T
     StopReadLoop();
     if (_readLoop != null)
     {
-      try { await _readLoop; }
+      try { await _readLoop.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing); }
       catch { }
     }
     lock (_lock)
@@ -201,6 +201,7 @@ internal sealed class ChannelMuxStream<T> : IMuxStream<T> where T : IDataUnit
   public MuxStreamInfo Info { get; }
   public ReadOnlyMemory<byte> Header => ReadOnlyMemory<byte>.Empty;
   public Type FrameType => typeof(T);
+  public Action<MuxStreamStats>? OnStats { set { } }
 
   public ChannelMuxStream(MuxStreamInfo info, ChannelReader<T> reader, Action onDispose)
   {
@@ -214,8 +215,12 @@ internal sealed class ChannelMuxStream<T> : IMuxStream<T> where T : IDataUnit
   {
     try
     {
-      while (await _reader.WaitToReadAsync(ct))
+      while (true)
       {
+        bool available;
+        try { available = await _reader.WaitToReadAsync(ct); }
+        catch (OperationCanceledException) { break; }
+        if (!available) break;
         while (_reader.TryRead(out var item))
           yield return item;
       }

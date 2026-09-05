@@ -204,6 +204,8 @@ Policies are evaluated in order: days first, then size/percent. Deletion is olde
 
 Retention is configured per quality profile - different profiles can have different policies (e.g. keep `main` for 30 days, `sub` for 90 days). Metadata profiles do not have their own retention. A metadata segment is retained as long as any quality profile has a segment covering the same time range. When the last overlapping quality segment is purged, the metadata segment is purged with it.
 
+A minimum free space guard runs on the retention loop and trims oldest segments across all cameras when free space drops below the configured threshold; if free space falls below a hard floor (0.2 GB), recording is halted on all streams and resumes automatically once free space recovers.
+
 ## Plugin System
 
 See [plugins.md](plugins.md) for full specification.

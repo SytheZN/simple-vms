@@ -27,9 +27,6 @@ public sealed class AndroidApp : Avalonia.Application
     base.OnFrameworkInitializationCompleted();
   }
 
-  // The single-view lifetime is process-wide, so a relaunched activity is handed whatever
-  // MainView it already holds. That instance is still parented to the destroyed activity's
-  // view and renders nothing, so each activity gets a fresh one.
   internal void ResetMainView()
   {
     if (ApplicationLifetime is not ISingleViewApplicationLifetime single) return;
@@ -38,9 +35,6 @@ public sealed class AndroidApp : Avalonia.Application
     single.MainView = new ShellView { DataContext = shellVm };
   }
 
-  // Suspend/resume state lives here rather than on the activity: the process outlives any
-  // single MainActivity, so a warm relaunch gets a fresh activity that must still know the
-  // tunnel was dropped while backgrounded.
   private readonly SemaphoreSlim _suspendGate = new(1, 1);
   private bool _suspended;
 

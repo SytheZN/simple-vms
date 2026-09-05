@@ -79,20 +79,22 @@ public sealed class TunnelService : ITunnelService, IAsyncDisposable
     _autoReconnect = true;
     _lifecycleCts = new CancellationTokenSource();
 
-    // Retries are otherwise armed only by a read loop ending, and no read loop exists until a
-    // connection has been established once. A client started before its server would stay down
-    // until it was restarted.
     try
     {
       await ConnectCoreAsync(ct).ConfigureAwait(false);
     }
     catch when (!ct.IsCancellationRequested)
     {
-      _reconnectLoop = ReconnectLoopAsync();
+      ArmReconnectLoopSinceReadLoopIsNotYetRunning();
       throw;
     }
 
     _logger.LogDebug("ConnectAsync completed");
+  }
+
+  private void ArmReconnectLoopSinceReadLoopIsNotYetRunning()
+  {
+    _reconnectLoop = ReconnectLoopAsync();
   }
 
   public async Task DisconnectAsync(CancellationToken ct = default)
@@ -235,8 +237,6 @@ public sealed class TunnelService : ITunnelService, IAsyncDisposable
 
     for (var attempt = 0; _autoReconnect && !token.IsCancellationRequested; attempt++)
     {
-      // Held across the backoff, not just the attempt in flight. A failed attempt leaves the state
-      // disconnected, which would otherwise read as given up while the next one is pending.
       SetState(ConnectionState.Connecting);
 
       var delay = BackoffSteps[Math.Min(attempt, BackoffSteps.Length - 1)];
@@ -244,8 +244,8 @@ public sealed class TunnelService : ITunnelService, IAsyncDisposable
         "Reconnect attempt {Attempt}, backoff {DelayMs}ms",
         attempt + 1, delay.TotalMilliseconds);
 
-      try { await Task.Delay(delay, token).ConfigureAwait(false); }
-      catch (OperationCanceledException)
+      await Task.Delay(delay, token).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+      if (token.IsCancellationRequested)
       {
         _logger.LogDebug("Reconnect loop cancelled during backoff");
         return;
@@ -363,8 +363,8 @@ public sealed class TunnelService : ITunnelService, IAsyncDisposable
       "Reprobe loop started, checking {Count} earlier addresses", currentIndex);
     while (!ct.IsCancellationRequested)
     {
-      try { await Task.Delay(ReprobeInterval, ct).ConfigureAwait(false); }
-      catch (OperationCanceledException) { return; }
+      await Task.Delay(ReprobeInterval, ct).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+      if (ct.IsCancellationRequested) return;
 
       for (var i = 0; i < currentIndex; i++)
       {
@@ -394,46 +394,51 @@ public sealed class TunnelService : ITunnelService, IAsyncDisposable
   {
     _logger.LogDebug("TeardownConnectionAsync entry");
 
-    StreamMuxer? muxer;
-    CancellationTokenSource? cts;
-    TransportConnection? connection;
-    Task? readLoop;
-    Task? keepalive;
-    Task? reprobe;
+    var handles = DetachActiveConnection();
 
+    handles.ConnectionCts?.Cancel();
+
+    if (handles.Muxer != null)
+      await handles.Muxer.DisposeAsync().ConfigureAwait(false);
+
+    await StopTasksDrivingTheTlsConnection(handles).ConfigureAwait(false);
+
+    if (handles.Connection != null)
+      await handles.Connection.DisposeAsync().ConfigureAwait(false);
+    handles.ConnectionCts?.Dispose();
+
+    _logger.LogDebug("TeardownConnectionAsync completed");
+  }
+
+  private readonly record struct ConnectionHandles(
+    StreamMuxer? Muxer,
+    CancellationTokenSource? ConnectionCts,
+    TransportConnection? Connection,
+    Task? ReadLoop,
+    Task? Keepalive,
+    Task? Reprobe);
+
+  private ConnectionHandles DetachActiveConnection()
+  {
     lock (_lock)
     {
-      muxer = _muxer;
-      cts = _connectionCts;
-      connection = _connection;
-      readLoop = _readLoop;
-      keepalive = _keepalive;
-      reprobe = _reprobeLoop;
+      var handles = new ConnectionHandles(
+        _muxer, _connectionCts, _connection, _readLoop, _keepalive, _reprobeLoop);
       _muxer = null;
       _connectionCts = null;
       _connection = null;
       _readLoop = null;
       _keepalive = null;
       _reprobeLoop = null;
+      return handles;
     }
+  }
 
-    cts?.Cancel();
-
-    if (muxer != null)
-      await muxer.DisposeAsync().ConfigureAwait(false);
-
-    // Disposing the connection closes the TLS protocol object. Anything still driving it
-    // must be off it first, or Close() mutates the record layer under an in-flight decrypt
-    // and every subsequent record fails its MAC.
-    await DrainAsync(readLoop).ConfigureAwait(false);
-    await DrainAsync(keepalive).ConfigureAwait(false);
-    await DrainAsync(reprobe).ConfigureAwait(false);
-
-    if (connection != null)
-      await connection.DisposeAsync().ConfigureAwait(false);
-    cts?.Dispose();
-
-    _logger.LogDebug("TeardownConnectionAsync completed");
+  private async Task StopTasksDrivingTheTlsConnection(ConnectionHandles handles)
+  {
+    await DrainAsync(handles.ReadLoop).ConfigureAwait(false);
+    await DrainAsync(handles.Keepalive).ConfigureAwait(false);
+    await DrainAsync(handles.Reprobe).ConfigureAwait(false);
   }
 
   private async Task DrainAsync(Task? task)
@@ -467,10 +472,7 @@ public sealed class TunnelService : ITunnelService, IAsyncDisposable
     _lifecycleCts?.Cancel();
     await TeardownConnectionAsync().ConfigureAwait(false);
     if (_reconnectLoop != null)
-    {
-      try { await _reconnectLoop.ConfigureAwait(false); }
-      catch (OperationCanceledException) { }
-    }
+      await _reconnectLoop.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
     _lifecycleCts?.Dispose();
     _logger.LogDebug("DisposeAsync completed");
   }

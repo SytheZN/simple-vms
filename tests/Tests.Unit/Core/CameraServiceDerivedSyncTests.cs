@@ -1,23 +1,25 @@
 using System.Runtime.Loader;
 using Microsoft.Extensions.Logging.Abstractions;
+using Server.Core.Services;
 using Server.Plugins;
-using Server.Streaming;
+using Shared.Models.Events;
 using Tests.Unit.Mocks;
 
-namespace Tests.Unit.Streaming;
+namespace Tests.Unit.Core;
 
 [TestFixture]
-public class StreamReconcilerTests
+public class CameraServiceDerivedSyncTests
 {
   /// <summary>
   /// SCENARIO:
   /// Analyzer declares a derived stream spec that has no existing row
   ///
   /// ACTION:
-  /// Run reconciler for the camera
+  /// Run derived-stream sync for the camera
   ///
   /// EXPECTED RESULT:
-  /// A new active stream row is upserted with ProducerId, ParentStreamId, Kind, FormatId
+  /// A new active stream row is upserted with ProducerId, ParentStreamId, Kind, FormatId,
+  /// and an Add entry appears in the diff
   /// </summary>
   [Test]
   public async Task CreatesNewRow_WhenSpecHasNoExisting()
@@ -39,11 +41,10 @@ public class StreamReconcilerTests
       }]);
 
     var host = MakeHost(streams, analyzer);
-    var reconciler = new StreamReconciler(host, NullLogger.Instance);
+    var diff = new Dictionary<string, DiffChange>();
 
-    var result = await reconciler.ReconcileCameraAsync(cameraId, CancellationToken.None);
+    await CameraService.SyncDerivedStreamsAsync(host, cameraId, diff, NullLogger.Instance, CancellationToken.None);
 
-    Assert.That(result.IsT0, Is.True);
     Assert.That(streams.Upserts, Has.Count.EqualTo(1));
     var row = streams.Upserts[0];
     Assert.That(row.Profile, Is.EqualTo("motion-grid-main"));
@@ -52,6 +53,8 @@ public class StreamReconcilerTests
     Assert.That(row.Kind, Is.EqualTo(StreamKind.Metadata));
     Assert.That(row.FormatId, Is.EqualTo("motion-grid"));
     Assert.That(row.DeletedAt, Is.Null);
+    Assert.That(diff, Has.Count.EqualTo(1));
+    Assert.That(diff.Values.First().Type, Is.EqualTo(DiffChangeType.Add));
   }
 
   /// <summary>
@@ -59,7 +62,7 @@ public class StreamReconcilerTests
   /// A soft-deleted row exists with the same (ProducerId, Profile) as the analyzer's redeclared spec
   ///
   /// ACTION:
-  /// Run reconciler
+  /// Run derived-stream sync
   ///
   /// EXPECTED RESULT:
   /// The existing row is upserted with DeletedAt cleared (resurrected); same Id preserved
@@ -92,9 +95,9 @@ public class StreamReconcilerTests
       }]);
 
     var host = MakeHost(streams, analyzer);
-    var reconciler = new StreamReconciler(host, NullLogger.Instance);
+    var diff = new Dictionary<string, DiffChange>();
 
-    await reconciler.ReconcileCameraAsync(cameraId, CancellationToken.None);
+    await CameraService.SyncDerivedStreamsAsync(host, cameraId, diff, NullLogger.Instance, CancellationToken.None);
 
     Assert.That(streams.Upserts, Has.Count.EqualTo(1));
     Assert.That(streams.Upserts[0].Id, Is.EqualTo(derivedId));
@@ -106,10 +109,10 @@ public class StreamReconcilerTests
   /// An active row exists with a producer id that the analyzer no longer declares a spec for
   ///
   /// ACTION:
-  /// Run reconciler
+  /// Run derived-stream sync
   ///
   /// EXPECTED RESULT:
-  /// The row is upserted with DeletedAt set (soft-deleted)
+  /// The row is upserted with DeletedAt set (soft-deleted) and a Remove entry appears in the diff
   /// </summary>
   [Test]
   public async Task SoftDeletesRow_WhenSpecNoLongerDeclared()
@@ -131,13 +134,15 @@ public class StreamReconcilerTests
     var analyzer = new FakeAnalyzer("motion-grid-h264", []);
 
     var host = MakeHost(streams, analyzer);
-    var reconciler = new StreamReconciler(host, NullLogger.Instance);
+    var diff = new Dictionary<string, DiffChange>();
 
-    await reconciler.ReconcileCameraAsync(cameraId, CancellationToken.None);
+    await CameraService.SyncDerivedStreamsAsync(host, cameraId, diff, NullLogger.Instance, CancellationToken.None);
 
     Assert.That(streams.Upserts, Has.Count.EqualTo(1));
     Assert.That(streams.Upserts[0].Id, Is.EqualTo(derivedId));
     Assert.That(streams.Upserts[0].DeletedAt, Is.Not.Null);
+    Assert.That(diff, Has.Count.EqualTo(1));
+    Assert.That(diff.Values.First().Type, Is.EqualTo(DiffChangeType.Remove));
   }
 
   /// <summary>
@@ -145,10 +150,10 @@ public class StreamReconcilerTests
   /// Analyzer declares spec referencing a parent profile that does not exist on the camera
   ///
   /// ACTION:
-  /// Run reconciler
+  /// Run derived-stream sync
   ///
   /// EXPECTED RESULT:
-  /// No row is created or modified for that spec
+  /// No row is created or modified for that spec, no diff entry
   /// </summary>
   [Test]
   public async Task SkipsSpec_WhenParentProfileMissing()
@@ -169,11 +174,12 @@ public class StreamReconcilerTests
       }]);
 
     var host = MakeHost(streams, analyzer);
-    var reconciler = new StreamReconciler(host, NullLogger.Instance);
+    var diff = new Dictionary<string, DiffChange>();
 
-    await reconciler.ReconcileCameraAsync(cameraId, CancellationToken.None);
+    await CameraService.SyncDerivedStreamsAsync(host, cameraId, diff, NullLogger.Instance, CancellationToken.None);
 
     Assert.That(streams.Upserts, Is.Empty);
+    Assert.That(diff, Is.Empty);
   }
 
   private static CameraStream MakeStream(Guid cameraId, Guid streamId, string profile) => new()
@@ -211,6 +217,7 @@ public class StreamReconcilerTests
     public IReadOnlyList<DerivedStreamSpec> GetDerivedStreams(Guid cameraId) => _specs;
     public Task<OneOf<IDataStream, Error>> StartStreamAsync(Guid cameraId, string parentProfile, CancellationToken ct) =>
       throw new NotImplementedException();
+    public bool NeedsRebuild(Guid cameraId, string parentProfile) => false;
   }
 
   private sealed class FakeStreamRepo : IStreamRepository
@@ -264,6 +271,7 @@ public class StreamReconcilerTests
     public ISegmentRepository Segments => throw new NotImplementedException();
     public IKeyframeRepository Keyframes => throw new NotImplementedException();
     public IEventRepository Events => throw new NotImplementedException();
+    public ISystemEventRepository SystemEvents => throw new NotImplementedException();
     public IClientRepository Clients => throw new NotImplementedException();
     public IConfigRepository Config => throw new NotImplementedException();
     public IDataStore GetDataStore(string pluginId) => throw new NotImplementedException();

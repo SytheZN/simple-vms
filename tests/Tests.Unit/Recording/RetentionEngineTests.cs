@@ -176,7 +176,7 @@ public class RetentionEngineTests
 
     var plugin = new RecordingPluginStreamSettings();
     var host = MakeHost(data, new FakeStorage(), plugin);
-    var engine = new RetentionEngine(host, NullLogger.Instance);
+    var engine = new RetentionEngine(host, new StubRecordingController(), NullLogger.Instance);
 
     await engine.EvaluateAsync(CancellationToken.None);
 
@@ -213,7 +213,7 @@ public class RetentionEngineTests
 
     var plugin = new RecordingPluginStreamSettings();
     var host = MakeHost(data, new FakeStorage(), plugin);
-    var engine = new RetentionEngine(host, NullLogger.Instance);
+    var engine = new RetentionEngine(host, new StubRecordingController(), NullLogger.Instance);
 
     await engine.EvaluateAsync(CancellationToken.None);
 
@@ -258,7 +258,15 @@ public class RetentionEngineTests
   private static RetentionEngine CreateEngine(FakeDataProvider data, FakeStorage storage)
   {
     var host = MakeHost(data, storage);
-    return new RetentionEngine(host, NullLogger.Instance);
+    return new RetentionEngine(host, new StubRecordingController(), NullLogger.Instance);
+  }
+
+  private sealed class StubRecordingController : IRecordingController
+  {
+    public bool IsHalted { get; private set; }
+    public int WriterCount => 0;
+    public Task HaltAllAsync() { IsHalted = true; return Task.CompletedTask; }
+    public Task ResumeAsync(CancellationToken ct) { IsHalted = false; return Task.CompletedTask; }
   }
 
   private static FakePluginHost MakeHost(FakeDataProvider data, IStorageProvider storage, IPlugin? plugin = null)
@@ -367,6 +375,7 @@ public class RetentionEngineTests
     public ISegmentRepository Segments { get; }
     public IKeyframeRepository Keyframes { get; }
     public IEventRepository Events { get; }
+    public ISystemEventRepository SystemEvents { get; } = new FakeSystemEventRepo();
     public IClientRepository Clients => throw new NotImplementedException();
     public IConfigRepository Config { get; }
     public IDataStore GetDataStore(string pluginId) => throw new NotImplementedException();
@@ -479,6 +488,13 @@ public class RetentionEngineTests
       return Task.FromResult<OneOf<IReadOnlyList<Segment>, Error>>(ordered);
     }
 
+    public Task<OneOf<IReadOnlyList<Segment>, Error>> GetOldestAcrossStreamsAsync(
+      int limit, CancellationToken ct)
+    {
+      var ordered = _segments.Values.SelectMany(v => v).OrderBy(s => s.StartTime).Take(limit).ToList();
+      return Task.FromResult<OneOf<IReadOnlyList<Segment>, Error>>(ordered);
+    }
+
     public Task<OneOf<long, Error>> GetTotalSizeAsync(Guid streamId, CancellationToken ct)
     {
       var list = _segments.GetValueOrDefault(streamId) ?? [];
@@ -500,6 +516,32 @@ public class RetentionEngineTests
     }
     public Task<OneOf<IReadOnlyList<StreamStorageUsage>, Error>> GetSizeBreakdownAsync(CancellationToken ct) =>
       throw new NotImplementedException();
+  }
+
+  private sealed class FakeSystemEventRepo : ISystemEventRepository
+  {
+    public List<SystemEvent> Created { get; } = [];
+    public List<ulong> Purged { get; } = [];
+
+    public Task<OneOf<IReadOnlyList<SystemEvent>, Error>> QueryAsync(
+      string? type, ulong from, ulong to, int limit, int offset, CancellationToken ct = default) =>
+      Task.FromResult<OneOf<IReadOnlyList<SystemEvent>, Error>>(Array.Empty<SystemEvent>());
+
+    public Task<OneOf<SystemEvent, Error>> GetByIdAsync(Guid id, CancellationToken ct = default) =>
+      Task.FromResult<OneOf<SystemEvent, Error>>(
+        Error.Create(0, 0, Result.NotFound, $"System event {id} not found"));
+
+    public Task<OneOf<Success, Error>> CreateAsync(SystemEvent evt, CancellationToken ct = default)
+    {
+      Created.Add(evt);
+      return Task.FromResult<OneOf<Success, Error>>(new Success());
+    }
+
+    public Task<OneOf<int, Error>> DeleteOlderThanAsync(ulong cutoff, CancellationToken ct = default)
+    {
+      Purged.Add(cutoff);
+      return Task.FromResult<OneOf<int, Error>>(0);
+    }
   }
 
   private sealed class FakeEventRepo : IEventRepository

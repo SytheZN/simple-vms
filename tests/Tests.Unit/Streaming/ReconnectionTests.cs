@@ -80,8 +80,8 @@ public class ReconnectionTests
   {
     var cameraId = Guid.NewGuid();
     var pipeline = new CameraPipeline(
-      cameraId, "sub",
-      new Shared.Models.CameraConnectionInfo { Uri = "rtsp://10.0.0.1/stream" },
+      cameraId, "sub", null,
+      new Shared.Models.CameraConnectionInfo { CameraId = cameraId, Uri = "rtsp://10.0.0.1/stream" },
       null!, new FakePluginHost(),
       new FakeEventBus(),
       Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance);
@@ -93,8 +93,8 @@ public class ReconnectionTests
   private static CameraPipeline CreatePipeline()
   {
     return new CameraPipeline(
-      Guid.NewGuid(), "main",
-      new Shared.Models.CameraConnectionInfo { Uri = "rtsp://192.168.1.100/stream" },
+      Guid.NewGuid(), "main", null,
+      new Shared.Models.CameraConnectionInfo { CameraId = Guid.NewGuid(), Uri = "rtsp://192.168.1.100/stream" },
       null!, new FakePluginHost(),
       new FakeEventBus(),
       Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance);

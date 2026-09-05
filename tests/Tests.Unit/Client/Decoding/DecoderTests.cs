@@ -51,7 +51,7 @@ public class DecoderTests
     decoder.SetTimescale(90_000);
 
     for (ulong t = 1000; t <= 10_000; t += 1000)
-      fetcher.AppendData(t, new byte[] { 0 });
+      fetcher.AppendData(t, new byte[] { 0 }, true);
 
     // First pass: target GOPs 1000, 2000, 3000 - chunk counts tracked for those.
     decoder.SetTarget([1000, 2000, 3000]);
@@ -83,12 +83,12 @@ public class DecoderTests
     using var decoder = NewDecoder(fetcher);
     decoder.SetTimescale(90_000);
 
-    fetcher.AppendData(1000, new byte[] { 0x00 });
+    fetcher.AppendData(1000, new byte[] { 0x00 }, true);
 
     decoder.SetTarget([1000]);
     decoder.SetTarget([1000]);
 
-    fetcher.AppendData(1000, new byte[] { 0x01 });
+    fetcher.AppendData(1000, new byte[] { 0x01 }, false);
     Assert.DoesNotThrow(() => decoder.SetTarget([1000]));
   }
 
@@ -184,7 +184,7 @@ public class DecoderTests
     using var decoder = NewDecoder(fetcher);
     decoder.SetTimescale(90_000);
     for (ulong t = 1000; t <= 20_000; t += 1000)
-      fetcher.AppendData(t, new byte[] { 0 });
+      fetcher.AppendData(t, new byte[] { 0 }, true);
 
     var exceptions = new System.Collections.Concurrent.ConcurrentBag<Exception>();
     using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));

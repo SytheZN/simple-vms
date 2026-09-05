@@ -49,7 +49,7 @@
                 ClipToBounds="True">
           <controls:AspectRatioPanel>
             <controls:VideoPlayer x:Name="VideoPlayerControl"
-                                   MotionFeed="{Binding MotionFeed}" />
+                                   MotionOverlay="{Binding Overlay}" />
 
             <controls:PlaybackStatsOverlay x:Name="StatsOverlay"
                                            HorizontalAlignment="Left"
@@ -157,7 +157,7 @@
                   </StackPanel>
                 </Border>
                 <controls:StreamQualitySelector x:Name="QualitySelector" />
-                <Button Classes="btn btn-ghost btn-sm" x:Name="MotionToggle" Opacity="0.5">
+                <Button Classes="btn btn-ghost btn-sm" x:Name="MotionToggle" Opacity="0.5" IsVisible="False">
                   <controls:PhosphorIcon Kind="PersonArmsSpread"
                                               Width="{DynamicResource IconSm}"
                                               Height="{DynamicResource IconSm}" />

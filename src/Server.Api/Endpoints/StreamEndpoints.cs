@@ -135,9 +135,8 @@ internal sealed class StreamSession(
       prev.Cancel();
       if (prevTask != null)
       {
-        try { await prevTask; }
-        catch (OperationCanceledException) { }
-        catch (Exception) { }
+        try { await prevTask.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing); }
+        catch { }
       }
       prev.Dispose();
     }

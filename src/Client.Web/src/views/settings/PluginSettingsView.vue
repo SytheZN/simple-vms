@@ -50,12 +50,26 @@ function toggleBool(key: string) {
   validateField(key)
 }
 
+function cycleTristate(key: string) {
+  const v = values.value[key]
+  values.value[key] = v === 'false' ? '' : v === '' ? 'true' : 'false'
+  validateField(key)
+}
+
+function tristateChecked(value: unknown): 'true' | 'false' | 'mixed' {
+  if (value === 'true' || value === true) return 'true'
+  if (value === 'false' || value === false) return 'false'
+  return 'mixed'
+}
+
 async function save() {
   saving.value = true
   error.value = ''
   success.value = ''
   try {
-    await api.plugins.updateConfig(pluginId, values.value)
+    const coerced: Record<string, string> = {}
+    for (const [k, v] of Object.entries(values.value)) coerced[k] = String(v)
+    await api.plugins.updateConfig(pluginId, coerced)
     success.value = 'Settings saved.'
   } catch (e) {
     if (e instanceof ApiError) error.value = e.message
@@ -118,6 +132,26 @@ onMounted(load)
                 <span class="toggle-knob"></span>
               </button>
             </div>
+            <div
+              v-else-if="field.type === 'tristate'"
+              class="flex items-center justify-between gap-4"
+            >
+              <div class="space-y-1">
+                <label class="label">
+                  {{ field.label }}
+                  <span v-if="field.required" class="text-danger">*</span>
+                </label>
+                <p v-if="field.description" class="text-xs text-text-muted">{{ field.description }}</p>
+                <p v-if="fieldErrors[field.key]" class="text-xs text-danger">{{ fieldErrors[field.key] }}</p>
+              </div>
+              <button
+                class="toggle-track" role="switch" type="button" data-tristate
+                :aria-checked="tristateChecked(values[field.key])"
+                @click="cycleTristate(field.key)"
+              >
+                <span class="toggle-knob"></span>
+              </button>
+            </div>
             <div v-else class="space-y-1">
               <label class="label">
                 {{ field.label }}
@@ -150,6 +184,15 @@ onMounted(load)
                 autocomplete="off"
                 @blur="validateField(field.key)"
               />
+              <select
+                v-else-if="field.type === 'select'"
+                class="input"
+                v-model="values[field.key]"
+              >
+                <option v-for="opt in field.options ?? []" :key="opt.value" :value="opt.value">
+                  {{ opt.label }}
+                </option>
+              </select>
               <input
                 v-else
                 class="input"

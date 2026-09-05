@@ -10,12 +10,14 @@ public sealed class CameraPipeline : IPipeline
 {
   private readonly Guid _cameraId;
   private readonly string _profile;
+  private readonly string? _expectedCodec;
   private readonly CameraConnectionInfo _connectionInfo;
   private readonly ICaptureSource _captureSource;
   private readonly IPluginHost _pluginHost;
   private readonly IEventBus _eventBus;
   private readonly ILogger _logger;
   private readonly Lock _lock = new();
+  private readonly DemandEvaluator _evaluator;
 
   private IDataStreamFanOut? _dataFanOut;
   private IMuxStreamFanOut? _muxFanOut;
@@ -23,17 +25,27 @@ public sealed class CameraPipeline : IPipeline
   private IStreamConnection? _connection;
   private CancellationTokenSource? _feedCts;
   private Task? _feedLoop;
+  private bool _connecting;
+  private bool _reconnecting;
   private bool _constructed;
   private bool _disposed;
 
   public Guid CameraId => _cameraId;
   public string Profile => _profile;
   public string ConnectionUri => _connectionInfo.Uri;
+  public string? ExpectedCodec => _expectedCodec;
   public bool IsConstructed { get { lock (_lock) return _constructed; } }
   public bool Recordable => true;
   public bool IsActive { get { lock (_lock) return _connection != null; } }
   public MuxStreamInfo? MuxInfo { get { lock (_lock) return _muxFanOut?.Info; } }
+
+  public Action<MuxStreamStats>? OnStats
+  {
+    set { lock (_lock) { if (_muxFanOut != null) _muxFanOut.OnStats = value; } }
+  }
   public ReadOnlyMemory<byte> MuxHeader { get { lock (_lock) return _muxFanOut?.Header ?? ReadOnlyMemory<byte>.Empty; } }
+
+  internal TimeSpan DisconnectLinger { get; set; } = TimeSpan.FromSeconds(5);
 
   internal static readonly TimeSpan[] BackoffDelays =
   [
@@ -48,6 +60,7 @@ public sealed class CameraPipeline : IPipeline
   public CameraPipeline(
     Guid cameraId,
     string profile,
+    string? expectedCodec,
     CameraConnectionInfo connectionInfo,
     ICaptureSource captureSource,
     IPluginHost pluginHost,
@@ -56,12 +69,30 @@ public sealed class CameraPipeline : IPipeline
   {
     _cameraId = cameraId;
     _profile = profile;
+    _expectedCodec = expectedCodec;
     _connectionInfo = connectionInfo;
     _captureSource = captureSource;
     _pluginHost = pluginHost;
     _eventBus = eventBus;
     _logger = logger;
+    _evaluator = new DemandEvaluator(EvaluateOnceAsync,
+      ex => _logger.LogError(ex, "Demand evaluation failed for camera {CameraId} profile '{Profile}'",
+        _cameraId, _profile));
   }
+
+  public int GetDemand()
+  {
+    IDataStreamFanOut? dataFanOut;
+    IMuxStreamFanOut? muxFanOut;
+    lock (_lock)
+    {
+      dataFanOut = _dataFanOut;
+      muxFanOut = _muxFanOut;
+    }
+    return (dataFanOut?.GetDemand() ?? 0) + (muxFanOut?.GetDemand() ?? 0);
+  }
+
+  public void Evaluate() => _evaluator.Schedule();
 
   [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]
   public async Task<OneOf<Success, Error>> ConstructAsync(CancellationToken ct)
@@ -125,6 +156,7 @@ public sealed class CameraPipeline : IPipeline
       _constructed = true;
     }
 
+    Evaluate();
     return new Success();
   }
 
@@ -162,78 +194,96 @@ public sealed class CameraPipeline : IPipeline
     }
   }
 
-  private void OnDemand()
+  private async Task EvaluateOnceAsync()
   {
-    _ = Task.Run(async () =>
+    lock (_lock)
     {
-      _logger.LogDebug("Demand signaled for camera {CameraId} profile '{Profile}'",
-        _cameraId, _profile);
-      await ConnectSourceAsync(CancellationToken.None);
-    });
-  }
+      if (_disposed || !_constructed)
+        return;
+    }
 
-  private void OnEmpty()
-  {
-    _ = Task.Run(async () =>
+    var want = GetDemand() > 0;
+    bool connected;
+    lock (_lock)
+      connected = _connection != null;
+
+    if (want && !connected)
     {
-      _logger.LogDebug("No demand for camera {CameraId} profile '{Profile}'",
-        _cameraId, _profile);
-      await DisconnectSourceAsync();
-    });
+      await ConnectSourceAsync(CancellationToken.None);
+      lock (_lock)
+        connected = _connection != null;
+      if (!connected && GetDemand() > 0)
+        StartReconnectLoop();
+    }
+    else if (!want && connected)
+    {
+      await Task.Delay(DisconnectLinger);
+      if (GetDemand() == 0)
+        await DisconnectSourceAsync();
+    }
   }
 
   private async Task ConnectSourceAsync(CancellationToken ct)
   {
     lock (_lock)
     {
-      if (_connection != null || !_constructed)
+      if (_connection != null || _connecting || !_constructed || _disposed)
         return;
+      _connecting = true;
     }
 
-    var connectResult = await _captureSource.ConnectAsync(_connectionInfo, ct);
-    if (connectResult.IsT1)
+    try
     {
-      _logger.LogError("Connect failed for camera {CameraId}: {Message}",
-        _cameraId, connectResult.AsT1.Message);
-      return;
+      var connectResult = await _captureSource.ConnectAsync(_connectionInfo, ct);
+      if (connectResult.IsT1)
+      {
+        _logger.LogError("Connect failed for camera {CameraId}: {Message}",
+          _cameraId, connectResult.AsT1.Message);
+        return;
+      }
+
+      var connection = connectResult.AsT0;
+
+      if (_dataFanOut is IDataStream fanOut && fanOut.FrameType != connection.DataStream.FrameType)
+      {
+        _logger.LogDebug(
+          "Refusing connection for camera {CameraId} profile '{Profile}': stream carries {Actual}, pipeline carries {Expected}",
+          _cameraId, _profile, connection.DataStream.FrameType.Name, fanOut.FrameType.Name);
+        await connection.DisposeAsync();
+        return;
+      }
+
+      StartFeeding(connection, _dataFanOut!, connection.DataStream);
+
+      lock (_lock)
+        _connection = connection;
+
+      WatchConnection(connection);
+
+      await _eventBus.PublishAsync(new CameraStatusChanged
+      {
+        CameraId = _cameraId,
+        Profile = _profile,
+        Status = "online",
+        Timestamp = DateTimeOffset.UtcNow.ToUnixMicroseconds()
+      }, ct);
+
+      await _eventBus.PublishAsync(new StreamStarted
+      {
+        CameraId = _cameraId,
+        Profile = _profile,
+        DataFormat = connection.Info.DataFormat,
+        Timestamp = DateTimeOffset.UtcNow.ToUnixMicroseconds()
+      }, ct);
+
+      _logger.LogInformation("Source connected for camera {CameraId} profile '{Profile}'",
+        _cameraId, _profile);
     }
-
-    var connection = connectResult.AsT0;
-
-    if (_dataFanOut is IDataStream fanOut && fanOut.FrameType != connection.DataStream.FrameType)
+    finally
     {
-      _logger.LogDebug(
-        "Refusing connection for camera {CameraId} profile '{Profile}': stream carries {Actual}, pipeline carries {Expected}",
-        _cameraId, _profile, connection.DataStream.FrameType.Name, fanOut.FrameType.Name);
-      await connection.DisposeAsync();
-      return;
+      lock (_lock)
+        _connecting = false;
     }
-
-    StartFeeding(connection, _dataFanOut!, connection.DataStream);
-
-    lock (_lock)
-      _connection = connection;
-
-    WatchConnection(connection);
-
-    await _eventBus.PublishAsync(new CameraStatusChanged
-    {
-      CameraId = _cameraId,
-      Profile = _profile,
-      Status = "online",
-      Timestamp = DateTimeOffset.UtcNow.ToUnixMicroseconds()
-    }, ct);
-
-    await _eventBus.PublishAsync(new StreamStarted
-    {
-      CameraId = _cameraId,
-      Profile = _profile,
-      DataFormat = connection.Info.DataFormat,
-      Timestamp = DateTimeOffset.UtcNow.ToUnixMicroseconds()
-    }, ct);
-
-    _logger.LogInformation("Source connected for camera {CameraId} profile '{Profile}'",
-      _cameraId, _profile);
   }
 
   private async Task DisconnectSourceAsync()
@@ -305,7 +355,7 @@ public sealed class CameraPipeline : IPipeline
       cts.Cancel();
       if (loop != null)
       {
-        try { await loop; }
+        try { await loop.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing); }
         catch { }
       }
       cts.Dispose();
@@ -342,7 +392,30 @@ public sealed class CameraPipeline : IPipeline
         Timestamp = DateTimeOffset.UtcNow.ToUnixMicroseconds()
       }, CancellationToken.None);
 
-      await ReconnectAsync();
+      StartReconnectLoop();
+    });
+  }
+
+  private void StartReconnectLoop()
+  {
+    lock (_lock)
+    {
+      if (_disposed || _reconnecting)
+        return;
+      _reconnecting = true;
+    }
+
+    _ = Task.Run(async () =>
+    {
+      try
+      {
+        await ReconnectAsync();
+      }
+      finally
+      {
+        lock (_lock)
+          _reconnecting = false;
+      }
     });
   }
 
@@ -352,28 +425,14 @@ public sealed class CameraPipeline : IPipeline
 
     while (!_disposed)
     {
-      bool hasDemand;
-      lock (_lock)
-      {
-        hasDemand = (_dataFanOut?.SubscriberCount ?? 0) > 0
-          || (_muxFanOut?.SubscriberCount ?? 0) > 0;
-      }
-
-      if (!hasDemand)
+      if (GetDemand() == 0)
         return;
 
       var delay = BackoffDelays[Math.Min(backoffIndex, BackoffDelays.Length - 1)];
       _logger.LogDebug("Reconnecting camera {CameraId} profile '{Profile}' in {Delay}s",
         _cameraId, _profile, delay.TotalSeconds);
 
-      try
-      {
-        await Task.Delay(delay);
-      }
-      catch (OperationCanceledException)
-      {
-        break;
-      }
+      await Task.Delay(delay);
 
       lock (_lock)
       {
@@ -402,8 +461,7 @@ public sealed class CameraPipeline : IPipeline
   {
     var fanOutType = typeof(DataStreamFanOut<>).MakeGenericType(dataStream.FrameType);
     var fanOut = (IDataStreamFanOut)Activator.CreateInstance(fanOutType, dataStream.Info)!;
-    fanOut.OnDemand = OnDemand;
-    fanOut.OnEmpty = OnEmpty;
+    fanOut.Changed = Evaluate;
     fanOut.Logger = _logger;
     return fanOut;
   }
@@ -413,8 +471,7 @@ public sealed class CameraPipeline : IPipeline
   {
     var fanOutType = typeof(MuxStreamFanOut<>).MakeGenericType(muxStream.FrameType);
     var fanOut = (IMuxStreamFanOut)Activator.CreateInstance(fanOutType, muxStream)!;
-    fanOut.OnDemand = OnDemand;
-    fanOut.OnEmpty = OnEmpty;
+    fanOut.Changed = Evaluate;
     fanOut.Logger = _logger;
     return fanOut;
   }

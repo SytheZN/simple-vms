@@ -293,6 +293,7 @@ public class SegmentWriterTests
 
     public ReadOnlyMemory<byte> Header { get; }
     public Type FrameType => typeof(Fmp4Fragment);
+    public Action<MuxStreamStats>? OnStats { set { } }
 
     public TestMuxStream(byte[] header) => Header = header;
 
@@ -370,6 +371,7 @@ public class SegmentWriterTests
     public ISegmentRepository Segments { get; } = new FakeSegmentRepository();
     public IKeyframeRepository Keyframes { get; } = new FakeKeyframeRepository();
     public IEventRepository Events => throw new NotImplementedException();
+    public ISystemEventRepository SystemEvents => throw new NotImplementedException();
     public IClientRepository Clients => throw new NotImplementedException();
     public IConfigRepository Config => throw new NotImplementedException();
     public IDataStore GetDataStore(string pluginId) => throw new NotImplementedException();
@@ -409,6 +411,10 @@ public class SegmentWriterTests
 
     public Task<OneOf<IReadOnlyList<Segment>, Error>> GetOldestAsync(
       Guid streamId, int limit, CancellationToken ct) =>
+      throw new NotImplementedException();
+
+    public Task<OneOf<IReadOnlyList<Segment>, Error>> GetOldestAcrossStreamsAsync(
+      int limit, CancellationToken ct) =>
       throw new NotImplementedException();
 
     public Task<OneOf<long, Error>> GetTotalSizeAsync(Guid streamId, CancellationToken ct) =>

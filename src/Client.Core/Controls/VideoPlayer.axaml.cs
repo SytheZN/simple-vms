@@ -1,43 +1,45 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Shapes;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Avalonia.Threading;
 using Client.Core.Decoding;
-using Client.Core.Streaming;
-using Shared.Protocol;
-using System.Diagnostics.CodeAnalysis;
 
 namespace Client.Core.Controls;
 
 [ExcludeFromCodeCoverage]
 public partial class VideoPlayer : UserControl
 {
-  public static readonly StyledProperty<IVideoFeed?> MotionFeedProperty =
-    AvaloniaProperty.Register<VideoPlayer, IVideoFeed?>(nameof(MotionFeed));
+  public static readonly StyledProperty<MotionOverlay?> MotionOverlayProperty =
+    AvaloniaProperty.Register<VideoPlayer, MotionOverlay?>(nameof(MotionOverlay));
 
   public static readonly StyledProperty<Player?> PlayerProperty =
     AvaloniaProperty.Register<VideoPlayer, Player?>(nameof(Player));
 
   private readonly VideoSurface _videoSurface;
   private readonly StackPanel _placeholder;
-  private readonly Canvas _motionOverlay;
+  private readonly Border _motionLayer;
+  private readonly Image _motionImage;
+  private WriteableBitmap? _motionBitmap;
 
-  private ISolidColorBrush? MotionCellBrush
+  private Color? MotionCellColor
   {
     get
     {
-      if (Application.Current?.TryGetResource("MotionBrush",
-            Application.Current.ActualThemeVariant, out var res) == true)
-        return res as ISolidColorBrush;
+      if (Application.Current?.TryGetResource("MotionActiveColor",
+            Application.Current.ActualThemeVariant, out var res) == true && res is Color c)
+        return c;
       return null;
     }
   }
 
-  public IVideoFeed? MotionFeed
+  public MotionOverlay? MotionOverlay
   {
-    get => GetValue(MotionFeedProperty);
-    set => SetValue(MotionFeedProperty, value);
+    get => GetValue(MotionOverlayProperty);
+    set => SetValue(MotionOverlayProperty, value);
   }
 
   public Player? Player
@@ -51,7 +53,8 @@ public partial class VideoPlayer : UserControl
     InitializeComponent();
     _videoSurface = this.FindControl<VideoSurface>("VideoSurface")!;
     _placeholder = this.FindControl<StackPanel>("Placeholder")!;
-    _motionOverlay = this.FindControl<Canvas>("MotionOverlay")!;
+    _motionLayer = this.FindControl<Border>("MotionLayer")!;
+    _motionImage = this.FindControl<Image>("MotionImage")!;
   }
 
   protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -62,10 +65,10 @@ public partial class VideoPlayer : UserControl
     {
       AttachPlayer(change.GetNewValue<Player?>());
     }
-    else if (change.Property == MotionFeedProperty)
+    else if (change.Property == MotionOverlayProperty)
     {
-      DetachMotionFeed(change.GetOldValue<IVideoFeed?>());
-      AttachMotionFeed(change.GetNewValue<IVideoFeed?>());
+      DetachOverlay(change.GetOldValue<MotionOverlay?>());
+      AttachOverlay(change.GetNewValue<MotionOverlay?>());
     }
   }
 
@@ -75,64 +78,79 @@ public partial class VideoPlayer : UserControl
     _placeholder.IsVisible = player == null;
   }
 
-  private void AttachMotionFeed(IVideoFeed? feed)
+  private void AttachOverlay(MotionOverlay? overlay)
   {
-    if (feed == null) return;
-    Dispatcher.UIThread.Post(() => _motionOverlay.IsVisible = true);
-    feed.OnGop += OnMotionGopReceived;
+    if (overlay == null) return;
+    overlay.FrameChanged += OnMotionFrame;
+    Dispatcher.UIThread.Post(() => _motionLayer.IsVisible = true);
   }
 
-  private void DetachMotionFeed(IVideoFeed? feed)
+  private void DetachOverlay(MotionOverlay? overlay)
   {
-    if (feed == null) return;
-    feed.OnGop -= OnMotionGopReceived;
+    if (overlay == null) return;
+    overlay.FrameChanged -= OnMotionFrame;
     Dispatcher.UIThread.Post(() =>
     {
-      _motionOverlay.IsVisible = false;
-      _motionOverlay.Children.Clear();
+      _motionLayer.IsVisible = false;
+      ClearMotionBitmap();
     });
   }
 
-  private void OnMotionGopReceived(GopMessage gop)
+  private void OnMotionFrame(MotionFrame? frame) =>
+    Dispatcher.UIThread.Post(() => PaintMotionFrame(frame));
+
+  private void ClearMotionBitmap()
   {
-    Dispatcher.UIThread.Post(() => RenderMotionOverlay(gop.Data));
+    _motionImage.Source = null;
+    _motionBitmap?.Dispose();
+    _motionBitmap = null;
   }
 
-  private void RenderMotionOverlay(ReadOnlyMemory<byte> data)
+  private void PaintMotionFrame(MotionFrame? frame)
   {
-    _motionOverlay.Children.Clear();
-
-    var brush = MotionCellBrush;
-    if (brush == null || data.Length < 2 || Bounds.Width == 0 || Bounds.Height == 0)
-      return;
-
-    var span = data.Span;
-    var cols = span[0];
-    var rows = span[1];
-    if (cols == 0 || rows == 0) return;
-
-    var cellWidth = Bounds.Width / cols;
-    var cellHeight = Bounds.Height / rows;
-
-    for (var row = 0; row < rows; row++)
+    if (frame == null)
     {
-      for (var col = 0; col < cols; col++)
-      {
-        var cellIndex = 2 + row * cols + col;
-        if (cellIndex >= span.Length) return;
-        if (span[cellIndex] == 0) continue;
+      _motionImage.Source = null;
+      return;
+    }
 
-        var rect = new Rectangle
-        {
-          Width = cellWidth,
-          Height = cellHeight,
-          Fill = brush,
-          IsHitTestVisible = false
-        };
-        Canvas.SetLeft(rect, col * cellWidth);
-        Canvas.SetTop(rect, row * cellHeight);
-        _motionOverlay.Children.Add(rect);
+    var color = MotionCellColor;
+    if (color == null) return;
+
+    if (_motionBitmap == null
+        || _motionBitmap.PixelSize.Width != frame.Cols
+        || _motionBitmap.PixelSize.Height != frame.Rows)
+    {
+      _motionImage.Source = null;
+      _motionBitmap?.Dispose();
+      _motionBitmap = new WriteableBitmap(
+        new PixelSize(frame.Cols, frame.Rows), new Vector(96, 96),
+        PixelFormat.Bgra8888, AlphaFormat.Premul);
+    }
+
+    WriteCells(_motionBitmap, frame, color.Value);
+
+    if (!ReferenceEquals(_motionImage.Source, _motionBitmap))
+      _motionImage.Source = _motionBitmap;
+    _motionImage.InvalidateVisual();
+  }
+
+  private static void WriteCells(WriteableBitmap bitmap, MotionFrame frame, Color color)
+  {
+    using var fb = bitmap.Lock();
+    var row = new byte[frame.Cols * 4];
+    for (var y = 0; y < frame.Rows; y++)
+    {
+      for (var x = 0; x < frame.Cols; x++)
+      {
+        var value = frame.Cells[y * frame.Cols + x];
+        var alpha = color.A * value / 255;
+        row[x * 4 + 0] = (byte)(color.B * alpha / 255);
+        row[x * 4 + 1] = (byte)(color.G * alpha / 255);
+        row[x * 4 + 2] = (byte)(color.R * alpha / 255);
+        row[x * 4 + 3] = (byte)alpha;
       }
+      Marshal.Copy(row, 0, fb.Address + y * fb.RowBytes, row.Length);
     }
   }
 }

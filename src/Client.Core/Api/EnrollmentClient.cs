@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using Client.Core.Platform;
 using Microsoft.Extensions.Logging;
 using Shared.Models;
 using Shared.Api;
@@ -9,18 +10,20 @@ namespace Client.Core.Api;
 public sealed class EnrollmentClient : IEnrollmentClient
 {
   private readonly IHttpClientFactory _httpFactory;
+  private readonly IDeviceIdentity _device;
   private readonly ILogger<EnrollmentClient> _logger;
 
-  public EnrollmentClient(IHttpClientFactory httpFactory, ILogger<EnrollmentClient> logger)
+  public EnrollmentClient(IHttpClientFactory httpFactory, IDeviceIdentity device, ILogger<EnrollmentClient> logger)
   {
     _httpFactory = httpFactory;
+    _device = device;
     _logger = logger;
   }
 
   public async Task<OneOf<EnrollResponse, HttpError>> EnrollAsync(
     string serverAddress, string token, CancellationToken ct)
   {
-    var request = new EnrollRequest { Token = token };
+    var request = new EnrollRequest { Token = token, DeviceName = _device.DeviceName };
     var baseUri = serverAddress.Contains("://")
       ? new Uri(serverAddress)
       : new Uri($"http://{serverAddress}");

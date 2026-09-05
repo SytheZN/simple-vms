@@ -147,7 +147,6 @@ public sealed class RtspClient : IAsyncDisposable
     }
     catch
     {
-      // best effort
     }
 
     State = RtspState.Teardown;
@@ -184,7 +183,6 @@ public sealed class RtspClient : IAsyncDisposable
     }
     catch
     {
-      // connection is dead, read loop will detect it
     }
   }
 

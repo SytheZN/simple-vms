@@ -148,6 +148,32 @@ internal sealed class SegmentRepository : ISegmentRepository
     }, ct);
   }
 
+  public Task<OneOf<IReadOnlyList<Segment>, Error>> GetOldestAcrossStreamsAsync(int limit, CancellationToken ct)
+  {
+    return _queue.ExecuteAsync<OneOf<IReadOnlyList<Segment>, Error>>(conn =>
+    {
+      try
+      {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+          SELECT * FROM segments
+          ORDER BY start_time ASC
+          LIMIT @limit
+          """;
+        cmd.Parameters.AddWithValue("@limit", limit);
+        using var reader = cmd.ExecuteReader();
+        var results = new List<Segment>();
+        while (reader.Read())
+          results.Add(ReadSegment(reader));
+        return results;
+      }
+      catch (Exception ex)
+      {
+        return Error.Create(ModuleId, 0x0002, Result.InternalError, $"Failed to query oldest segments across streams: {ex.Message}");
+      }
+    }, ct);
+  }
+
   public Task<OneOf<long, Error>> GetTotalSizeAsync(Guid streamId, CancellationToken ct)
   {
     return _queue.ExecuteAsync<OneOf<long, Error>>(conn =>

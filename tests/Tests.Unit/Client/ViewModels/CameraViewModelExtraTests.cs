@@ -6,6 +6,7 @@ using Client.Core.Tunnel;
 using Client.Core.ViewModels;
 using Microsoft.Extensions.Logging.Abstractions;
 using Shared.Api;
+using Shared.Models;
 using Shared.Protocol;
 using Tests.Unit.Client.Mocks;
 
@@ -27,6 +28,301 @@ public class CameraViewModelExtraTests
     ],
     Capabilities = []
   };
+
+  private static readonly CameraDto CameraWithOverlay = new()
+  {
+    Id = Guid.NewGuid(),
+    Name = "Test Camera",
+    Address = "192.168.1.100",
+    Status = "online",
+    ProviderId = "onvif",
+    Streams = [
+      new StreamProfileDto { Profile = "main", Kind = StreamKind.Quality, FormatId = "fmp4", Codec = "h264", Resolution = "1920x1080", Fps = 30, RecordingEnabled = true },
+      new StreamProfileDto { Profile = "main-motion-grid", Kind = StreamKind.Metadata, FormatId = "motion-grid", Codec = "mgrd", Resolution = "240x135", Fps = 30, RecordingEnabled = false }
+    ],
+    Capabilities = []
+  };
+
+  private static readonly CameraDto CameraWithTwoOverlays = new()
+  {
+    Id = Guid.NewGuid(),
+    Name = "Test Camera",
+    Address = "192.168.1.100",
+    Status = "online",
+    ProviderId = "onvif",
+    Streams = [
+      new StreamProfileDto { Profile = "main", Kind = StreamKind.Quality, FormatId = "fmp4", Codec = "h264", Resolution = "1920x1080", Fps = 30, RecordingEnabled = true },
+      new StreamProfileDto { Profile = "sub-motion-grid", Kind = StreamKind.Metadata, FormatId = "motion-grid", Codec = "mgrd", Resolution = "80x45", Fps = 15, RecordingEnabled = false },
+      new StreamProfileDto { Profile = "main-motion-grid", Kind = StreamKind.Metadata, FormatId = "motion-grid", Codec = "mgrd", Resolution = "240x135", Fps = 30, RecordingEnabled = false }
+    ],
+    Capabilities = []
+  };
+
+  /// <summary>
+  /// SCENARIO:
+  /// LoadAsync is called with a camera that has no metadata streams
+  ///
+  /// ACTION:
+  /// Load camera with only quality streams
+  ///
+  /// EXPECTED RESULT:
+  /// OverlaySources is empty
+  /// </summary>
+  [Test]
+  public async Task Load_NoMetadataStreams_OverlaySourcesEmpty()
+  {
+    var (vm, _, _, api) = NewVm();
+    api.Camera = TestCamera;
+
+    await vm.LoadAsync(TestCamera.Id, Quality.Highest, CancellationToken.None);
+
+    Assert.That(vm.OverlaySources, Is.Empty);
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// LoadAsync is called with a camera that has one metadata stream
+  ///
+  /// ACTION:
+  /// Load camera with a metadata stream
+  ///
+  /// EXPECTED RESULT:
+  /// OverlaySources contains only the metadata stream; ActiveOverlaySource is null
+  /// </summary>
+  [Test]
+  public async Task Load_MetadataStream_PopulatesOverlaySources()
+  {
+    var (vm, _, _, api) = NewVm();
+    api.Camera = CameraWithOverlay;
+
+    await vm.LoadAsync(CameraWithOverlay.Id, Quality.Highest, CancellationToken.None);
+
+    Assert.Multiple(() =>
+    {
+      Assert.That(vm.OverlaySources, Has.Count.EqualTo(1));
+      Assert.That(vm.OverlaySources[0].Profile, Is.EqualTo("main-motion-grid"));
+      Assert.That(vm.ActiveOverlaySource, Is.Null);
+    });
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// ToggleOverlayAsync is called once on a camera with one metadata stream
+  ///
+  /// ACTION:
+  /// Load camera, call ToggleOverlayAsync
+  ///
+  /// EXPECTED RESULT:
+  /// ActiveOverlaySource is the metadata stream; Overlay is set; subscribe count is 1
+  /// </summary>
+  [Test]
+  public async Task ToggleOverlay_On_ActivatesSource()
+  {
+    var (vm, live, _, api) = NewVm();
+    api.Camera = CameraWithOverlay;
+    await vm.LoadAsync(CameraWithOverlay.Id, Quality.Highest, CancellationToken.None);
+
+    await vm.ToggleOverlayAsync(CancellationToken.None);
+
+    Assert.Multiple(() =>
+    {
+      Assert.That(vm.ActiveOverlaySource, Is.Not.Null);
+      Assert.That(vm.ActiveOverlaySource!.Profile, Is.EqualTo("main-motion-grid"));
+      Assert.That(vm.Overlay, Is.Not.Null);
+      Assert.That(live.SubscribeCount, Is.EqualTo(1));
+      Assert.That(live.LastProfile, Is.EqualTo("main-motion-grid"));
+    });
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// ToggleOverlayAsync is called again while the overlay is active
+  ///
+  /// ACTION:
+  /// Load camera, toggle twice
+  ///
+  /// EXPECTED RESULT:
+  /// Second toggle deactivates; overlay feed is unsubscribed; Overlay is null
+  /// </summary>
+  [Test]
+  public async Task ToggleOverlay_Off_Deactivates()
+  {
+    var (vm, live, _, api) = NewVm();
+    api.Camera = CameraWithOverlay;
+    await vm.LoadAsync(CameraWithOverlay.Id, Quality.Highest, CancellationToken.None);
+
+    await vm.ToggleOverlayAsync(CancellationToken.None);
+    await vm.ToggleOverlayAsync(CancellationToken.None);
+
+    Assert.Multiple(() =>
+    {
+      Assert.That(vm.ActiveOverlaySource, Is.Null);
+      Assert.That(vm.Overlay, Is.Null);
+      Assert.That(live.UnsubscribeCount, Is.EqualTo(1));
+    });
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Two metadata streams exist and the selected video profile is "sub"
+  ///
+  /// ACTION:
+  /// Load camera, select the "sub" video profile, toggle the overlay on
+  ///
+  /// EXPECTED RESULT:
+  /// The source matching the video profile ("sub-motion-grid") wins even though
+  /// "main-motion-grid" sorts first alphabetically
+  /// </summary>
+  [Test]
+  public async Task ToggleOverlay_TwoSources_PrefersVideoProfileMatch()
+  {
+    var (vm, live, _, api) = NewVm();
+    api.Camera = CameraWithTwoOverlays;
+    await vm.LoadAsync(CameraWithTwoOverlays.Id, Quality.Highest, CancellationToken.None);
+    vm.SelectedProfile = "sub";
+
+    await vm.ToggleOverlayAsync(CancellationToken.None);
+
+    Assert.That(vm.ActiveOverlaySource!.Profile, Is.EqualTo("sub-motion-grid"));
+    Assert.That(live.LastProfile, Is.EqualTo("sub-motion-grid"));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// ToggleOverlayAsync is called with no camera loaded
+  ///
+  /// ACTION:
+  /// Call ToggleOverlayAsync without loading a camera
+  ///
+  /// EXPECTED RESULT:
+  /// No subscription opened; no exception
+  /// </summary>
+  [Test]
+  public async Task ToggleOverlay_NoCamera_NoOp()
+  {
+    var (vm, live, _, _) = NewVm();
+
+    await vm.ToggleOverlayAsync(CancellationToken.None);
+
+    Assert.That(live.SubscribeCount, Is.Zero);
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// SeekAsync is called while the overlay is active on a live feed
+  ///
+  /// ACTION:
+  /// Load camera, activate overlay, mark the overlay feed live, seek, tick the overlay
+  /// with a playback view at the seek position
+  ///
+  /// EXPECTED RESULT:
+  /// The seek reset clears the live gate, so the tick fetches from the playhead
+  /// with a 30-second window
+  /// </summary>
+  [Test]
+  public async Task SeekAsync_WithOverlayActive_ResetsOverlayForFetching()
+  {
+    var (vm, live, _, api) = NewVm();
+    api.Camera = CameraWithOverlay;
+    await vm.LoadAsync(CameraWithOverlay.Id, Quality.Highest, CancellationToken.None);
+    await vm.ToggleOverlayAsync(CancellationToken.None);
+    var feed = live.LastFeed!;
+    feed.RaiseStatus(StreamStatus.Live);
+
+    await vm.SeekAsync(10_000_000UL, CancellationToken.None);
+    vm.Overlay!.Tick(new OverlayPlayerView(
+      10_000_000, 1, 1, false, Player.PlayerMode.Playback));
+
+    Assert.That(feed.FetchFrom, Is.EqualTo(10_000_000UL));
+    Assert.That(feed.FetchTo, Is.EqualTo(10_000_000UL + 30_000_000UL));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// ScrubEndAsync is called while the overlay is active on a live feed
+  ///
+  /// ACTION:
+  /// Load camera, activate overlay, mark the overlay feed live, scrub-end, tick the
+  /// overlay with a playback view at the released position
+  ///
+  /// EXPECTED RESULT:
+  /// The scrub-end reset clears the live gate, so the tick fetches from the released
+  /// position with a 30-second window
+  /// </summary>
+  [Test]
+  public async Task ScrubEndAsync_WithOverlayActive_ResetsOverlayForFetching()
+  {
+    var (vm, live, _, api) = NewVm();
+    api.Camera = CameraWithOverlay;
+    await vm.LoadAsync(CameraWithOverlay.Id, Quality.Highest, CancellationToken.None);
+    await vm.ToggleOverlayAsync(CancellationToken.None);
+    var feed = live.LastFeed!;
+    feed.RaiseStatus(StreamStatus.Live);
+
+    await vm.ScrubEndAsync(5_000_000, CancellationToken.None);
+    vm.Overlay!.Tick(new OverlayPlayerView(
+      5_000_000, 1, 1, false, Player.PlayerMode.Playback));
+
+    Assert.That(feed.FetchFrom, Is.EqualTo(5_000_000UL));
+    Assert.That(feed.FetchTo, Is.EqualTo(5_000_000UL + 30_000_000UL));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// GoLiveAsync is called while the overlay is active
+  ///
+  /// ACTION:
+  /// Load camera, activate overlay, call GoLiveAsync
+  ///
+  /// EXPECTED RESULT:
+  /// Overlay feed is unsubscribed and a new live subscription opens for the same profile
+  /// </summary>
+  [Test]
+  public async Task GoLiveAsync_WithOverlayActive_ResubscribesOverlay()
+  {
+    var (vm, live, _, api) = NewVm();
+    api.Camera = CameraWithOverlay;
+    await vm.LoadAsync(CameraWithOverlay.Id, Quality.Highest, CancellationToken.None);
+    await vm.ToggleOverlayAsync(CancellationToken.None);
+    var subscribeCountAfterActivate = live.SubscribeCount;
+
+    await vm.GoLiveAsync(CancellationToken.None);
+
+    Assert.Multiple(() =>
+    {
+      Assert.That(live.UnsubscribeCount, Is.GreaterThanOrEqualTo(1));
+      Assert.That(live.SubscribeCount, Is.GreaterThan(subscribeCountAfterActivate));
+      Assert.That(live.LastProfile, Is.EqualTo("main-motion-grid"));
+      Assert.That(vm.Overlay, Is.Not.Null);
+    });
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// DisposeAsync is called while the overlay is active
+  ///
+  /// ACTION:
+  /// Load camera, activate overlay, DisposeAsync
+  ///
+  /// EXPECTED RESULT:
+  /// Motion feed is unsubscribed; Overlay is null
+  /// </summary>
+  [Test]
+  public async Task Dispose_WithOverlayActive_UnsubscribesOverlay()
+  {
+    var (vm, live, _, api) = NewVm();
+    api.Camera = CameraWithOverlay;
+    await vm.LoadAsync(CameraWithOverlay.Id, Quality.Highest, CancellationToken.None);
+    await vm.ToggleOverlayAsync(CancellationToken.None);
+
+    await vm.DisposeAsync();
+
+    Assert.Multiple(() =>
+    {
+      Assert.That(live.UnsubscribeCount, Is.GreaterThanOrEqualTo(1));
+      Assert.That(vm.Overlay, Is.Null);
+    });
+  }
 
   /// <summary>
   /// SCENARIO:
@@ -74,86 +370,6 @@ public class CameraViewModelExtraTests
     await vm.LoadAsync(TestCamera.Id, Quality.Highest, CancellationToken.None);
 
     Assert.That(vm.Player, Is.SameAs(firstPlayer));
-  }
-
-  /// <summary>
-  /// SCENARIO:
-  /// MotionOverlay setter true subscribes to the motion profile feed
-  ///
-  /// ACTION:
-  /// Load, set MotionOverlay = true
-  ///
-  /// EXPECTED RESULT:
-  /// LiveStreamService.SubscribeAsync was called once with the "motion" profile;
-  /// vm.MotionFeed is populated
-  /// </summary>
-  [Test]
-  public async Task MotionOverlay_True_SubscribesToMotionFeed()
-  {
-    var (vm, live, _, api) = NewVm();
-    api.Camera = TestCamera;
-    await vm.LoadAsync(TestCamera.Id, Quality.Highest, CancellationToken.None);
-
-    vm.MotionOverlay = true;
-    await Task.Delay(50);
-
-    Assert.Multiple(() =>
-    {
-      Assert.That(live.SubscribeCount, Is.EqualTo(1));
-      Assert.That(live.LastProfile, Is.EqualTo("motion"));
-      Assert.That(vm.MotionFeed, Is.Not.Null);
-    });
-  }
-
-  /// <summary>
-  /// SCENARIO:
-  /// MotionOverlay flips back to false after being on
-  ///
-  /// ACTION:
-  /// Load, MotionOverlay = true (wait), MotionOverlay = false
-  ///
-  /// EXPECTED RESULT:
-  /// LiveStreamService.UnsubscribeAsync was called; MotionFeed is null
-  /// </summary>
-  [Test]
-  public async Task MotionOverlay_FalseAfterTrue_Unsubscribes()
-  {
-    var (vm, live, _, api) = NewVm();
-    api.Camera = TestCamera;
-    await vm.LoadAsync(TestCamera.Id, Quality.Highest, CancellationToken.None);
-
-    vm.MotionOverlay = true;
-    await Task.Delay(50);
-
-    vm.MotionOverlay = false;
-    await Task.Delay(50);
-
-    Assert.Multiple(() =>
-    {
-      Assert.That(live.UnsubscribeCount, Is.GreaterThanOrEqualTo(1));
-      Assert.That(vm.MotionFeed, Is.Null);
-    });
-  }
-
-  /// <summary>
-  /// SCENARIO:
-  /// MotionOverlay is set true with no camera loaded
-  ///
-  /// ACTION:
-  /// Set MotionOverlay = true without LoadAsync
-  ///
-  /// EXPECTED RESULT:
-  /// No subscription; no exception (the early-out guard is honoured)
-  /// </summary>
-  [Test]
-  public async Task MotionOverlay_NoCamera_NoSubscribe()
-  {
-    var (vm, live, _, _) = NewVm();
-
-    vm.MotionOverlay = true;
-    await Task.Delay(50);
-
-    Assert.That(live.SubscribeCount, Is.Zero);
   }
 
   /// <summary>
@@ -253,31 +469,6 @@ public class CameraViewModelExtraTests
 
   /// <summary>
   /// SCENARIO:
-  /// DisposeAsync after MotionOverlay was enabled
-  ///
-  /// ACTION:
-  /// Load, MotionOverlay = true, DisposeAsync
-  ///
-  /// EXPECTED RESULT:
-  /// Motion feed is unsubscribed and Player is torn down without exception
-  /// </summary>
-  [Test]
-  public async Task Dispose_WithMotionFeed_UnsubscribesAndDisposesPlayer()
-  {
-    var (vm, live, _, api) = NewVm();
-    api.Camera = TestCamera;
-    await vm.LoadAsync(TestCamera.Id, Quality.Highest, CancellationToken.None);
-    vm.MotionOverlay = true;
-    await Task.Delay(50);
-
-    await vm.DisposeAsync();
-
-    Assert.That(live.UnsubscribeCount, Is.GreaterThanOrEqualTo(1));
-    Assert.That(vm.MotionFeed, Is.Null);
-  }
-
-  /// <summary>
-  /// SCENARIO:
   /// DisposeAsync is called on a never-loaded VM
   ///
   /// ACTION:
@@ -326,12 +517,51 @@ public class CameraViewModelExtraTests
         : Task.FromResult<OneOf<CameraDto, Error>>(new Error(Result.Unavailable, default, "not found"));
   }
 
+  private sealed class FakeVideoFeed : IVideoFeed
+  {
+    public Guid CameraId { get; }
+    public string Profile { get; }
+    public ReadOnlyMemory<byte> LastInit => ReadOnlyMemory<byte>.Empty;
+    public ulong FetchFrom { get; private set; }
+    public ulong FetchTo { get; private set; }
+
+    public event Action<ReadOnlyMemory<byte>>? OnInit;
+    public event Action<GopMessage>? OnGop;
+    public event Action<StreamStatus>? OnStatus;
+    public event Action<GapStatus>? OnGap;
+    public event Action? OnCompleted;
+
+    public FakeVideoFeed(Guid cameraId, string profile)
+    {
+      CameraId = cameraId;
+      Profile = profile;
+    }
+
+    public void RaiseInit(ReadOnlyMemory<byte> data) => OnInit?.Invoke(data);
+    public void RaiseGop(GopMessage gop) => OnGop?.Invoke(gop);
+    public void RaiseStatus(StreamStatus s) => OnStatus?.Invoke(s);
+    public void RaiseGap(GapStatus g) => OnGap?.Invoke(g);
+    public void RaiseCompleted() => OnCompleted?.Invoke();
+
+    public void Start() { }
+
+    public Task SendFetchAsync(ulong from, ulong to, CancellationToken ct)
+    {
+      FetchFrom = from;
+      FetchTo = to;
+      return Task.CompletedTask;
+    }
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+  }
+
   private sealed class FakeLive : ILiveStreamService
   {
     public event Action<IVideoFeed, IVideoFeed>? FeedReplaced;
     public int SubscribeCount { get; private set; }
     public int UnsubscribeCount { get; private set; }
     public string? LastProfile { get; private set; }
+    public FakeVideoFeed? LastFeed { get; private set; }
 
     public void RaiseFeedReplaced(IVideoFeed o, IVideoFeed n) => FeedReplaced?.Invoke(o, n);
 
@@ -339,7 +569,8 @@ public class CameraViewModelExtraTests
     {
       SubscribeCount++;
       LastProfile = profile;
-      return Task.FromResult<IVideoFeed>(MakeFeed(cameraId, profile));
+      LastFeed = new FakeVideoFeed(cameraId, profile);
+      return Task.FromResult<IVideoFeed>(LastFeed);
     }
 
     public Task UnsubscribeAsync(IVideoFeed feed, CancellationToken ct)

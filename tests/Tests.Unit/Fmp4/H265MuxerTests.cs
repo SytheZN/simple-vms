@@ -143,6 +143,8 @@ public class H265MuxerTests
     Timestamp = ts,
     MediaTimestamp = ts,
     IsSyncPoint = false,
+
+    IsHeader = false,
     NalType = type
   };
 
@@ -152,6 +154,8 @@ public class H265MuxerTests
     Timestamp = ts,
     MediaTimestamp = ts,
     IsSyncPoint = true,
+
+    IsHeader = false,
     NalType = H265NalType.IdrWRadl
   };
 
@@ -161,6 +165,8 @@ public class H265MuxerTests
     Timestamp = ts,
     MediaTimestamp = ts,
     IsSyncPoint = false,
+
+    IsHeader = false,
     NalType = H265NalType.TrailR
   };
 

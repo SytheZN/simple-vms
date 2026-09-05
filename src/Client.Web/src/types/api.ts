@@ -161,11 +161,17 @@ export interface CameraEvent {
   startTime: number
   endTime?: number
   metadata?: Record<string, string>
+  source?: string
 }
 
 export interface RetentionPolicy {
   mode: string
   value: number
+  minFreeSpaceGb: number
+}
+
+export interface SystemEventRetention {
+  days: number
 }
 
 export interface HealthResponse {

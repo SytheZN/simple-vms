@@ -212,6 +212,8 @@ public class MuxerRoundTripTests
     Timestamp = ts,
     MediaTimestamp = ts,
     IsSyncPoint = false,
+
+    IsHeader = false,
     NalType = H264NalType.Sps
   };
 
@@ -221,6 +223,8 @@ public class MuxerRoundTripTests
     Timestamp = ts,
     MediaTimestamp = ts,
     IsSyncPoint = false,
+
+    IsHeader = false,
     NalType = H264NalType.Pps
   };
 
@@ -230,6 +234,8 @@ public class MuxerRoundTripTests
     Timestamp = ts,
     MediaTimestamp = ts,
     IsSyncPoint = true,
+
+    IsHeader = false,
     NalType = H264NalType.Idr
   };
 
@@ -239,6 +245,8 @@ public class MuxerRoundTripTests
     Timestamp = ts,
     MediaTimestamp = ts,
     IsSyncPoint = false,
+
+    IsHeader = false,
     NalType = H264NalType.Slice
   };
 

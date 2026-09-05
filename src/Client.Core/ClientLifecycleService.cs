@@ -63,8 +63,6 @@ public sealed class ClientLifecycleService
       _logger.LogError(ex, "Auto-connect failed, retrying in the background");
     }
 
-    // Started either way: the tunnel keeps retrying, and the event service has to be running for
-    // it to resubscribe when one of those attempts lands.
     try { await _events.StartAsync(ct); }
     catch (Exception ex)
     {

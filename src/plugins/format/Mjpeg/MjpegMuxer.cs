@@ -13,6 +13,12 @@ public sealed class MjpegMuxer
 
   private readonly IDataStream<JpegUnit> _input;
   private readonly string _fileExtension;
+  private MuxStreamStatsMonitor? _statsMonitor;
+
+  public Action<MuxStreamStats>? OnStats
+  {
+    set => _statsMonitor = value == null ? null : new MuxStreamStatsMonitor(value);
+  }
 
   public MjpegMuxer(IDataStream<JpegUnit> input, string fileExtension)
   {
@@ -20,11 +26,6 @@ public sealed class MjpegMuxer
     _fileExtension = fileExtension;
   }
 
-  /// <summary>
-  /// Resolution is left unset rather than read off a first frame: every JPEG carries its own
-  /// dimensions, and blocking here would tie pipeline construction to the producer managing to
-  /// emit, which for an analyzer-fed stream may never happen.
-  /// </summary>
   public MuxStreamInfo Init() =>
     new()
     {
@@ -39,7 +40,11 @@ public sealed class MjpegMuxer
     [EnumeratorCancellation] CancellationToken ct)
   {
     await foreach (var unit in _input.ReadAsync(ct))
-      yield return BuildFragment(unit);
+    {
+      var fragment = BuildFragment(unit);
+      _statsMonitor?.RecordFrame($"{unit.Width}x{unit.Height}", fragment.Data.Length);
+      yield return fragment;
+    }
   }
 
   private static JpegFragment BuildFragment(JpegUnit unit)

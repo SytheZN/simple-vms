@@ -1,6 +1,7 @@
 using System.Threading.Channels;
 using MessagePack;
 using Microsoft.Extensions.Logging;
+using Server.Plugins;
 using Server.Streaming;
 using Shared.Protocol;
 
@@ -12,6 +13,7 @@ internal static class LiveHandler
     ChannelReader<MuxMessage> reader,
     IStreamSink sink,
     StreamTapRegistry tapRegistry,
+    IPluginHost plugins,
     ILogger logger,
     CancellationToken ct)
   {
@@ -19,7 +21,10 @@ internal static class LiveHandler
     var subscribe = MessagePackSerializer.Deserialize<LiveSubscribeMessage>(
       msg.Payload, ProtocolSerializer.Options);
 
-    await StreamSessionRunner.RunLiveAsync(
-      subscribe.CameraId, subscribe.Profile, sink, tapRegistry, logger, ct);
+    await StreamCommandLoop.RunAsync(
+      subscribe.CameraId,
+      opCt => StreamSessionRunner.RunLiveAsync(
+        subscribe.CameraId, subscribe.Profile, sink, tapRegistry, logger, opCt),
+      reader, sink, tapRegistry, plugins, logger, ct);
   }
 }

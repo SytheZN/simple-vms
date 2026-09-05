@@ -1,7 +1,8 @@
 import { ref, watch } from 'vue'
-import type { Player } from './usePlayer'
+import type { Player, GlobalStats, PipelineStats } from './usePlayer'
 import type { Streamer } from './useStreamer'
 import { parseInitSegment, buildCodecString } from '@/media/fmp4'
+import { FrameTimingRing } from '@/media/frameTiming'
 
 type State = 'blocked' | 'seeking' | 'streaming' | 'buffering-next'
 
@@ -50,6 +51,9 @@ export function usePlayerFallback(): Player {
 
   let gapEnd = 0
   let fetchInFlight = false
+  let fetchExhaustedUntil = 0
+  let dataSinceFetch = false
+  const frameTiming = new FrameTimingRing()
   let rafId: number | null = null
   let tsEpoch = 0
   let tsEpochAtLastUpdate = -1
@@ -58,6 +62,7 @@ export function usePlayerFallback(): Player {
 
   function sendFetch(from: number, to: number) {
     fetchInFlight = true
+    dataSinceFetch = false
     streamer?.fetch(currentProfile, from, to)
   }
 
@@ -94,6 +99,14 @@ export function usePlayerFallback(): Player {
       if (!s.mediaSource || s.mediaSource.readyState !== 'open') return
       slotFlush(s)
     })
+
+    if ('requestVideoFrameCallback' in vid) {
+      const onFrame = () => {
+        if (s === slot && !paused.value) frameTiming.mark()
+        vid.requestVideoFrameCallback(onFrame)
+      }
+      vid.requestVideoFrameCallback(onFrame)
+    }
 
     return s
   }
@@ -242,6 +255,7 @@ export function usePlayerFallback(): Player {
     if (fetchInFlight || !streamer || !slot || mode.value === 'live') return
     if (state !== 'streaming') return
     if (tsEpochAtLastUpdate !== tsEpoch) return
+    if (Date.now() < fetchExhaustedUntil) return
 
     const vid = slot.video
     const bufferedAhead = vid.buffered.length > 0
@@ -329,6 +343,8 @@ export function usePlayerFallback(): Player {
     seekTargetUs = ts ?? 0
     ignoreData = true
     fetchInFlight = false
+    fetchExhaustedUntil = 0
+    frameTiming.interrupt()
 
     if (nextSlot) { destroySlot(nextSlot); nextSlot = null }
     gapEnd = 0
@@ -394,6 +410,8 @@ export function usePlayerFallback(): Player {
 
   function handleGop(_profile: string, gopTimestamp: number, data: Uint8Array) {
     if (ignoreData) return
+    dataSinceFetch = true
+    fetchExhaustedUntil = 0
     const chunk = new Uint8Array(data)
 
     switch (state) {
@@ -453,6 +471,8 @@ export function usePlayerFallback(): Player {
   function handleFetchComplete() {
     if (debug) console.log('FETCHCOMPLETE', 'state:', state, 'seekGapEnd:', seekGapEnd, 'gapEnd:', gapEnd)
     fetchInFlight = false
+    if (!dataSinceFetch)
+      fetchExhaustedUntil = Date.now() + 2000
     switch (state) {
       case 'seeking':
         if (seekGapEnd > 0) {
@@ -528,10 +548,12 @@ export function usePlayerFallback(): Player {
     }
     paused.value = !paused.value
     if (!slot) return
-    if (paused.value)
+    if (paused.value) {
       slot.video.pause()
-    else
+    } else {
+      frameTiming.interrupt()
       slot.video.play().catch(() => {})
+    }
   }
 
   function scrubStart() {
@@ -622,6 +644,44 @@ export function usePlayerFallback(): Player {
     seekGapEnd = 0
     gapEnd = 0
     ignoreData = false
+    fetchExhaustedUntil = 0
+    frameTiming.reset()
+  }
+
+  function buildGlobalStats(): GlobalStats {
+    const vid = slot?.video ?? null
+    return {
+      backend: 'mse / video',
+      state,
+      mode: mode.value,
+      rate: rate.value,
+      catchup: vid && rate.value > 0 ? vid.playbackRate / rate.value : 1,
+      buffering: buffering.value,
+    }
+  }
+
+  function buildPipelineStats(): PipelineStats {
+    const vid = slot?.video ?? null
+    const bufferedEndS = vid && vid.buffered.length > 0
+      ? vid.buffered.end(vid.buffered.length - 1)
+      : 0
+    let queueBytes = 0
+    if (slot)
+      for (const chunk of slot.queue) queueBytes += chunk.length
+    return {
+      label: 'primary',
+      profile: currentProfile,
+      bufferUs: vid ? Math.max(0, (bufferedEndS - vid.currentTime) * 1_000_000) : 0,
+      positionUs: timestampUs.value,
+      fetcherGops: slot?.queue.length ?? 0,
+      fetcherBytes: queueBytes,
+      decoderGops: slot?.anchors.length ?? 0,
+      decoderFrames: vid?.getVideoPlaybackQuality?.().totalVideoFrames ?? 0,
+    }
+  }
+
+  function copyFrameTimes(dest: Float64Array): number {
+    return frameTiming.copy(dest)
   }
 
   return {
@@ -645,5 +705,8 @@ export function usePlayerFallback(): Player {
     goLive,
     setProfile,
     stop,
+    globalStats: buildGlobalStats,
+    pipelineStats: buildPipelineStats,
+    copyFrameTimes,
   }
 }

@@ -2,10 +2,12 @@
 import { ref, shallowRef, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { api, ApiError } from '@/api/client'
-import { usePlayer, type Player } from '@/composables/usePlayer'
+import { usePlayer, type Player, type PipelineStats } from '@/composables/usePlayer'
 import { usePlayerFallback } from '@/composables/usePlayerFallback'
 import { useStreamer } from '@/composables/useStreamer'
+import { useOverlay } from '@/composables/useOverlay'
 import Timeline from '@/components/Timeline.vue'
+import PlayerStats from '@/components/PlayerStats.vue'
 import type { CameraListItem } from '@/types/api'
 
 async function supportsWebCodecsHevc(): Promise<boolean> {
@@ -37,12 +39,24 @@ const camera = ref<CameraListItem | null>(null)
 const error = ref('')
 const loading = ref(true)
 const selectedProfile = ref('main')
-const motionOverlay = ref(false)
 
 const playerContainerRef = ref<HTMLDivElement | null>(null)
 const playerRef = ref<HTMLDivElement | null>(null)
+const overlayCanvasRef = ref<HTMLCanvasElement | null>(null)
 const timelineRef = ref<InstanceType<typeof Timeline> | null>(null)
 const isFullscreen = ref(false)
+const statsVisible = ref(false)
+
+function onKeyDown(e: KeyboardEvent) {
+  if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'd') {
+    e.preventDefault()
+    statsVisible.value = !statsVisible.value
+  }
+}
+
+const debug = typeof localStorage !== 'undefined' && localStorage.getItem('debug_player') !== null
+const blankVideo = typeof localStorage !== 'undefined' && localStorage.getItem('debug_blank_video') !== null
+const forceMse = typeof localStorage !== 'undefined' && localStorage.getItem('debug_force_mse') !== null
 
 const player = shallowRef<Player | null>(null)
 const streamer = useStreamer()
@@ -72,6 +86,15 @@ function syncState() {
     minRate: player.value.minRate.value,
     maxRate: player.value.maxRate.value,
   }
+}
+
+const overlay = useOverlay(cameraId, camera, selectedProfile, overlayCanvasRef, playerState)
+
+function buildPipelines(): PipelineStats[] {
+  const primary = player.value?.pipelineStats?.()
+  if (!primary) return []
+  const overlayPipeline = overlay.pipelineStats()
+  return overlayPipeline ? [primary, overlayPipeline] : [primary]
 }
 
 const rateSteps = computed(() => buildRateSteps(playerState.value.minRate, playerState.value.maxRate))
@@ -149,7 +172,8 @@ async function loadCamera() {
 async function startStream() {
   if (!playerContainerRef.value) return
 
-  const webcodecs = await supportsWebCodecsHevc()
+  const webcodecs = !forceMse && await supportsWebCodecsHevc()
+  if (debug) console.log('player using', webcodecs ? 'webcodecs' : 'mse fallback')
   player.value = webcodecs ? usePlayer() : usePlayerFallback()
 
   player.value.attach(playerContainerRef.value, streamer, cameraId.value, selectedProfile.value)
@@ -181,17 +205,21 @@ watch(() => playerState.value.timestampUs, () => {
 function goLiveWithReset() {
   resetOnNextTimeUpdate = true
   player.value?.goLive()
+  overlay.onGoLive()
 }
 
 onMounted(async () => {
   document.addEventListener('fullscreenchange', onFullscreenChange)
+  window.addEventListener('keydown', onKeyDown)
   await loadCamera()
   startStream()
 })
 
 onUnmounted(() => {
   document.removeEventListener('fullscreenchange', onFullscreenChange)
+  window.removeEventListener('keydown', onKeyDown)
   streamer.disconnect()
+  overlay.deactivate()
   player.value?.stop()
 })
 </script>
@@ -216,12 +244,18 @@ onUnmounted(() => {
       <div class="card overflow-hidden flex-1 min-h-0 flex flex-col">
         <div ref="playerRef" class="bg-surface-sunken flex-1 min-h-0 relative flex items-center justify-center">
           <div ref="playerContainerRef" class="w-full h-full flex items-center justify-center"></div>
-          <!-- Motion overlay -->
+          <div v-if="blankVideo" class="absolute inset-0 bg-black"></div>
           <canvas
-            v-if="motionOverlay"
+            v-if="overlay.active.value"
+            ref="overlayCanvasRef"
             class="absolute inset-0 w-full h-full object-contain pointer-events-none"
-            style="image-rendering: pixelated;"
+            style="image-rendering: pixelated; background-color: var(--color-motion-dim);"
           ></canvas>
+          <PlayerStats
+            v-if="statsVisible"
+            :player="player"
+            :pipelines="buildPipelines"
+          />
           <div
             v-if="playerState.blocked"
             class="absolute inset-0 flex items-center justify-center bg-black/50 cursor-pointer"
@@ -305,8 +339,13 @@ onUnmounted(() => {
           <button class="btn btn-ghost btn-sm" @click="cycleProfile">
             {{ selectedProfile }} ({{ selectedStream?.resolution }} {{ selectedStream?.codec }})
           </button>
-          <button class="btn btn-ghost btn-sm" @click="motionOverlay = !motionOverlay" :title="motionOverlay ? 'Hide motion overlay' : 'Show motion overlay'">
-            <i class="ph ph-person-arms-spread icon-sm"></i>
+          <button
+            v-if="overlay.available.value"
+            class="btn btn-ghost btn-sm"
+            :class="{ 'opacity-50': !overlay.active.value }"
+            @click="overlay.toggle"
+          >
+            <i class="ph-person-arms-spread icon-sm" :class="overlay.active.value ? 'ph-fill' : 'ph'"></i>
           </button>
         </div>
 
@@ -316,10 +355,10 @@ onUnmounted(() => {
           :camera-id="cameraId"
           :profile="selectedProfile"
           :current-time-us="playerState.timestampUs"
-          @seek="(ts: number) => player?.seek(ts)"
+          @seek="(ts: number) => { player?.seek(ts); overlay.onSeek(ts) }"
           @scrub-start="player?.scrubStart()"
           @scrub-move="(ts: number) => player?.scrubMove(ts)"
-          @scrub-end="(ts: number) => player?.scrubEnd(ts)"
+          @scrub-end="(ts: number) => { player?.scrubEnd(ts); overlay.onSeek(ts) }"
         />
       </div>
     </template>

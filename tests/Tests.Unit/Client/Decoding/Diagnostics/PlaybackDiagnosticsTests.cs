@@ -12,12 +12,6 @@ public class PlaybackDiagnosticsTests
     Mode: "Live",
     Rate: 1.0,
     CatchupRate: 1.0,
-    PositionUs: 1_000_000,
-    BufferUs: 250_000,
-    FetcherGops: 4,
-    FetcherBytes: 4096,
-    DecodedGops: 2,
-    DecodedFrames: 60,
     Buffering: false);
 
   /// <summary>
@@ -58,8 +52,8 @@ public class PlaybackDiagnosticsTests
   [Test]
   public void Snapshot_InvokesPullEachCall()
   {
-    var counter = 0L;
-    PlaybackStats Pull() => SampleStats() with { PositionUs = ++counter };
+    var counter = 0.0;
+    PlaybackStats Pull() => SampleStats() with { Rate = ++counter };
     var diag = new PlaybackDiagnostics(Pull, new DiagnosticsSettings());
 
     var first = diag.Snapshot();
@@ -67,8 +61,8 @@ public class PlaybackDiagnosticsTests
 
     Assert.Multiple(() =>
     {
-      Assert.That(first.PositionUs, Is.EqualTo(1));
-      Assert.That(second.PositionUs, Is.EqualTo(2));
+      Assert.That(first.Rate, Is.EqualTo(1));
+      Assert.That(second.Rate, Is.EqualTo(2));
     });
   }
 

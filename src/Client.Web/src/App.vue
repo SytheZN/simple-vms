@@ -67,9 +67,6 @@ onMounted(async () => {
       <router-link to="/events" class="nav-link" active-class="nav-link-active">
         <i class="ph ph-lightning icon-sm"></i> Events
       </router-link>
-      <router-link to="/clients" class="nav-link" active-class="nav-link-active">
-        <i class="ph ph-devices icon-sm"></i> Clients
-      </router-link>
       <a href="#" class="nav-link" :class="{ 'nav-link-active': isSettingsPage }" @click.prevent="settingsOpen = !settingsOpen">
         <i class="ph ph-gear icon-sm"></i> Settings
         <i class="ph ph-caret-down icon-sm nav-link-toggle" :class="{ 'nav-link-toggle-open': settingsOpen }"></i>
@@ -77,6 +74,9 @@ onMounted(async () => {
       <div v-if="settingsOpen" class="nav-children">
         <router-link to="/settings/general" class="nav-child" active-class="nav-child-active">
           <i class="ph ph-faders icon-sm"></i> General
+        </router-link>
+        <router-link to="/settings/clients" class="nav-child" active-class="nav-child-active">
+          <i class="ph ph-devices icon-sm"></i> Clients
         </router-link>
         <router-link to="/settings/cameras" class="nav-child" :class="{ 'nav-child-active': route.path.startsWith('/settings/cameras') }">
           <i class="ph ph-video-camera icon-sm"></i> Cameras

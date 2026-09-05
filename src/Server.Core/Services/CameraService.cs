@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Server.Plugins;
@@ -14,6 +15,7 @@ public sealed class CameraService : IHostedService
   private readonly CameraStatusTracker _status;
   private readonly IEventBus _eventBus;
   private readonly ILogger<CameraService> _logger;
+  private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _reprobeLocks = new();
   private CancellationTokenSource? _eventCts;
 
   public CameraService(IPluginHost plugins, CameraStatusTracker status, IEventBus eventBus, ILogger<CameraService> logger)
@@ -27,7 +29,7 @@ public sealed class CameraService : IHostedService
   public Task StartAsync(CancellationToken cancellationToken)
   {
     _eventCts = new CancellationTokenSource();
-    WatchPipelineConfigMismatch(_eventCts.Token);
+    WatchCameraReprobeRequested(_eventCts.Token);
     return Task.CompletedTask;
   }
 
@@ -39,52 +41,43 @@ public sealed class CameraService : IHostedService
     return Task.CompletedTask;
   }
 
-  /// <summary>
-  /// Stored stream metadata belongs to the camera provider, so a stream that no longer matches what
-  /// was probed is re-read from the provider rather than inferred from the bitstream.
-  /// </summary>
-  private void WatchPipelineConfigMismatch(CancellationToken ct)
+  private void WatchCameraReprobeRequested(CancellationToken ct)
   {
     _ = Task.Run(async () =>
     {
-      await foreach (var evt in _eventBus.SubscribeAsync<PipelineConfigMismatch>(ct))
-      {
-        try
-        {
-          var cameraId = await FindCameraByStreamUriAsync(evt.Uri, ct);
-          if (cameraId == null)
-          {
-            _logger.LogWarning("No camera owns stream {Uri}; cannot refresh after it changed", evt.Uri);
-            continue;
-          }
-
-          var refreshed = await RefreshAsync(cameraId.Value, ct);
-          if (refreshed.IsT1)
-            _logger.LogError("Refresh failed for camera {CameraId} after {Uri} changed: {Message}",
-              cameraId, evt.Uri, refreshed.AsT1.Message);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-          _logger.LogError(ex, "Failed to refresh camera after {Uri} changed", evt.Uri);
-        }
-      }
+      await foreach (var evt in _eventBus.SubscribeAsync<CameraReprobeRequested>(ct))
+        _ = HandleReprobeAsync(evt, ct);
     }, ct);
   }
 
-  private async Task<Guid?> FindCameraByStreamUriAsync(string uri, CancellationToken ct)
+  private async Task HandleReprobeAsync(CameraReprobeRequested evt, CancellationToken ct)
   {
-    var camerasResult = await _plugins.DataProvider.Cameras.GetAllAsync(ct);
-    if (camerasResult.IsT1) return null;
-
-    foreach (var camera in camerasResult.AsT0)
+    var sem = _reprobeLocks.GetOrAdd(evt.CameraId, _ => new SemaphoreSlim(1, 1));
+    if (!await sem.WaitAsync(0, ct))
     {
-      var streams = await _plugins.DataProvider.Streams.GetByCameraIdAsync(camera.Id, ct);
-      if (streams.IsT1) continue;
-      if (streams.AsT0.Any(s => s.Uri == uri))
-        return camera.Id;
+      _logger.LogDebug(
+        "Reprobe already active for camera {CameraId}; dropping request from {Initiator}",
+        evt.CameraId, evt.Initiator);
+      return;
     }
 
-    return null;
+    try
+    {
+      var result = await RefreshAsync(evt.CameraId, ct);
+      if (result.IsT1)
+        _logger.LogError(
+          "Reprobe failed for camera {CameraId} (initiator: {Initiator}): {Message}",
+          evt.CameraId, evt.Initiator, result.AsT1.Message);
+    }
+    catch (Exception ex) when (ex is not OperationCanceledException)
+    {
+      _logger.LogError(ex, "Reprobe threw for camera {CameraId} (initiator: {Initiator})",
+        evt.CameraId, evt.Initiator);
+    }
+    finally
+    {
+      sem.Release();
+    }
   }
 
   public async Task<OneOf<IReadOnlyList<CameraDto>, Error>> GetAllAsync(
@@ -107,7 +100,7 @@ public sealed class CameraService : IHostedService
             {
               var byId = s.ToDictionary(x => x.Id);
               return s.Where(x => x.DeletedAt == null)
-                .Select(x => ToStreamDto(x, id => byId.TryGetValue(id, out var v) ? v : null))
+                .Select(x => ToStreamDto(cam.Id, x, id => byId.TryGetValue(id, out var v) ? v : null))
                 .ToList();
             },
             _ => new List<StreamProfileDto>());
@@ -131,7 +124,7 @@ public sealed class CameraService : IHostedService
           s =>
           {
             var byId = s.ToDictionary(x => x.Id);
-            return s.Select(x => ToStreamDto(x, id => byId.TryGetValue(id, out var v) ? v : null)).ToList();
+            return s.Select(x => ToStreamDto(cam.Id, x, id => byId.TryGetValue(id, out var v) ? v : null)).ToList();
           },
           _ => new List<StreamProfileDto>());
         return ToCameraListItem(cam, _status.GetStatus(cam.Id), streamDtos);
@@ -241,6 +234,7 @@ public sealed class CameraService : IHostedService
     if (result.IsT1) return result.AsT1;
 
     var camera = result.AsT0;
+    var originalName = camera.Name;
     var originalAddress = camera.Address;
     var originalProviderId = camera.ProviderId;
     var originalRtspPort = camera.Config.GetValueOrDefault("rtspPortOverride");
@@ -268,6 +262,27 @@ public sealed class CameraService : IHostedService
 
     var updateResult = await _plugins.DataProvider.Cameras.UpdateAsync(camera, ct);
     if (updateResult.IsT1) return updateResult.AsT1;
+
+    var nameChanged = camera.Name != originalName;
+    var addressChanged = camera.Address != originalAddress;
+    var providerChanged = camera.ProviderId != originalProviderId;
+    var rtspPort = camera.Config.GetValueOrDefault("rtspPortOverride");
+    var rtspPortChanged = rtspPort != originalRtspPort;
+    if (nameChanged || addressChanged || providerChanged
+      || request.Credentials != null || rtspPortChanged)
+    {
+      await _eventBus.PublishAsync(new CameraUpdated
+      {
+        CameraId = id,
+        Name = camera.Name,
+        PreviousName = nameChanged ? originalName : null,
+        Address = addressChanged ? camera.Address : null,
+        ProviderId = providerChanged ? camera.ProviderId : null,
+        CredentialsUpdated = request.Credentials != null,
+        RtspPortOverride = rtspPortChanged ? rtspPort ?? "" : null,
+        Timestamp = camera.UpdatedAt
+      }, ct);
+    }
 
     var needsRefresh = request.Credentials != null
       || (request.Address != null && camera.Address != originalAddress)
@@ -337,26 +352,24 @@ public sealed class CameraService : IHostedService
         var rtspPortOverride = camera.Config.TryGetValue("rtspPortOverride", out var portStr)
           && int.TryParse(portStr, out var port) ? (int?)port : null;
 
+        var diff = new Dictionary<string, DiffChange>();
         var streamDtos = new List<StreamProfileDto>();
-        var streamsChanged = false;
         foreach (var s in config.Streams)
         {
           if (existingProfiles.TryGetValue(s.Profile, out var existing))
           {
+            var uri = rtspPortOverride.HasValue ? RewriteRtspPort(s.Uri, rtspPortOverride.Value) : s.Uri;
+            DiffStreamUpdate(diff, id, existing, s, uri);
             existing.Codec = s.Codec;
             existing.Resolution = s.Resolution;
             existing.Fps = s.Fps;
             existing.Bitrate = s.Bitrate;
-            var uri = rtspPortOverride.HasValue ? RewriteRtspPort(s.Uri, rtspPortOverride.Value) : s.Uri;
-            if (existing.Uri != uri)
-              streamsChanged = true;
             existing.Uri = uri;
             await _plugins.DataProvider.Streams.UpsertAsync(existing, ct);
-            streamDtos.Add(ToStreamDto(existing));
+            streamDtos.Add(ToStreamDto(id, existing));
           }
           else
           {
-            streamsChanged = true;
             var uri = rtspPortOverride.HasValue ? RewriteRtspPort(s.Uri, rtspPortOverride.Value) : s.Uri;
             var stream = new CameraStream
             {
@@ -372,8 +385,13 @@ public sealed class CameraService : IHostedService
               Uri = uri,
               RecordingEnabled = true
             };
+            diff[ConfigDiff.Stream(id, stream.Id)] = new DiffChange
+            {
+              Type = DiffChangeType.Add,
+              NewValue = stream.Profile
+            };
             await _plugins.DataProvider.Streams.UpsertAsync(stream, ct);
-            streamDtos.Add(ToStreamDto(stream));
+            streamDtos.Add(ToStreamDto(id, stream));
           }
         }
 
@@ -382,16 +400,23 @@ public sealed class CameraService : IHostedService
         {
           if (!newProfiles.Contains(profile))
           {
-            streamsChanged = true;
+            diff[ConfigDiff.Stream(id, existing.Id)] = new DiffChange
+            {
+              Type = DiffChangeType.Remove,
+              OldValue = existing.Profile
+            };
             await _plugins.DataProvider.Streams.DeleteAsync(existing.Id, ct);
           }
         }
 
-        if (streamsChanged)
+        await SyncDerivedStreamsAsync(_plugins, id, diff, _logger, ct);
+
+        if (diff.Count > 0)
         {
           await _eventBus.PublishAsync(new CameraConfigChanged
           {
             CameraId = id,
+            Diff = diff,
             Timestamp = camera.UpdatedAt
           }, ct);
         }
@@ -401,8 +426,53 @@ public sealed class CameraService : IHostedService
       err => Task.FromResult<OneOf<CameraDto, Error>>(err));
   }
 
+  private static void DiffStreamUpdate(
+    Dictionary<string, DiffChange> diff, Guid cameraId, CameraStream existing,
+    SourceStreamSpec probed, string uri)
+  {
+    var sid = existing.Id;
+    if (!string.Equals(existing.Codec, probed.Codec, StringComparison.Ordinal))
+      diff[ConfigDiff.StreamField(cameraId, sid, ConfigDiff.FieldCodec)] = new DiffChange
+      {
+        Type = DiffChangeType.Update,
+        OldValue = existing.Codec,
+        NewValue = probed.Codec
+      };
+    if (!string.Equals(existing.Resolution, probed.Resolution, StringComparison.Ordinal))
+      diff[ConfigDiff.StreamField(cameraId, sid, ConfigDiff.FieldResolution)] = new DiffChange
+      {
+        Type = DiffChangeType.Update,
+        OldValue = existing.Resolution,
+        NewValue = probed.Resolution
+      };
+    if (existing.Fps != probed.Fps)
+      diff[ConfigDiff.StreamField(cameraId, sid, ConfigDiff.FieldFps)] = new DiffChange
+      {
+        Type = DiffChangeType.Update,
+        OldValue = existing.Fps?.ToString(),
+        NewValue = probed.Fps?.ToString()
+      };
+    if (existing.Bitrate != probed.Bitrate)
+      diff[ConfigDiff.StreamField(cameraId, sid, ConfigDiff.FieldBitrate)] = new DiffChange
+      {
+        Type = DiffChangeType.Update,
+        OldValue = existing.Bitrate?.ToString(),
+        NewValue = probed.Bitrate?.ToString()
+      };
+    if (!string.Equals(existing.Uri, uri, StringComparison.Ordinal))
+      diff[ConfigDiff.StreamField(cameraId, sid, ConfigDiff.FieldUri)] = new DiffChange
+      {
+        Type = DiffChangeType.Update,
+        OldValue = existing.Uri,
+        NewValue = uri
+      };
+  }
+
   public async Task<OneOf<Success, Error>> DeleteAsync(Guid id, CancellationToken ct)
   {
+    var cameraResult = await _plugins.DataProvider.Cameras.GetByIdAsync(id, ct);
+    var cameraName = cameraResult.IsT0 ? cameraResult.AsT0.Name : "";
+
     var streamsResult = await _plugins.DataProvider.Streams.GetByCameraIdAsync(id, ct);
     var streamIds = streamsResult.IsT0
       ? streamsResult.AsT0.Select(s => s.Id).ToList()
@@ -436,6 +506,7 @@ public sealed class CameraService : IHostedService
     await _eventBus.PublishAsync(new CameraRemoved
     {
       CameraId = id,
+      Name = cameraName,
       Timestamp = DateTimeOffset.UtcNow.ToUnixMicroseconds()
     }, CancellationToken.None);
 
@@ -477,11 +548,16 @@ public sealed class CameraService : IHostedService
         ? null : cam.RetentionValue
     };
 
-  private static StreamProfileDto ToStreamDto(CameraStream s, Func<Guid, CameraStream?>? lookup = null)
+  private StreamProfileDto ToStreamDto(Guid cameraId, CameraStream s, Func<Guid, CameraStream?>? lookup = null)
   {
-    var recordingEnabled = s.Kind == StreamKind.Metadata && lookup != null
-      ? StreamHierarchy.ResolveRootStream(s, lookup).RecordingEnabled
-      : s.RecordingEnabled;
+    bool recordingEnabled;
+    if (s.Kind != StreamKind.Metadata)
+      recordingEnabled = s.RecordingEnabled;
+    else if (lookup == null)
+      recordingEnabled = false;
+    else
+      recordingEnabled = IsDerivedStreamRecordable(cameraId, s)
+        && StreamHierarchy.ResolveRootStream(s, lookup).RecordingEnabled;
 
     return new StreamProfileDto
     {
@@ -493,6 +569,99 @@ public sealed class CameraService : IHostedService
       Fps = s.Fps ?? 0m,
       RecordingEnabled = recordingEnabled
     };
+  }
+
+  private bool IsDerivedStreamRecordable(Guid cameraId, CameraStream s)
+  {
+    if (s.ProducerId == null) return true;
+    var analyzer = _plugins.Analyzers.FirstOrDefault(a => a.AnalyzerId == s.ProducerId);
+    if (analyzer is not IDataStreamAnalyzerStreamOutput streamOutput) return true;
+    return streamOutput.GetDerivedStreams(cameraId)
+      .FirstOrDefault(spec => spec.Profile == s.Profile)?.Recordable ?? true;
+  }
+
+  internal static async Task SyncDerivedStreamsAsync(
+    IPluginHost plugins,
+    Guid cameraId,
+    Dictionary<string, DiffChange> diff,
+    ILogger logger,
+    CancellationToken ct)
+  {
+    var streamsResult = await plugins.DataProvider.Streams.GetByCameraIdAsync(cameraId, ct);
+    if (streamsResult.IsT1) return;
+    var allStreams = streamsResult.AsT0;
+
+    var sourcesByProfile = allStreams
+      .Where(s => s.DeletedAt == null && s.ProducerId == null)
+      .ToDictionary(s => s.Profile);
+
+    foreach (var identity in plugins.Analyzers)
+    {
+      if (identity is not IDataStreamAnalyzerStreamOutput analyzer) continue;
+      var producerId = identity.AnalyzerId;
+      var specs = analyzer.GetDerivedStreams(cameraId);
+
+      var existingForProducer = allStreams
+        .Where(s => s.ProducerId == producerId)
+        .ToDictionary(s => s.Profile);
+
+      foreach (var spec in specs)
+      {
+        if (!sourcesByProfile.TryGetValue(spec.ParentProfile, out var parent))
+        {
+          logger.LogWarning(
+            "Analyzer {AnalyzerId} declared spec for unknown parent profile '{Parent}' on camera {CameraId}",
+            producerId, spec.ParentProfile, cameraId);
+          continue;
+        }
+
+        if (existingForProducer.TryGetValue(spec.Profile, out var existing))
+        {
+          var dirty = false;
+          if (existing.DeletedAt != null) { existing.DeletedAt = null; dirty = true; }
+          if (existing.FormatId != spec.FormatId) { existing.FormatId = spec.FormatId; dirty = true; }
+          if (existing.Kind != spec.Kind) { existing.Kind = spec.Kind; dirty = true; }
+          if (existing.ParentStreamId != parent.Id) { existing.ParentStreamId = parent.Id; dirty = true; }
+          if (existing.Codec != spec.Codec) { existing.Codec = spec.Codec; dirty = true; }
+          if (dirty)
+            await plugins.DataProvider.Streams.UpsertAsync(existing, ct);
+        }
+        else
+        {
+          var row = new CameraStream
+          {
+            Id = Guid.NewGuid(),
+            CameraId = cameraId,
+            Profile = spec.Profile,
+            Kind = spec.Kind,
+            FormatId = spec.FormatId,
+            Codec = spec.Codec,
+            ParentStreamId = parent.Id,
+            ProducerId = producerId
+          };
+          await plugins.DataProvider.Streams.UpsertAsync(row, ct);
+          diff[ConfigDiff.Stream(cameraId, row.Id)] = new DiffChange
+          {
+            Type = DiffChangeType.Add,
+            NewValue = row.Profile
+          };
+        }
+      }
+
+      var declared = specs.Select(s => s.Profile).ToHashSet();
+      foreach (var (profile, row) in existingForProducer)
+      {
+        if (declared.Contains(profile)) continue;
+        if (row.DeletedAt != null) continue;
+        row.DeletedAt = DateTimeOffset.UtcNow.ToUnixMicroseconds();
+        await plugins.DataProvider.Streams.UpsertAsync(row, ct);
+        diff[ConfigDiff.Stream(cameraId, row.Id)] = new DiffChange
+        {
+          Type = DiffChangeType.Remove,
+          OldValue = row.Profile
+        };
+      }
+    }
   }
 
   internal static string NormalizeOnvifAddress(string address)

@@ -142,6 +142,33 @@ public sealed class EnrollmentTests
 
   /// <summary>
   /// SCENARIO:
+  /// The web UI is holding an enrollment token when a client consumes it
+  ///
+  /// ACTION:
+  /// Start enrollment, open the hold request, then complete enrollment
+  ///
+  /// EXPECTED RESULT:
+  /// The hold request completes with 200 once the token is consumed
+  /// </summary>
+  [Test]
+  public async Task HoldToken_CompletesWhenTokenConsumed()
+  {
+    var start = (await ApiTestFixture.Envelope<StartEnrollmentResponse>(
+      await _client.PostAsync("/api/v1/clients/enroll", null))).Body!;
+
+    var hold = _client.GetAsync($"/api/v1/clients/enroll/{start.Token}/hold");
+    await Task.Delay(200);
+
+    var enroll = await _client.PostAsJsonAsync("/api/v1/enroll",
+      new { token = start.Token });
+    Assert.That(enroll.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+
+    var holdResponse = await hold.WaitAsync(TimeSpan.FromSeconds(5));
+    Assert.That(holdResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+  }
+
+  /// <summary>
+  /// SCENARIO:
   /// A client has been enrolled via the full flow
   ///
   /// ACTION:

@@ -49,9 +49,14 @@ public sealed class EventBus : IEventBus
 
     try
     {
-      await foreach (var evt in channel.Reader.ReadAllAsync(ct))
+      while (true)
       {
-        yield return evt;
+        bool available;
+        try { available = await channel.Reader.WaitToReadAsync(ct); }
+        catch (OperationCanceledException) { break; }
+        if (!available) break;
+        while (channel.Reader.TryRead(out var item))
+          yield return item;
       }
     }
     finally

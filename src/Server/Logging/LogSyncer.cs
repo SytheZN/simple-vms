@@ -80,7 +80,6 @@ public sealed class LogSyncer : IDisposable
         if (!synced)
           await DelayOrStop(ct);
       }
-      catch (OperationCanceledException) { }
       catch
       {
         data?.Dispose();
@@ -121,11 +120,8 @@ public sealed class LogSyncer : IDisposable
     return stream.Position;
   }
 
-  private static async Task DelayOrStop(CancellationToken ct)
-  {
-    try { await Task.Delay(250, ct); }
-    catch (OperationCanceledException) { }
-  }
+  private static async Task DelayOrStop(CancellationToken ct) =>
+    await Task.Delay(250, ct).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
 
   public void Dispose()
   {

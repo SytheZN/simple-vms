@@ -45,9 +45,9 @@ public class FetcherExtraTests
   public void BufferedBytes_SumsAllChunks()
   {
     var f = new Fetcher();
-    f.AppendData(1000, new byte[5]);
-    f.AppendData(1000, new byte[7]);
-    f.AppendData(2000, new byte[3]);
+    f.AppendData(1000, new byte[5], true);
+    f.AppendData(1000, new byte[7], false);
+    f.AppendData(2000, new byte[3], true);
 
     Assert.That(f.BufferedBytes, Is.EqualTo(15));
   }
@@ -69,7 +69,7 @@ public class FetcherExtraTests
     var f = new Fetcher();
     f.HandleRecording();
     for (ulong t = 1000; t <= 5000; t += 1000)
-      f.AppendData(t, new byte[] { 1 });
+      f.AppendData(t, new byte[] { 1 }, true);
 
     f.SetTarget(2000, 1000);
 
@@ -246,7 +246,7 @@ public class FetcherExtraTests
   {
     var f = new Fetcher();
     var chunk = new byte[] { 1, 2, 3 };
-    f.AppendData(1000, chunk);
+    f.AppendData(1000, chunk, true);
     var gop = f.FindGop(1000)!;
 
     var merged = Fetcher.MergedData(gop);
@@ -268,9 +268,9 @@ public class FetcherExtraTests
   public void MergedData_MultipleChunks_Concatenates()
   {
     var f = new Fetcher();
-    f.AppendData(1000, new byte[] { 0xA });
-    f.AppendData(1000, new byte[] { 0xB, 0xC });
-    f.AppendData(1000, new byte[] { 0xD });
+    f.AppendData(1000, new byte[] { 0xA }, true);
+    f.AppendData(1000, new byte[] { 0xB, 0xC }, false);
+    f.AppendData(1000, new byte[] { 0xD }, false);
     var gop = f.FindGop(1000)!;
 
     var merged = Fetcher.MergedData(gop);
@@ -292,9 +292,9 @@ public class FetcherExtraTests
   public void OldestNewest_ReflectExtremes()
   {
     var f = new Fetcher();
-    f.AppendData(3000, new byte[] { 0 });
-    f.AppendData(1000, new byte[] { 0 });
-    f.AppendData(2000, new byte[] { 0 });
+    f.AppendData(3000, new byte[] { 0 }, true);
+    f.AppendData(1000, new byte[] { 0 }, true);
+    f.AppendData(2000, new byte[] { 0 }, true);
 
     Assert.Multiple(() =>
     {
@@ -329,5 +329,113 @@ public class FetcherExtraTests
     f.SetTarget(20_000_000, 50_000_000);
 
     Assert.That(fetchCount, Is.EqualTo(1));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A GOP already buffered is re-delivered by an overlapping fetch
+  ///
+  /// ACTION:
+  /// Append a two-chunk GOP, then append to the same timestamp with begin=true
+  ///
+  /// EXPECTED RESULT:
+  /// The begin chunk replaces the existing chunks instead of accumulating
+  /// </summary>
+  [Test]
+  public void AppendData_BeginOnExistingGop_ReplacesChunks()
+  {
+    var f = new Fetcher();
+    f.AppendData(1000, new byte[] { 0xA }, true);
+    f.AppendData(1000, new byte[] { 0xB }, false);
+
+    f.AppendData(1000, new byte[] { 0xC }, true);
+
+    var gop = f.FindGop(1000)!;
+    Assert.That(gop.Chunks, Has.Count.EqualTo(1));
+    Assert.That(gop.Chunks[0].ToArray(), Is.EqualTo(new byte[] { 0xC }));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Playback reaches the end of recordings; a fetch completes without
+  /// delivering any new GOP
+  ///
+  /// ACTION:
+  /// SetTarget (fetch sent), HandleFetchComplete with no AppendData,
+  /// SetTarget again with the same window
+  ///
+  /// EXPECTED RESULT:
+  /// The identical re-request is suppressed
+  /// </summary>
+  [Test]
+  public void SetTarget_NoProgressFetch_SuppressesIdenticalRefetch()
+  {
+    var f = new Fetcher();
+    var fetchCount = 0;
+    f.Attach((_, _) => { fetchCount++; return Task.CompletedTask; });
+    f.HandleRecording();
+
+    f.SetTarget(10_000_000, 40_000_000);
+    f.HandleFetchComplete();
+    f.SetTarget(10_000_000, 40_000_000);
+
+    Assert.That(fetchCount, Is.EqualTo(1));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A suppressed fetch point becomes fetchable again when new data arrives
+  ///
+  /// ACTION:
+  /// Provoke the no-progress suppression, append a new GOP, SetTarget again
+  ///
+  /// EXPECTED RESULT:
+  /// The fetch is issued (new data clears the exhausted mark)
+  /// </summary>
+  [Test]
+  public void SetTarget_NewDataClearsExhaustedMark()
+  {
+    var f = new Fetcher();
+    var fetchCount = 0;
+    f.Attach((_, _) => { fetchCount++; return Task.CompletedTask; });
+    f.HandleRecording();
+
+    f.SetTarget(10_000_000, 40_000_000);
+    f.HandleFetchComplete();
+    f.SetTarget(10_000_000, 40_000_000);
+    Assert.That(fetchCount, Is.EqualTo(1));
+
+    f.AppendData(9_999_999, new byte[] { 1 }, true);
+    f.SetTarget(10_000_000, 40_000_000);
+
+    Assert.That(fetchCount, Is.EqualTo(2));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A scrub fetch (FetchAtAsync) returns nothing
+  ///
+  /// ACTION:
+  /// FetchAtAsync, HandleFetchComplete with no data, then SetTarget
+  ///
+  /// EXPECTED RESULT:
+  /// The SetTarget fetch is issued; one-shot scrub fetches never mark
+  /// a point exhausted
+  /// </summary>
+  [Test]
+  public async Task FetchAtAsync_EmptyResult_DoesNotSuppressSetTarget()
+  {
+    var f = new Fetcher();
+    var fetchCount = 0;
+    f.Attach((_, _) => { fetchCount++; return Task.CompletedTask; });
+    f.HandleRecording();
+
+    var task = f.FetchAtAsync(10_000_000);
+    f.HandleFetchComplete();
+    await task.WaitAsync(TimeSpan.FromSeconds(1));
+
+    f.SetTarget(10_000_000, 40_000_000);
+
+    Assert.That(fetchCount, Is.EqualTo(2));
   }
 }

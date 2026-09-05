@@ -6,5 +6,6 @@ public sealed class H265NalUnit : IDataUnit
   public required ulong Timestamp { get; init; }
   public required ulong MediaTimestamp { get; init; }
   public required bool IsSyncPoint { get; init; }
+  public required bool IsHeader { get; init; }
   public required H265NalType NalType { get; init; }
 }

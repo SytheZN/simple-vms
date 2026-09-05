@@ -26,7 +26,8 @@
   --color-danger-muted: oklch(0.62 0.18 350 / 0.14);
 
   --color-motion: oklch(0.68 0.15 55 / 0.35);
-  --color-motion-active: oklch(0.68 0.15 55 / 0.55);
+  --color-motion-active: oklch(0.9 0.15 55 / 0.55);
+  --color-motion-dim: oklch(0 0 0 / 0.35);
 
   --font-sans: "Rubik", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Source Code Pro", ui-monospace, monospace;
@@ -109,7 +110,8 @@
   --color-danger-muted: oklch(0.7 0.12 350 / 0.15);
 
   --color-motion: oklch(0.74 0.1 55 / 0.3);
-  --color-motion-active: oklch(0.74 0.1 55 / 0.5);
+  --color-motion-active: oklch(0.9 0.1 55 / 0.5);
+  --color-motion-dim: oklch(0 0 0 / 0.35);
 
   --backdrop-opacity: 0.7;
 
@@ -147,6 +149,7 @@
 
   --color-motion: var(--color-motion);
   --color-motion-active: var(--color-motion-active);
+  --color-motion-dim: var(--color-motion-dim);
 
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
@@ -251,6 +254,10 @@
 .badge-neutral {
   background: var(--color-surface-sunken);
   color: var(--color-text-muted);
+}
+.badge-info {
+  background: var(--color-primary-muted);
+  color: var(--color-primary);
 }
 
 .input {
@@ -380,6 +387,13 @@ input[type="number"].input::-webkit-inner-spin-button {
 }
 .toggle-track[aria-checked="true"] .toggle-knob {
   transform: translateX(var(--space-6));
+}
+
+.toggle-track[data-tristate][aria-checked="mixed"] {
+  background: var(--color-text-muted);
+}
+.toggle-track[data-tristate][aria-checked="mixed"] .toggle-knob {
+  transform: translateX(calc((var(--space-6) + var(--space-1)) / 2));
 }
 
 .section-heading {

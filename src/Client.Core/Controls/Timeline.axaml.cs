@@ -50,6 +50,7 @@ public partial class Timeline : UserControl
   private bool _renderQueued;
   private bool _isPanning;
   private bool _mouseDragging;
+  private bool _mouseMoved;
   private double _mouseLastX;
   private double? _pinchStartVisibleUs;
   private ulong _loadedFrom;
@@ -114,7 +115,7 @@ public partial class Timeline : UserControl
 
     _viewport.PlayheadTimestamp = timestampUs;
     EnsureLoaded();
-    InvalidateTimeline();
+    ScheduleCoalescedRender();
   }
 
   protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -133,11 +134,11 @@ public partial class Timeline : UserControl
     {
       _trackPanel.Height = TrackHeight;
       _playhead.Height = TrackHeight;
-      InvalidateTimeline();
+      ScheduleCoalescedRender();
     }
     else if (change.Property == PlayheadFractionProperty)
     {
-      InvalidateTimeline();
+      ScheduleCoalescedRender();
     }
     else if (change.Property == ViewModelProperty)
     {
@@ -149,25 +150,23 @@ public partial class Timeline : UserControl
       if (newVm != null)
         newVm.PropertyChanged += OnViewModelPropertyChanged;
 
-      InvalidateTimeline();
+      ScheduleCoalescedRender();
     }
   }
 
   private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
   {
     if (e.PropertyName is nameof(TimelineViewModel.Spans) or nameof(TimelineViewModel.Events))
-      InvalidateTimeline();
+      ScheduleCoalescedRender();
   }
 
   protected override void OnSizeChanged(SizeChangedEventArgs e)
   {
     base.OnSizeChanged(e);
-    InvalidateTimeline();
+    ScheduleCoalescedRender();
   }
 
-  // Coalesces bursts - a gesture can touch position, range and spans within one frame, and
-  // each of those used to drive a full rebuild of the canvases.
-  private void InvalidateTimeline()
+  private void ScheduleCoalescedRender()
   {
     if (_renderQueued) return;
     _renderQueued = true;
@@ -353,8 +352,6 @@ public partial class Timeline : UserControl
     Canvas.SetLeft(_playhead, _viewport.PlayheadX - PlayheadWidth / 2);
   }
 
-  // Children are reused across renders rather than cleared and rebuilt: the visual tree
-  // stays stable so Avalonia only re-arranges, instead of re-measuring a fresh subtree.
   private static Rectangle Take(List<Rectangle> pool, Canvas canvas, int index, IBrush fill)
   {
     var rect = Take(pool, canvas, index);
@@ -389,20 +386,17 @@ public partial class Timeline : UserControl
 
     _isPanning = true;
     _viewport.PanByPixels(-e.Delta.X);
-    InvalidateTimeline();
+    ScheduleCoalescedRender();
     e.Handled = true;
   }
 
-  // Touch panning goes through ScrollGestureRecognizer, which never sees a mouse. Capturing
-  // is safe here for the same reason: a pinch only ever involves touch pointers, so mouse
-  // capture cannot starve the gesture recognizers.
   protected override void OnPointerPressed(PointerPressedEventArgs e)
   {
     base.OnPointerPressed(e);
     if (e.Pointer.Type != PointerType.Mouse) return;
 
     _mouseDragging = true;
-    _isPanning = true;
+    _mouseMoved = false;
     _mouseLastX = e.GetPosition(this).X;
     e.Pointer.Capture(this);
   }
@@ -413,23 +407,38 @@ public partial class Timeline : UserControl
     if (!_mouseDragging) return;
 
     var x = e.GetPosition(this).X;
+    if (x == _mouseLastX) return;
+
+    _mouseMoved = true;
+    _isPanning = true;
     _viewport.PanByPixels(x - _mouseLastX);
     _mouseLastX = x;
-    InvalidateTimeline();
+    ScheduleCoalescedRender();
   }
 
   protected override void OnPointerReleased(PointerReleasedEventArgs e)
   {
     base.OnPointerReleased(e);
 
-    if (_mouseDragging)
+    if (!_mouseDragging)
     {
-      _mouseDragging = false;
-      if (ReferenceEquals(e.Pointer.Captured, this))
-        e.Pointer.Capture(null);
+      EndPan();
+      return;
     }
 
-    EndPan();
+    _mouseDragging = false;
+    if (ReferenceEquals(e.Pointer.Captured, this))
+      e.Pointer.Capture(null);
+
+    if (_mouseMoved)
+      EndPan();
+    else
+      JumpTo(e.GetPosition(this).X);
+  }
+
+  private void JumpTo(double x)
+  {
+    Scrubbed?.Invoke((ulong)Math.Max(0, _viewport.TimeAt(x)));
   }
 
   private void EndPan()
@@ -437,7 +446,7 @@ public partial class Timeline : UserControl
     if (!_isPanning) return;
 
     _isPanning = false;
-    CommitPan();
+    CommitPanWithoutRestartingPlayback();
   }
 
   protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
@@ -445,7 +454,7 @@ public partial class Timeline : UserControl
     base.OnPointerWheelChanged(e);
 
     _viewport.ZoomTo(_viewport.VisibleDurationUs * (e.Delta.Y > 0 ? 0.8 : 1.25));
-    InvalidateTimeline();
+    ScheduleCoalescedRender();
     EnsureLoaded();
     e.Handled = true;
   }
@@ -457,23 +466,20 @@ public partial class Timeline : UserControl
     _isPanning = false;
     _pinchStartVisibleUs ??= _viewport.VisibleDurationUs;
     _viewport.ZoomTo(_pinchStartVisibleUs.Value / e.Scale);
-    InvalidateTimeline();
+    ScheduleCoalescedRender();
   }
 
-  // A scroll gesture claiming the pointer makes the pinch recognizer report capture loss,
-  // which surfaces as PinchEnded for a pinch that never started.
   private void OnPinchEnded()
   {
-    if (_pinchStartVisibleUs == null) return;
+    if (IsPhantomPinchEndFromLostCapture()) return;
 
     _pinchStartVisibleUs = null;
     EnsureLoaded();
   }
 
-  // Only panning moves the playhead. Zoom keeps the timestamp fixed, so raising Scrubbed
-  // there would seek to the position it already has - restarting the stream from the
-  // nearest keyframe and visibly jumping playback.
-  private void CommitPan()
+  private bool IsPhantomPinchEndFromLostCapture() => _pinchStartVisibleUs == null;
+
+  private void CommitPanWithoutRestartingPlayback()
   {
     EnsureLoaded();
     Scrubbed?.Invoke(_viewport.PlayheadTimestamp);
@@ -501,13 +507,13 @@ public partial class Timeline : UserControl
     _tickBrush = null;
     _tickTextBrush = null;
     _playheadBrush = null;
-    InvalidateTimeline();
+    ScheduleCoalescedRender();
   }
 
   private ISolidColorBrush SpanBrush =>
     _spanBrush ??= TryFindBrush("SpanRecordingBrush") ?? Brushes.CornflowerBlue;
   private ISolidColorBrush MarkerBrush =>
-    _markerBrush ??= TryFindBrush("DangerBrush") ?? Brushes.Red;
+    _markerBrush ??= TryFindBrush("WarningBrush") ?? Brushes.Orange;
   private ISolidColorBrush TickBrush =>
     _tickBrush ??= TryFindBrush("BorderBrush") ?? Brushes.Gray;
   private ISolidColorBrush TickTextBrush =>

@@ -150,7 +150,10 @@ public sealed partial class CameraPage : UserControl
       await vm.LoadAsync(cameraId, settings.PreferredQuality, ct);
       if (_videoPlayer != null) _videoPlayer.Player = vm.Player;
       if (vm.Player != null && _statsOverlay != null)
+      {
         _statsOverlay.Diagnostics = vm.Player.Diagnostics;
+        _statsOverlay.PipelineStatsPull = () => BuildPipelines(vm);
+      }
       if (!vm.IsTunnelConnected)
         await vm.WaitForTunnelConnectedAsync(TimeSpan.FromSeconds(10), ct);
       await vm.GoLiveAsync(ct);
@@ -165,6 +168,7 @@ public sealed partial class CameraPage : UserControl
       UpdatePlayPauseIcon(vm.IsPaused);
       UpdateTimestamp((ulong)vm.CurrentPositionUs);
       if (_bufferingOverlay != null) _bufferingOverlay.IsVisible = vm.IsBuffering;
+      this.FindControl<Button>("MotionToggle")!.IsVisible = vm.HasOverlaySources;
 
       var timelineVm = ((AndroidApp)Avalonia.Application.Current!).Services
         .GetRequiredService<TimelineViewModel>();
@@ -201,6 +205,8 @@ public sealed partial class CameraPage : UserControl
     {
       if (_bufferingOverlay != null) _bufferingOverlay.IsVisible = vm.IsBuffering;
     }
+    else if (e.PropertyName == nameof(CameraViewModel.HasOverlaySources))
+      this.FindControl<Button>("MotionToggle")!.IsVisible = vm.HasOverlaySources;
   }
 
   private void SetModeDisconnected() => SetBadge("SurfaceSunkenBrush", "TextMutedBrush", "Stopped");
@@ -329,11 +335,11 @@ public sealed partial class CameraPage : UserControl
       _ = vm.GoLiveAsync(_lifetimeCts?.Token ?? CancellationToken.None);
   }
 
-  private void OnMotionToggle(object? sender, RoutedEventArgs e)
+  private async void OnMotionToggle(object? sender, RoutedEventArgs e)
   {
     if (DataContext is not CameraViewModel vm) return;
-    vm.MotionOverlay = !vm.MotionOverlay;
-    this.FindControl<Button>("MotionToggle")!.Opacity = vm.MotionOverlay ? 1.0 : 0.5;
+    await vm.ToggleOverlayAsync(_lifetimeCts?.Token ?? CancellationToken.None);
+    this.FindControl<Button>("MotionToggle")!.Opacity = vm.ActiveOverlaySource != null ? 1.0 : 0.5;
   }
 
   private void OnProfileChanged(string profile)
@@ -345,5 +351,16 @@ public sealed partial class CameraPage : UserControl
   {
     if (DataContext is CameraViewModel vm)
       _ = vm.StartPlaybackAsync(timestamp, null, _lifetimeCts?.Token ?? CancellationToken.None);
+  }
+
+  private static PipelineStats[] BuildPipelines(CameraViewModel vm)
+  {
+    var primary = vm.Player?.BuildPipelineStats();
+    if (primary == null) return [];
+    var overlay = vm.Overlay;
+    var overlayProfile = vm.ActiveOverlaySource?.Profile;
+    if (overlay != null && overlayProfile != null)
+      return [primary.Value, overlay.BuildPipelineStats(overlayProfile)];
+    return [primary.Value];
   }
 }

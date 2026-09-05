@@ -38,9 +38,9 @@
       </StackPanel>
       <StackPanel Orientation="Horizontal" Spacing="4">
         <Border Width="12" Height="2"
-                Background="{DynamicResource DangerBrush}"
+                Background="{DynamicResource WarningBrush}"
                 VerticalAlignment="Center" />
-        <TextBlock Text="Alert" Classes="text-muted"
+        <TextBlock Text="Motion" Classes="text-muted"
                    FontSize="{DynamicResource TextXs}"
                    VerticalAlignment="Center" />
       </StackPanel>

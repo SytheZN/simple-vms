@@ -6,22 +6,26 @@ namespace Server.Streaming;
 
 public sealed class DataStreamFanOut<T> : IDataStream<T>, IDataStreamFanOut where T : IDataUnit
 {
-  private readonly List<Channel<T>> _subscribers = [];
+  private readonly List<Entry> _subscribers = [];
   private readonly List<T> _gopCache = [];
   private readonly Lock _lock = new();
   private Channel<T>[]? _snapshot;
-  private int _demandCount;
 
   public StreamInfo Info { get; }
   public Type FrameType => typeof(T);
   public int SubscriberCount { get { lock (_lock) return _subscribers.Count; } }
-  public Action? OnDemand { get; set; }
-  public Action? OnEmpty { get; set; }
+  public Action? Changed { get; set; }
   public ILogger? Logger { get; set; }
 
   public DataStreamFanOut(StreamInfo info)
   {
     Info = info;
+  }
+
+  public int GetDemand()
+  {
+    lock (_lock)
+      return _subscribers.Count(s => s.Demands);
   }
 
   public void Write(T item)
@@ -30,36 +34,22 @@ public sealed class DataStreamFanOut<T> : IDataStream<T>, IDataStreamFanOut wher
     lock (_lock)
     {
       if (item.IsSyncPoint)
-        _gopCache.Clear();
+        _gopCache.RemoveAll(i => !i.IsHeader);
       _gopCache.Add(item);
-      snapshot = _snapshot ??= [.. _subscribers];
+      snapshot = _snapshot ??= [.. _subscribers.Select(s => s.Channel)];
     }
 
     foreach (var channel in snapshot)
       channel.Writer.TryWrite(item);
   }
 
-  public ChannelDataStream<T> Subscribe(int capacity = 256)
-  {
-    var channel = CreateChannel(capacity);
+  public ChannelDataStream<T> Subscribe(int capacity = 256) =>
+    Add(capacity, demands: true);
 
-    Action? onDemand = null;
-    lock (_lock)
-    {
-      foreach (var cached in _gopCache)
-        channel.Writer.TryWrite(cached);
-      _subscribers.Add(channel);
-      _snapshot = null;
-      _demandCount++;
-      if (_demandCount == 1)
-        onDemand = OnDemand;
-    }
-    onDemand?.Invoke();
+  public ChannelDataStream<T> SubscribePassive(int capacity = 256) =>
+    Add(capacity, demands: false);
 
-    return new ChannelDataStream<T>(Info, channel.Reader, () => Unsubscribe(channel, demand: true));
-  }
-
-  public ChannelDataStream<T> SubscribePassive(int capacity = 256)
+  private ChannelDataStream<T> Add(int capacity, bool demands)
   {
     var channel = CreateChannel(capacity);
 
@@ -67,11 +57,12 @@ public sealed class DataStreamFanOut<T> : IDataStream<T>, IDataStreamFanOut wher
     {
       foreach (var cached in _gopCache)
         channel.Writer.TryWrite(cached);
-      _subscribers.Add(channel);
+      _subscribers.Add(new Entry(channel, demands));
       _snapshot = null;
     }
+    Changed?.Invoke();
 
-    return new ChannelDataStream<T>(Info, channel.Reader, () => Unsubscribe(channel, demand: false));
+    return new ChannelDataStream<T>(Info, channel.Reader, () => Unsubscribe(channel));
   }
 
   private static Channel<T> CreateChannel(int capacity) =>
@@ -82,21 +73,16 @@ public sealed class DataStreamFanOut<T> : IDataStream<T>, IDataStreamFanOut wher
       SingleWriter = false
     });
 
-  private void Unsubscribe(Channel<T> channel, bool demand)
+  private void Unsubscribe(Channel<T> channel)
   {
-    Action? onEmpty = null;
     lock (_lock)
     {
-      _subscribers.Remove(channel);
+      _subscribers.RemoveAll(s => s.Channel == channel);
       _snapshot = null;
-      if (demand)
-      {
-        _demandCount--;
-        if (_demandCount == 0)
-          onEmpty = OnEmpty;
-      }
+      if (!_subscribers.Any(s => s.Demands))
+        _gopCache.Clear();
     }
-    onEmpty?.Invoke();
+    Changed?.Invoke();
   }
 
   public async IAsyncEnumerable<T> ReadAsync(
@@ -107,6 +93,8 @@ public sealed class DataStreamFanOut<T> : IDataStream<T>, IDataStreamFanOut wher
       yield return item;
   }
 
+  private readonly record struct Entry(Channel<T> Channel, bool Demands);
+
   void IDataStreamFanOut.Write(IDataUnit item) => Write((T)item);
   IDataStream IDataStreamFanOut.Subscribe(int capacity) => Subscribe(capacity);
   IDataStream IDataStreamFanOut.SubscribePassive(int capacity) => SubscribePassive(capacity);
@@ -115,8 +103,8 @@ public sealed class DataStreamFanOut<T> : IDataStream<T>, IDataStreamFanOut wher
   {
     lock (_lock)
     {
-      foreach (var channel in _subscribers)
-        channel.Writer.TryComplete();
+      foreach (var entry in _subscribers)
+        entry.Channel.Writer.TryComplete();
       _subscribers.Clear();
     }
     return ValueTask.CompletedTask;
@@ -142,8 +130,12 @@ public sealed class ChannelDataStream<T> : IDataStream<T>, IDisposable where T :
   public async IAsyncEnumerable<T> ReadAsync(
     [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
   {
-    while (await _reader.WaitToReadAsync(ct))
+    while (true)
     {
+      bool available;
+      try { available = await _reader.WaitToReadAsync(ct); }
+      catch (OperationCanceledException) { yield break; }
+      if (!available) break;
       while (_reader.TryRead(out var item))
         yield return item;
     }

@@ -91,7 +91,7 @@ public class CameraEventFeedTests
     }, CancellationToken.None));
 
     Assert.That(emitted, Has.Count.EqualTo(1));
-    Assert.That(emitted[0].Message.Type, Is.EqualTo("status"));
+    Assert.That(emitted[0].Message.Type, Is.EqualTo("__status"));
     Assert.That(emitted[0].Message.Metadata, Is.Not.Null);
     Assert.That(emitted[0].Message.Metadata!["status"], Is.EqualTo("offline"));
     Assert.That(emitted[0].Message.Metadata["profile"], Is.EqualTo("main"));
@@ -116,11 +116,12 @@ public class CameraEventFeedTests
     var emitted = await CollectAsync(bus => bus.PublishAsync(new CameraRemoved
     {
       CameraId = cameraId,
+      Name = "Porch",
       Timestamp = 9_000_000
     }, CancellationToken.None));
 
     Assert.That(emitted, Has.Count.EqualTo(1));
-    Assert.That(emitted[0].Message.Type, Is.EqualTo("removed"));
+    Assert.That(emitted[0].Message.Type, Is.EqualTo("__removed"));
     Assert.That(emitted[0].Message.CameraId, Is.EqualTo(cameraId));
   }
 
@@ -185,8 +186,7 @@ public class CameraEventFeedTests
     await Task.Delay(100);
     await cts.CancelAsync();
 
-    try { await feed; }
-    catch (OperationCanceledException) { }
+    await feed.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
 
     lock (emitted)
       return [.. emitted];

@@ -276,6 +276,9 @@ public class StreamSessionRunnerLiveTests
     public bool Recordable => true;
     public ReadOnlyMemory<byte> MuxHeader => ReadOnlyMemory<byte>.Empty;
     public MuxStreamInfo? MuxInfo => null;
+    public Action<MuxStreamStats>? OnStats { set { } }
+    public int GetDemand() => 0;
+    public void Evaluate() { }
 
     [System.Diagnostics.CodeAnalysis.RequiresDynamicCode(
       "Pipeline construction uses dynamic fan-out types")]
@@ -304,6 +307,7 @@ public class StreamSessionRunnerLiveTests
 
     public ReadOnlyMemory<byte> Header => ReadOnlyMemory<byte>.Empty;
     public Type FrameType => typeof(Fmp4Fragment);
+    public Action<MuxStreamStats>? OnStats { set { } }
 
     public async IAsyncEnumerable<IDataUnit> ReadAsync(
       [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)

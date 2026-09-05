@@ -5,6 +5,7 @@ using Avalonia.Controls.Shapes;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Client.Core.Controls;
+using Client.Core.Decoding.Diagnostics;
 using Client.Core.ViewModels;
 using Client.Desktop.Services;
 using Client.Desktop.ViewModels;
@@ -217,7 +218,10 @@ public partial class CameraView : UserControl
     await vm.LoadAsync(cameraId, settings.PreferredQuality, CancellationToken.None);
     _videoPlayer.Player = vm.Player;
     if (vm.Player != null)
+    {
       _statsOverlay.Diagnostics = vm.Player.Diagnostics;
+      _statsOverlay.PipelineStatsPull = () => BuildPipelines(vm);
+    }
     if (!vm.IsTunnelConnected)
       await vm.WaitForTunnelConnectedAsync(TimeSpan.FromSeconds(10), CancellationToken.None);
     await vm.GoLiveAsync(CancellationToken.None);
@@ -232,6 +236,7 @@ public partial class CameraView : UserControl
     UpdatePlayPauseIcon(vm.IsPaused);
     UpdateTimestamp((ulong)vm.CurrentPositionUs);
     _bufferingOverlay.IsVisible = vm.IsBuffering;
+    this.FindControl<Button>("MotionToggle")!.IsVisible = vm.HasOverlaySources;
 
     var timelineVm = ((App)Avalonia.Application.Current!).Services
       .GetRequiredService<TimelineViewModel>();
@@ -258,6 +263,8 @@ public partial class CameraView : UserControl
       _bufferingOverlay.IsVisible = vm.IsBuffering;
     else if (e.PropertyName == nameof(CameraViewModel.ErrorMessage))
       _errorCardPanel.IsVisible = !_isFullscreen && !string.IsNullOrEmpty(vm.ErrorMessage);
+    else if (e.PropertyName == nameof(CameraViewModel.HasOverlaySources))
+      this.FindControl<Button>("MotionToggle")!.IsVisible = vm.HasOverlaySources;
   }
 
   private void SetModeDisconnected()
@@ -379,11 +386,11 @@ public partial class CameraView : UserControl
     }
   }
 
-  private void OnMotionToggle(object? sender, RoutedEventArgs e)
+  private async void OnMotionToggle(object? sender, RoutedEventArgs e)
   {
     if (DataContext is not CameraViewModel vm) return;
-    vm.MotionOverlay = !vm.MotionOverlay;
-    this.FindControl<Button>("MotionToggle")!.Opacity = vm.MotionOverlay ? 1.0 : 0.5;
+    await vm.ToggleOverlayAsync(CancellationToken.None);
+    this.FindControl<Button>("MotionToggle")!.Opacity = vm.ActiveOverlaySource != null ? 1.0 : 0.5;
   }
 
   private void OnFullscreen(object? sender, RoutedEventArgs e)
@@ -401,5 +408,16 @@ public partial class CameraView : UserControl
   {
     if (DataContext is CameraViewModel vm)
       _ = vm.StartPlaybackAsync(timestamp, null, CancellationToken.None);
+  }
+
+  private static PipelineStats[] BuildPipelines(CameraViewModel vm)
+  {
+    var primary = vm.Player?.BuildPipelineStats();
+    if (primary == null) return [];
+    var overlay = vm.Overlay;
+    var overlayProfile = vm.ActiveOverlaySource?.Profile;
+    if (overlay != null && overlayProfile != null)
+      return [primary.Value, overlay.BuildPipelineStats(overlayProfile)];
+    return [primary.Value];
   }
 }

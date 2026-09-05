@@ -71,7 +71,7 @@ public class RtspPluginTests
     var plugin = new RtspPlugin();
 
     var result = await plugin.ConnectAsync(
-      new CameraConnectionInfo { Uri = "rtsp://192.0.2.1:554/unreachable" },
+      new CameraConnectionInfo { CameraId = Guid.NewGuid(), Uri = "rtsp://192.0.2.1:554/unreachable" },
       new CancellationTokenSource(TimeSpan.FromSeconds(2)).Token);
 
     Assert.That(result.IsT1, Is.True);

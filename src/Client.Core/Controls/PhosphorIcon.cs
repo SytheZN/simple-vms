@@ -9,7 +9,6 @@ using Avalonia.Platform;
 
 namespace Client.Core.Controls;
 
-/// <summary>Names map to Phosphor icon file slugs (kebab-case on disk under Assets/Phosphor/).</summary>
 public enum PhosphorIconKind
 {
   ArrowLeft,
@@ -126,8 +125,6 @@ internal static class PhosphorIconData
     {
       if (el.Name.Namespace != svgNs) continue;
       var stroke = (string?)el.Attribute("stroke");
-      // Skip decorative <rect width="256" height="256" fill="none"/> backgrounds
-      // that carry no stroke.
       if (el.Name.LocalName == "rect" && stroke == null) continue;
       var g = ParseElement(el);
       if (g != null) group.Children.Add(g);

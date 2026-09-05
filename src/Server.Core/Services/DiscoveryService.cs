@@ -56,7 +56,6 @@ public sealed class DiscoveryService
       }
       catch
       {
-        // provider failed; continue with others
       }
     }
 

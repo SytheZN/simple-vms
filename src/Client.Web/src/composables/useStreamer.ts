@@ -14,7 +14,7 @@ export interface Streamer {
   fetch: (profile: string, from: number, to: number) => void
   disconnect: () => void
   onInit: ((profile: string, data: Uint8Array) => void) | null
-  onGop: ((profile: string, timestamp: number, data: Uint8Array) => void) | null
+  onGop: ((profile: string, timestamp: number, data: Uint8Array, flags: number) => void) | null
   onAck: (() => void) | null
   onFetchComplete: (() => void) | null
   onGap: ((from: number, to: number) => void) | null
@@ -64,19 +64,26 @@ export function useStreamer(): Streamer {
     ws.binaryType = 'arraybuffer'
 
     ws.onopen = () => {
+      if (debug) console.log('streamer WS open', cameraId)
       status.value = 'connected'
     }
 
     ws.onmessage = (ev: MessageEvent) => {
-      handleMessage(ev.data as ArrayBuffer)
+      try {
+        handleMessage(ev.data as ArrayBuffer)
+      } catch (e) {
+        console.error('streamer RX message failed', e)
+      }
     }
 
-    ws.onclose = () => {
+    ws.onclose = (ev: CloseEvent) => {
+      console.warn('streamer WS closed', ev.code, ev.reason || '')
       if (status.value === 'connected')
         status.value = 'idle'
     }
 
     ws.onerror = () => {
+      console.error('streamer WS error')
       error.value = 'WebSocket connection failed'
       status.value = 'error'
     }
@@ -87,13 +94,14 @@ export function useStreamer(): Streamer {
 
     if (msg.type === ServerMsg.Init) {
       const init = msg as { profile: string, data: Uint8Array }
+      if (debug) console.log('streamer RX init', init.profile, init.data.length, 'bytes')
       streamer.onInit?.(init.profile, init.data)
       return
     }
 
     if (msg.type === ServerMsg.Gop) {
       const gop = msg as { flags: number, profile: string, timestamp: number, data: Uint8Array }
-      streamer.onGop?.(gop.profile, gop.timestamp, gop.data)
+      streamer.onGop?.(gop.profile, gop.timestamp, gop.data, gop.flags)
       return
     }
 
@@ -104,8 +112,12 @@ export function useStreamer(): Streamer {
         [Status.Gap]: 'Gap', [Status.Error]: 'Error',
         [Status.Live]: 'Live', [Status.Recording]: 'Recording',
       }
-      if (debug) console.log('streamer RX status', statusNames[st.code] ?? st.code,
-        st.gapFrom !== undefined ? `gap=${st.gapFrom}-${st.gapTo}` : '')
+      if (debug) {
+        if (st.gapFrom !== undefined)
+          console.log('streamer RX status', statusNames[st.code] ?? st.code, `gap=${st.gapFrom}-${st.gapTo}`)
+        else
+          console.log('streamer RX status', statusNames[st.code] ?? st.code)
+      }
       if (st.code === Status.Ack) {
         streamer.onAck?.()
       } else if (st.code === Status.FetchComplete) {
@@ -117,6 +129,7 @@ export function useStreamer(): Streamer {
       } else if (st.code === Status.Recording) {
         streamer.onRecording?.()
       } else if (st.code === Status.Error) {
+        console.error('streamer RX status Error')
         error.value = 'Stream error'
         status.value = 'error'
       }

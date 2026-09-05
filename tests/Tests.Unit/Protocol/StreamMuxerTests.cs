@@ -121,7 +121,7 @@ public class StreamMuxerTests
 
     Assert.That(msg.Payload.ToArray(), Is.EqualTo(new byte[] { 0xAA, 0xBB }));
 
-    try { await readTask; } catch (OperationCanceledException) { }
+    await readTask;
   }
 
   /// <summary>
@@ -157,7 +157,7 @@ public class StreamMuxerTests
 
     Assert.That(completed, Is.True);
 
-    try { await readTask; } catch (OperationCanceledException) { }
+    await readTask;
   }
 
   /// <summary>
@@ -271,7 +271,7 @@ public class StreamMuxerTests
     await blocked;
 
     await cts.CancelAsync();
-    try { await readLoop; } catch (OperationCanceledException) { }
+    await readLoop;
   }
 
   /// <summary>

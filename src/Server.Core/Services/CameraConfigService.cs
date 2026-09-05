@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Server.Plugins;
 using Shared.Models;
 using Shared.Api;
@@ -9,13 +10,15 @@ public sealed class CameraConfigService
 {
   private readonly IPluginHost _plugins;
   private readonly IEventBus _eventBus;
+  private readonly ILogger<CameraConfigService> _logger;
   private readonly CoreCameraSettings _coreCamera;
   private readonly CoreStreamSettings _coreStream;
 
-  public CameraConfigService(IPluginHost plugins, IEventBus eventBus)
+  public CameraConfigService(IPluginHost plugins, IEventBus eventBus, ILogger<CameraConfigService> logger)
   {
     _plugins = plugins;
     _eventBus = eventBus;
+    _logger = logger;
     _coreCamera = new CoreCameraSettings(plugins);
     _coreStream = new CoreStreamSettings(plugins);
   }
@@ -80,8 +83,8 @@ public sealed class CameraConfigService
 
   public async Task<OneOf<Success, Error>> ApplyAsync(Guid cameraId, CameraConfigValues body, CancellationToken ct)
   {
-    var pendingCamera = new List<(IPluginCameraSettings Settings, IReadOnlyDictionary<string, string> Values)>();
-    var pendingStream = new List<(IPluginStreamSettings Settings, Guid StreamId, IReadOnlyDictionary<string, string> Values)>();
+    var pendingCamera = new List<(string PluginId, IPluginCameraSettings Settings, IReadOnlyDictionary<string, string> Values)>();
+    var pendingStream = new List<(string PluginId, IPluginStreamSettings Settings, Guid StreamId, IReadOnlyDictionary<string, string> Values)>();
 
     foreach (var (pluginId, values) in body.Camera ?? [])
     {
@@ -89,7 +92,7 @@ public sealed class CameraConfigService
       if (settings == null)
         return new Error(Result.BadRequest, new DebugTag(ModuleIds.CameraManagement, 0x0030),
           $"Unknown plugin '{pluginId}' in camera section");
-      pendingCamera.Add((settings, values));
+      pendingCamera.Add((pluginId, settings, values));
     }
 
     if (body.Streams?.Count > 0)
@@ -112,42 +115,74 @@ public sealed class CameraConfigService
           if (settings == null)
             return new Error(Result.BadRequest, new DebugTag(ModuleIds.CameraManagement, 0x0032),
               $"Unknown plugin '{pluginId}' in stream section");
-          pendingStream.Add((settings, stream.Id, values));
+          pendingStream.Add((pluginId, settings, stream.Id, values));
         }
       }
     }
 
-    foreach (var (settings, values) in pendingCamera)
+    foreach (var (_, settings, values) in pendingCamera)
       foreach (var (key, value) in values)
       {
         var v = settings.ValidateValue(cameraId, key, value);
         if (v.IsT1) return v.AsT1;
       }
 
-    foreach (var (settings, streamId, values) in pendingStream)
+    foreach (var (_, settings, streamId, values) in pendingStream)
       foreach (var (key, value) in values)
       {
         var v = settings.ValidateValue(streamId, key, value);
         if (v.IsT1) return v.AsT1;
       }
 
-    foreach (var (settings, values) in pendingCamera)
+    var diff = new Dictionary<string, DiffChange>();
+
+    foreach (var (pluginId, settings, values) in pendingCamera)
     {
+      var old = settings.GetValues(cameraId);
+      foreach (var (key, newValue) in values)
+      {
+        var oldValue = old.TryGetValue(key, out var v) ? v : null;
+        if (oldValue == newValue) continue;
+        diff[ConfigDiff.CameraPlugin(cameraId, pluginId, key)] = new DiffChange
+        {
+          Type = DiffChangeType.Update,
+          OldValue = oldValue,
+          NewValue = newValue
+        };
+      }
       var apply = settings.ApplyValues(cameraId, values);
       if (apply.IsT1) return apply.AsT1;
     }
 
-    foreach (var (settings, streamId, values) in pendingStream)
+    foreach (var (pluginId, settings, streamId, values) in pendingStream)
     {
+      var old = settings.GetValues(streamId);
+      foreach (var (key, newValue) in values)
+      {
+        var oldValue = old.TryGetValue(key, out var v) ? v : null;
+        if (oldValue == newValue) continue;
+        var path = pluginId == CoreStreamSettings.PluginId
+          ? ConfigDiff.StreamField(cameraId, streamId, key)
+          : ConfigDiff.StreamPlugin(cameraId, streamId, pluginId, key);
+        diff[path] = new DiffChange
+        {
+          Type = DiffChangeType.Update,
+          OldValue = oldValue,
+          NewValue = newValue
+        };
+      }
       var apply = settings.ApplyValues(streamId, values);
       if (apply.IsT1) return apply.AsT1;
     }
 
-    if (pendingCamera.Count > 0 || pendingStream.Count > 0)
+    await CameraService.SyncDerivedStreamsAsync(_plugins, cameraId, diff, _logger, ct);
+
+    if (diff.Count > 0)
     {
       await _eventBus.PublishAsync(new CameraConfigChanged
       {
         CameraId = cameraId,
+        Diff = diff,
         Timestamp = DateTimeOffset.UtcNow.ToUnixMicroseconds()
       }, ct);
     }

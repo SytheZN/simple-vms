@@ -24,6 +24,13 @@ public sealed class Fmp4Muxer
   private byte[]? _currentPps;
   private byte[]? _currentVps;
   private uint _lastDuration;
+  private string _resolution = "";
+  private MuxStreamStatsMonitor? _statsMonitor;
+
+  public Action<MuxStreamStats>? OnStats
+  {
+    set => _statsMonitor = value == null ? null : new MuxStreamStatsMonitor(value);
+  }
 
   public Fmp4Muxer(
     MuxerCodec codec,
@@ -117,12 +124,13 @@ public sealed class Fmp4Muxer
     _initSegment = init;
     _assembler.AddHeaderBytes(init.Length);
 
+    _resolution = $"{width}x{height}";
     var info = new MuxStreamInfo
     {
       DataFormat = "fmp4",
       MimeType = mimeType,
       FileExtension = _fileExtension,
-      Resolution = $"{width}x{height}",
+      Resolution = _resolution,
       Fps = fps
     };
 
@@ -151,17 +159,18 @@ public sealed class Fmp4Muxer
   public async IAsyncEnumerable<Fmp4Fragment> MuxAsync(
     [EnumeratorCancellation] CancellationToken ct)
   {
-    if (_codec == MuxerCodec.H264)
+    var source = _codec switch
     {
-      var typed = (IDataStream<H264NalUnit>)_input;
-      await foreach (var fragment in MuxH264Async(typed, ct))
-        yield return fragment;
-    }
-    else
+      MuxerCodec.H264 => MuxH264Async((IDataStream<H264NalUnit>)_input, ct),
+      MuxerCodec.H265 => MuxH265Async((IDataStream<H265NalUnit>)_input, ct),
+      _ => throw new NotSupportedException($"Unsupported codec {_codec}")
+    };
+
+    await foreach (var fragment in source)
     {
-      var typed = (IDataStream<H265NalUnit>)_input;
-      await foreach (var fragment in MuxH265Async(typed, ct))
-        yield return fragment;
+      if (!fragment.IsHeader)
+        _statsMonitor?.RecordFrame(_resolution, fragment.Data.Length);
+      yield return fragment;
     }
   }
 

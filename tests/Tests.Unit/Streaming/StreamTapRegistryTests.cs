@@ -117,8 +117,8 @@ public class StreamTapRegistryTests
   private static CameraPipeline CreatePipeline(Guid cameraId, string profile)
   {
     return new CameraPipeline(
-      cameraId, profile,
-      new CameraConnectionInfo { Uri = "rtsp://192.168.1.100/stream" },
+      cameraId, profile, null,
+      new CameraConnectionInfo { CameraId = Guid.NewGuid(), Uri = "rtsp://192.168.1.100/stream" },
       null!, new FakePluginHost(),
       new FakeEventBus(),
       Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance);

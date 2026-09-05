@@ -12,6 +12,8 @@ public class DataStreamTests
     Timestamp = ts,
     MediaTimestamp = ts,
     IsSyncPoint = false,
+
+    IsHeader = false,
     NalType = H264NalType.Slice
   };
 

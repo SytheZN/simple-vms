@@ -33,6 +33,16 @@ function toggleBool(scope: Record<string, string>, key: string) {
   scope[key] = scope[key] === 'true' ? 'false' : 'true'
 }
 
+function cycleTristate(scope: Record<string, string>, key: string) {
+  scope[key] = scope[key] === 'false' ? '' : scope[key] === '' ? 'true' : 'false'
+}
+
+function tristateChecked(value: string): 'true' | 'false' | 'mixed' {
+  if (value === 'true') return 'true'
+  if (value === 'false') return 'false'
+  return 'mixed'
+}
+
 function diffConfigValues(): CameraConfigValues {
   const result: CameraConfigValues = { camera: {}, streams: {} }
 
@@ -40,7 +50,7 @@ function diffConfigValues(): CameraConfigValues {
     const initFields = initialValues.value.camera[pluginId] ?? {}
     const changed: Record<string, string> = {}
     for (const [key, val] of Object.entries(fields))
-      if (val !== initFields[key]) changed[key] = val
+      if (val !== initFields[key]) changed[key] = String(val)
     if (Object.keys(changed).length > 0) result.camera[pluginId] = changed
   }
 
@@ -49,7 +59,7 @@ function diffConfigValues(): CameraConfigValues {
       const initFields = initialValues.value.streams[profile]?.[pluginId] ?? {}
       const changed: Record<string, string> = {}
       for (const [key, val] of Object.entries(fields))
-        if (val !== initFields[key]) changed[key] = val
+        if (val !== initFields[key]) changed[key] = String(val)
       if (Object.keys(changed).length > 0) {
         if (!result.streams[profile]) result.streams[profile] = {}
         result.streams[profile][pluginId] = changed
@@ -208,7 +218,7 @@ onMounted(load)
             </tr>
             <tr>
               <td class="text-text-muted pr-4 py-0.5">Model</td>
-              <td class="text-text py-0.5">{{ camera.config?.model || '--' }}</td>
+              <td class="font-mono text-text py-0.5">{{ camera.config?.model || '--' }}</td>
             </tr>
             <tr>
               <td class="text-text-muted pr-4 py-0.5">Serial</td>
@@ -293,7 +303,7 @@ onMounted(load)
                 {{ field.label }}
                 <span v-if="field.required" class="text-danger">*</span>
               </label>
-              <div :class="{ 'sm:text-right': field.type === 'boolean' || field.type === 'bool' }">
+              <div :class="{ 'sm:text-right': field.type === 'boolean' || field.type === 'bool' || field.type === 'tristate' }">
                 <input
                   v-if="field.type === 'string' || field.type === 'path'"
                   class="input" type="text"
@@ -319,6 +329,14 @@ onMounted(load)
                   class="toggle-track" role="switch" type="button"
                   :aria-checked="values.camera[pluginId][field.key] === 'true'"
                   @click="toggleBool(values.camera[pluginId], field.key)"
+                >
+                  <span class="toggle-knob"></span>
+                </button>
+                <button
+                  v-else-if="field.type === 'tristate'"
+                  class="toggle-track" role="switch" type="button" data-tristate
+                  :aria-checked="tristateChecked(values.camera[pluginId][field.key])"
+                  @click="cycleTristate(values.camera[pluginId], field.key)"
                 >
                   <span class="toggle-knob"></span>
                 </button>
@@ -392,7 +410,7 @@ onMounted(load)
                   {{ field.label }}
                   <span v-if="field.required" class="text-danger">*</span>
                 </label>
-                <div :class="{ 'sm:text-right': field.type === 'boolean' || field.type === 'bool' }">
+                <div :class="{ 'sm:text-right': field.type === 'boolean' || field.type === 'bool' || field.type === 'tristate' }">
                   <input
                     v-if="field.type === 'string' || field.type === 'path'"
                     class="input" type="text"
@@ -418,6 +436,14 @@ onMounted(load)
                     class="toggle-track" role="switch" type="button"
                     :aria-checked="values.streams[stream.profile][pluginId][field.key] === 'true'"
                     @click="toggleBool(values.streams[stream.profile][pluginId], field.key)"
+                  >
+                    <span class="toggle-knob"></span>
+                  </button>
+                  <button
+                    v-else-if="field.type === 'tristate'"
+                    class="toggle-track" role="switch" type="button" data-tristate
+                    :aria-checked="tristateChecked(values.streams[stream.profile][pluginId][field.key])"
+                    @click="cycleTristate(values.streams[stream.profile][pluginId], field.key)"
                   >
                     <span class="toggle-knob"></span>
                   </button>

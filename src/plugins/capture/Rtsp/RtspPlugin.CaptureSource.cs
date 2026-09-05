@@ -22,6 +22,7 @@ public sealed partial class RtspPlugin : ICaptureSource
       try
       {
         var session = _sessions.GetOrAdd(sessionKey, _ => new RtspSession(
+          info.CameraId,
           info.Uri,
           info.Credentials?.GetValueOrDefault("username"),
           info.Credentials?.GetValueOrDefault("password"),

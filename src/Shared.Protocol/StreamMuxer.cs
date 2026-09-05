@@ -18,9 +18,6 @@ public sealed class StreamMuxer : IAsyncDisposable
   private readonly Dictionary<uint, StreamEntry> _streams = [];
   private readonly List<Task> _handlerTasks = [];
 
-  // Bounds bytes in flight per stream. A stream abandoned mid-transfer can only strand
-  // this much data on the shared transport, which is what the peer must drain before
-  // anything else gets through.
   public const int StreamWindowBytes = 1024 * 1024;
 
   private sealed class StreamEntry
@@ -189,11 +186,9 @@ public sealed class StreamMuxer : IAsyncDisposable
 
       if (payload.Length > 0)
       {
-        // Credits are additive, so delivery order does not matter. Sending inline would
-        // park the read loop on the write lock behind whatever large frame is going out.
         var ack = RecordReceived(streamId, payload.Length);
         if (ack > 0)
-          _ = SendWindowUpdateAsync(streamId, ack, ct);
+          SendWindowUpdateOffReadLoop(streamId, ack, ct);
       }
 
       StreamEntry? entry;
@@ -293,16 +288,10 @@ public sealed class StreamMuxer : IAsyncDisposable
       if (payload.Length > 0)
         payload.Span.CopyTo(frame.AsSpan(MessageEnvelope.MuxHeaderSize));
 
-      // Single write so header and payload land in the same TLS record
-      // (frames above the TLS plaintext max will still fan out).
       await _writeLock.WaitAsync(ct).ConfigureAwait(false);
       try
       {
-        // Cancellation is honoured up to the moment the frame starts going out, never
-        // during it: aborting mid-frame leaves a partial record on the shared transport
-        // and desyncs the peer's decrypt for every record after it.
-        await _transport.WriteAsync(frame.AsMemory(0, total), CancellationToken.None)
-          .ConfigureAwait(false);
+        await WriteFrameUncancellable(frame, total).ConfigureAwait(false);
       }
       finally
       {
@@ -325,11 +314,7 @@ public sealed class StreamMuxer : IAsyncDisposable
         if (!_streams.TryGetValue(streamId, out entry))
           return;
 
-        // A frame at or above the window can never be covered outright once anything at all
-        // is outstanding, and credit only returns once the peer has acked half a window - so
-        // it goes out on whatever credit exists. Credit may go negative; acks restore it.
-        var need = Math.Min(bytes, StreamWindowBytes);
-        if (entry.SendCredit >= need || (bytes >= StreamWindowBytes && entry.SendCredit > 0))
+        if (CanCoverOrForceSend(entry.SendCredit, bytes))
         {
           entry.SendCredit -= bytes;
           return;
@@ -338,6 +323,14 @@ public sealed class StreamMuxer : IAsyncDisposable
 
       await entry.CreditChanged.WaitAsync(ct).ConfigureAwait(false);
     }
+  }
+
+  private static bool CanCoverOrForceSend(long sendCredit, int bytes)
+  {
+    var needed = Math.Min(bytes, StreamWindowBytes);
+    if (sendCredit >= needed) return true;
+    var frameIsLargerThanWindow = bytes >= StreamWindowBytes;
+    return frameIsLargerThanWindow && sendCredit > 0;
   }
 
   private void GrantCredit(uint streamId, int bytes)
@@ -368,6 +361,12 @@ public sealed class StreamMuxer : IAsyncDisposable
       return ack;
     }
   }
+
+  private void SendWindowUpdateOffReadLoop(uint streamId, int bytes, CancellationToken ct) =>
+    _ = SendWindowUpdateAsync(streamId, bytes, ct);
+
+  private Task WriteFrameUncancellable(byte[] frame, int total) =>
+    _transport.WriteAsync(frame.AsMemory(0, total), CancellationToken.None).AsTask();
 
   private async Task SendWindowUpdateAsync(uint streamId, int bytes, CancellationToken ct)
   {
@@ -404,9 +403,8 @@ public sealed class StreamMuxer : IAsyncDisposable
 
     foreach (var task in tasks)
     {
-      try { await task.ConfigureAwait(false); }
-      catch (OperationCanceledException) { }
-      catch (Exception) { }
+      try { await task.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing); }
+      catch { }
     }
 
     _writeLock.Dispose();

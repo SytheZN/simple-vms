@@ -82,11 +82,6 @@ public sealed class SettingsViewModel : ViewModelBase, IDisposable
     _router.UpdateRules(NotificationRules.ToList());
   }
 
-  /// <summary>
-  /// Drops the tunnel and dials again from the first address rather than the one that last worked,
-  /// which is the only way back when the server was unreachable at the address in use. The live
-  /// stream and event subscriptions re-establish themselves off the connection state change.
-  /// </summary>
   public async Task ReconnectAsync()
   {
     ClearError();

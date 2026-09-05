@@ -10,6 +10,7 @@ public sealed class Fmp4MuxStream : IMuxStream<Fmp4Fragment>
   public MuxStreamInfo Info { get; }
   public ReadOnlyMemory<byte> Header { get; }
   public Type FrameType => typeof(Fmp4Fragment);
+  public Action<MuxStreamStats>? OnStats { set => _muxer.OnStats = value; }
 
   public Fmp4MuxStream(Fmp4Muxer muxer, MuxStreamInfo info)
   {

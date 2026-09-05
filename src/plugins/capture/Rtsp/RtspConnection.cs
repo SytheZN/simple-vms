@@ -7,6 +7,12 @@ namespace Capture.Rtsp;
 
 public sealed class RtspConnection : IStreamConnection
 {
+  private const byte H264NalTypeMask = 0x1F;
+  private const byte H264NalTypeStapA = 24;
+  private const int H265NalTypeShift = 1;
+  private const byte H265NalTypeMask = 0x3F;
+  private const byte H265NalTypeAggregation = 48;
+
   private readonly RtspClient _client;
   private readonly IRtpDepacketizer _depacketizer;
   private readonly IDataStream _dataStream;
@@ -118,8 +124,8 @@ public sealed class RtspConnection : IStreamConnection
 
           if (_depacketizer is RtpH264Depacketizer h264 && stream is DataStream<H264NalUnit> h264Stream)
           {
-            var nalType = rtpPayload.Span[0] & 0x1F;
-            if (nalType == 24) // STAP-A
+            var nalType = rtpPayload.Span[0] & H264NalTypeMask;
+            if (nalType == H264NalTypeStapA)
             {
               foreach (var unit in h264.ProcessStapAAll(rtpPayload.Span, mediaTimestamp, wallClockTimestamp))
                 await h264Stream.Writer.WriteAsync((H264NalUnit)unit, _cts.Token);
@@ -133,8 +139,8 @@ public sealed class RtspConnection : IStreamConnection
           }
           else if (_depacketizer is RtpH265Depacketizer h265 && stream is DataStream<H265NalUnit> h265Stream)
           {
-            var nalType = (rtpPayload.Span[0] >> 1) & 0x3F;
-            if (nalType == 48) // AP
+            var nalType = (rtpPayload.Span[0] >> H265NalTypeShift) & H265NalTypeMask;
+            if (nalType == H265NalTypeAggregation)
             {
               foreach (var unit in h265.ProcessApAll(rtpPayload.Span, mediaTimestamp, wallClockTimestamp))
                 await h265Stream.Writer.WriteAsync((H265NalUnit)unit, _cts.Token);

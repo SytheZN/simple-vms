@@ -50,8 +50,7 @@ public class EventChannelHandlerTests
     await Task.Delay(100);
     await cts.CancelAsync();
 
-    try { await handlerTask; }
-    catch (OperationCanceledException) { }
+    await handlerTask;
 
     Assert.That(written, Has.Count.EqualTo(1));
 

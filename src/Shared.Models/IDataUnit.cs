@@ -5,4 +5,5 @@ public interface IDataUnit
   ReadOnlyMemory<byte> Data { get; }
   ulong Timestamp { get; }
   bool IsSyncPoint { get; }
+  bool IsHeader { get; }
 }

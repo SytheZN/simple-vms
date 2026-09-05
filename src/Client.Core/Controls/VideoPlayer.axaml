@@ -18,8 +18,13 @@
                  FontSize="{DynamicResource TextSm}"
                  HorizontalAlignment="Center" />
     </StackPanel>
-    <Canvas x:Name="MotionOverlay"
+    <Border x:Name="MotionLayer"
             IsVisible="False"
-            IsHitTestVisible="False" />
+            IsHitTestVisible="False"
+            Background="{DynamicResource MotionDimBrush}">
+      <Image x:Name="MotionImage"
+             Stretch="Fill"
+             RenderOptions.BitmapInterpolationMode="None" />
+    </Border>
   </Panel>
 </UserControl>

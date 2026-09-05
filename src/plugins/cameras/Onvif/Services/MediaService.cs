@@ -4,7 +4,7 @@ using Shared.Models;
 
 namespace Cameras.Onvif.Services;
 
-public sealed class MediaService(SoapClient soap)
+public sealed class MediaService(ISoapClient soap)
 {
   public async Task<IReadOnlyList<OnvifProfile>> GetProfilesAsync(
     string mediaUri, Credentials credentials, CancellationToken ct)

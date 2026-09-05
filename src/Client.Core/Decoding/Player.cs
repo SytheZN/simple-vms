@@ -46,7 +46,7 @@ public sealed class Player : IDisposable
 
   private long _seekTargetUs;
   private long _seekRenderTargetUs;
-  private readonly List<(ulong Ts, ReadOnlyMemory<byte> Data)> _seekBuffer = [];
+  private readonly List<(ulong Ts, ReadOnlyMemory<byte> Data, bool Begin)> _seekBuffer = [];
   private ulong _seekGapEnd;
   private const double LiveCatchupMaxBoost = 0.1;
   private const double LiveCatchupTauUs = 500_000;
@@ -87,10 +87,13 @@ public sealed class Player : IDisposable
     _decoder.BackendDisplayName, _renderer.DisplayName,
     _state.ToString(), _mode.ToString(),
     _rate, _lastCatchup,
-    Interlocked.Read(ref _playheadUs), _lastBufferUs,
-    _fetcher.BufferedGopCount, _fetcher.BufferedBytes,
-    _decoder.CachedGopCount, _decoder.CachedFrameCount,
     _buffering);
+
+  public PipelineStats BuildPipelineStats() => new(
+    "primary", _currentProfile,
+    _lastBufferUs, Interlocked.Read(ref _playheadUs),
+    _fetcher.BufferedGopCount, _fetcher.BufferedBytes,
+    _decoder.CachedGopCount, _decoder.CachedFrameCount);
   public long CurrentPositionUs => Interlocked.Read(ref _playheadUs);
   public double Rate => _rate;
   public int Direction => _direction;
@@ -190,7 +193,7 @@ public sealed class Player : IDisposable
     if (newestWallClock == 0) return;
 
     for (var i = newestIdx; i < _seekBuffer.Count; i++)
-      _fetcher.AppendData(_seekBuffer[i].Ts, _seekBuffer[i].Data);
+      _fetcher.AppendData(_seekBuffer[i].Ts, _seekBuffer[i].Data, _seekBuffer[i].Begin);
     var dropped = newestIdx;
     _seekBuffer.Clear();
     _seekRenderTargetUs = newestWallClock;
@@ -202,7 +205,7 @@ public sealed class Player : IDisposable
   {
     _logger.LogDebug("commitSeek chunks={Count} target={Target}", _seekBuffer.Count, _seekTargetUs);
     for (var i = 0; i < _seekBuffer.Count; i++)
-      _fetcher.AppendData(_seekBuffer[i].Ts, _seekBuffer[i].Data);
+      _fetcher.AppendData(_seekBuffer[i].Ts, _seekBuffer[i].Data, _seekBuffer[i].Begin);
     _seekBuffer.Clear();
     _seekRenderTargetUs = _seekTargetUs;
   }
@@ -268,8 +271,16 @@ public sealed class Player : IDisposable
     await UnsubscribeCurrentAsync();
     _mode = PlayerMode.Playback;
     EnterSeeking(ts);
+    PublishPosition(ts);
     var feed = await _playbackService.StartAsync(_cameraId, ConfiguredProfile, (ulong)ts, null, ct);
     AttachFeed(feed);
+  }
+
+  private void PublishPosition(long posUs)
+  {
+    Interlocked.Exchange(ref _playheadUs, posUs);
+    _lastPublishedPositionUs = posUs;
+    Dispatcher.UIThread.Post(() => CurrentPositionChanged?.Invoke(posUs));
   }
 
   public async Task SetProfileAsync(string profile, CancellationToken ct)
@@ -401,6 +412,7 @@ public sealed class Player : IDisposable
   private void HandleGopMsg(GopMessage gop)
   {
     if (_ignoreData) return;
+    var begin = (gop.Flags & GopFlags.Begin) != 0;
 
     switch (_state)
     {
@@ -410,11 +422,11 @@ public sealed class Player : IDisposable
       case PlayerState.Seeking:
         if (_seekRenderTargetUs > 0)
         {
-          _fetcher.AppendData(gop.Timestamp, gop.Data);
+          _fetcher.AppendData(gop.Timestamp, gop.Data, begin);
         }
         else
         {
-          _seekBuffer.Add((gop.Timestamp, gop.Data));
+          _seekBuffer.Add((gop.Timestamp, gop.Data, begin));
           if (_mode == PlayerMode.Live)
             CommitLive();
           else if (_seekBuffer.Count == 1)
@@ -423,7 +435,7 @@ public sealed class Player : IDisposable
         break;
 
       case PlayerState.Streaming:
-        _fetcher.AppendData(gop.Timestamp, gop.Data);
+        _fetcher.AppendData(gop.Timestamp, gop.Data, begin);
         break;
     }
   }
@@ -502,7 +514,9 @@ public sealed class Player : IDisposable
           _logger.LogDebug("Seeking tick: seekRenderTarget={Target} gopsInCache={Gops}",
             _seekRenderTargetUs, gopCount);
 
-        if (RenderAt(_seekRenderTargetUs))
+        UpdatePipeline(_seekRenderTargetUs);
+        if (_decoder.HasFrameToward(_seekRenderTargetUs, _direction)
+            && RenderAt(_seekRenderTargetUs))
         {
           _seekRenderTargetUs = 0;
           EnterStreaming();
@@ -607,50 +621,8 @@ public sealed class Player : IDisposable
     var fromUs = _direction == 1 ? ts : ts + windowUs;
     var toUs = _direction == 1 ? ts + windowUs : ts - windowUs;
     _fetcher.SetTarget(fromUs, toUs);
-    _decoder.SetTarget(ComputeNeededGops(ts));
-  }
-
-  private const long PrefetchBoundaryUs = 500_000;
-
-  private ulong[] ComputeNeededGops(long ts)
-  {
-    var available = _fetcher.GopTimestamps();
-    var currentIdx = FindGopIndex(available, ts);
-    if (currentIdx < 0)
-    {
-      if (_tickDebugCount % 50 == 0 && available.Length > 0)
-        _logger.LogDebug("ComputeNeededGops({Ts}): no matching gop, oldest={Oldest} newest={Newest}",
-          ts, available[0], available[^1]);
-      return [];
-    }
-
-    var needed = new List<ulong> { available[currentIdx] };
-
-    var aheadIdx = currentIdx + _direction;
-    if (aheadIdx >= 0 && aheadIdx < available.Length)
-    {
-      var boundaryUs = _direction == 1
-        ? (long)available[aheadIdx]
-        : (long)available[currentIdx];
-      var distance = _direction == 1 ? boundaryUs - ts : ts - boundaryUs;
-      if (distance < PrefetchBoundaryUs) needed.Add(available[aheadIdx]);
-    }
-
-    return [.. needed];
-  }
-
-  private static int FindGopIndex(ulong[] timestamps, long ts)
-  {
-    if (timestamps.Length == 0) return -1;
-    var lo = 0;
-    var hi = timestamps.Length - 1;
-    while (lo < hi)
-    {
-      var mid = (lo + hi + 1) >>> 1;
-      if ((long)timestamps[mid] <= ts) lo = mid;
-      else hi = mid - 1;
-    }
-    return (long)timestamps[lo] <= ts ? lo : -1;
+    _decoder.SetTarget(GopPlanner.ComputeNeededGops(
+      _fetcher.GopTimestamps(), ts, _rate, _direction));
   }
 }
 

@@ -4,7 +4,7 @@ using Shared.Models;
 
 namespace Cameras.Onvif.Services;
 
-public sealed class AnalyticsService(SoapClient soap)
+public sealed class AnalyticsService(ISoapClient soap)
 {
   public async Task<IReadOnlyList<AnalyticsModule>> GetAnalyticsModulesAsync(
     string analyticsUri, Credentials credentials, CancellationToken ct)

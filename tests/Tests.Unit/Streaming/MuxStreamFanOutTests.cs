@@ -27,116 +27,64 @@ public class MuxStreamFanOutTests
 
   /// <summary>
   /// SCENARIO:
-  /// OnDemand is set, first subscriber is added
-  ///
-  /// ACTION:
-  /// Subscribe
-  ///
-  /// EXPECTED RESULT:
-  /// OnDemand fires
-  /// </summary>
-  [Test]
-  public async Task Subscribe_FirstSubscriber_FiresOnDemand()
-  {
-    var source = new TestMuxStream(TestInfo);
-    await using var fanOut = new MuxStreamFanOut<Fmp4Fragment>(source);
-
-    var demandFired = false;
-    fanOut.OnDemand = () => demandFired = true;
-
-    var sub = fanOut.Subscribe();
-    Assert.That(demandFired, Is.True);
-  }
-
-  /// <summary>
-  /// SCENARIO:
-  /// Two subscribers added
-  ///
-  /// ACTION:
-  /// Subscribe twice
-  ///
-  /// EXPECTED RESULT:
-  /// OnDemand fires only on the first subscriber
-  /// </summary>
-  [Test]
-  public async Task Subscribe_SecondSubscriber_DoesNotFireOnDemand()
-  {
-    var source = new TestMuxStream(TestInfo);
-    await using var fanOut = new MuxStreamFanOut<Fmp4Fragment>(source);
-
-    var demandCount = 0;
-    fanOut.OnDemand = () => demandCount++;
-
-    fanOut.Subscribe();
-    fanOut.Subscribe();
-
-    Assert.That(demandCount, Is.EqualTo(1));
-  }
-
-  /// <summary>
-  /// SCENARIO:
-  /// Last subscriber is removed
-  ///
-  /// ACTION:
-  /// Subscribe, then the subscriber's ReadAsync completes
-  ///
-  /// EXPECTED RESULT:
-  /// OnEmpty fires
-  /// </summary>
-  [Test]
-  public async Task LastSubscriberLeaves_FiresOnEmpty()
-  {
-    var source = new TestMuxStream(TestInfo);
-    await using var fanOut = new MuxStreamFanOut<Fmp4Fragment>(source);
-
-    var emptyFired = false;
-    fanOut.OnDemand = () => { };
-    fanOut.OnEmpty = () => emptyFired = true;
-
-    var sub = fanOut.Subscribe();
-
-    using var cts = new CancellationTokenSource(50);
-    try
-    {
-      await foreach (var _ in ((IMuxStream<Fmp4Fragment>)sub).ReadAsync(cts.Token)) { }
-    }
-    catch (OperationCanceledException) { }
-
-    Assert.That(emptyFired, Is.True);
-  }
-
-  /// <summary>
-  /// SCENARIO:
-  /// One of two subscribers leaves
+  /// Subscribers are added and one leaves
   ///
   /// ACTION:
   /// Subscribe twice, first subscriber's ReadAsync completes
   ///
   /// EXPECTED RESULT:
-  /// OnEmpty does not fire
+  /// GetDemand reflects the live subscribers: 0 -> 1 -> 2 -> 1
   /// </summary>
   [Test]
-  public async Task OneOfTwoSubscribersLeaves_DoesNotFireOnEmpty()
+  public async Task GetDemand_TracksLiveSubscribers()
   {
     var source = new TestMuxStream(TestInfo);
     await using var fanOut = new MuxStreamFanOut<Fmp4Fragment>(source);
 
-    var emptyFired = false;
-    fanOut.OnDemand = () => { };
-    fanOut.OnEmpty = () => emptyFired = true;
+    Assert.That(fanOut.GetDemand(), Is.EqualTo(0));
 
     var sub1 = fanOut.Subscribe();
+    Assert.That(fanOut.GetDemand(), Is.EqualTo(1));
+
     var sub2 = fanOut.Subscribe();
+    Assert.That(fanOut.GetDemand(), Is.EqualTo(2));
 
     using var cts = new CancellationTokenSource(50);
-    try
-    {
-      await foreach (var _ in ((IMuxStream<Fmp4Fragment>)sub1).ReadAsync(cts.Token)) { }
-    }
-    catch (OperationCanceledException) { }
+    await foreach (var _ in ((IMuxStream<Fmp4Fragment>)sub1).ReadAsync(cts.Token)) { }
 
-    Assert.That(emptyFired, Is.False);
+    Assert.That(fanOut.GetDemand(), Is.EqualTo(1));
     Assert.That(fanOut.SubscriberCount, Is.EqualTo(1));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Changed callback is set on the fan-out
+  ///
+  /// ACTION:
+  /// Subscribe twice, then one subscriber leaves
+  ///
+  /// EXPECTED RESULT:
+  /// Changed fires on every subscribe and unsubscribe
+  /// </summary>
+  [Test]
+  public async Task Changed_FiresOnEverySubscriptionChange()
+  {
+    var source = new TestMuxStream(TestInfo);
+    await using var fanOut = new MuxStreamFanOut<Fmp4Fragment>(source);
+
+    var changedCount = 0;
+    fanOut.Changed = () => changedCount++;
+
+    var sub1 = fanOut.Subscribe();
+    Assert.That(changedCount, Is.EqualTo(1));
+
+    fanOut.Subscribe();
+    Assert.That(changedCount, Is.EqualTo(2));
+
+    using var cts = new CancellationTokenSource(50);
+    await foreach (var _ in ((IMuxStream<Fmp4Fragment>)sub1).ReadAsync(cts.Token)) { }
+
+    Assert.That(changedCount, Is.EqualTo(3));
   }
 
   /// <summary>
@@ -154,7 +102,6 @@ public class MuxStreamFanOutTests
   {
     var source = new TestMuxStream(TestInfo);
     await using var fanOut = new MuxStreamFanOut<Fmp4Fragment>(source);
-    fanOut.OnDemand = () => { };
 
     var sub = fanOut.Subscribe();
 
@@ -167,12 +114,8 @@ public class MuxStreamFanOutTests
 
     var received = new List<ulong>();
     using var cts = new CancellationTokenSource(100);
-    try
-    {
-      await foreach (var item in ((IMuxStream<Fmp4Fragment>)sub).ReadAsync(cts.Token))
-        received.Add(item.Timestamp);
-    }
-    catch (OperationCanceledException) { }
+    await foreach (var item in ((IMuxStream<Fmp4Fragment>)sub).ReadAsync(cts.Token))
+      received.Add(item.Timestamp);
 
     Assert.That(received, Does.Contain(3UL));
     Assert.That(received, Does.Not.Contain(1UL));
@@ -227,6 +170,7 @@ public class MuxStreamFanOutTests
     public MuxStreamInfo Info { get; }
     public ReadOnlyMemory<byte> Header { get; }
     public Type FrameType => typeof(Fmp4Fragment);
+    public Action<MuxStreamStats>? OnStats { get; set; }
 
     public TestMuxStream(MuxStreamInfo info, byte[]? header = null)
     {

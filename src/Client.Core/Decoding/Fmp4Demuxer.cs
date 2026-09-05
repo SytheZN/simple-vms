@@ -199,8 +199,6 @@ public static class Fmp4Demuxer
         var effectiveFlags = i == 0 && hasFirstSampleFlags ? firstSampleFlags : sampleFlags;
         var isKey = (effectiveFlags & 0x02000000) != 0;
 
-        // DTS = decode time (no cts offset). PTS = DTS + cts offset. Both
-        // expressed as absolute wall-clock microseconds when prft is present.
         var decodeOffsetUs = (currentTime - firstBaseDecodeTime) * 1_000_000L / timescale;
         var ctsOffsetUs = (long)ctsOffset * 1_000_000L / timescale;
         var durationUs = (long)duration * 1_000_000L / timescale;

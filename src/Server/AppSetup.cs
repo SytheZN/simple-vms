@@ -198,11 +198,17 @@ public static class AppSetup
     await systemService.RecomputeMissingSettingsAsync(app.Lifetime.ApplicationStopping);
 
     WatchCameraStatus(eventBus, statusTracker, app.Lifetime.ApplicationStopping);
+    WatchRecordingStatus(eventBus, statusTracker, app.Lifetime.ApplicationStopping);
 
     _streamingService = new StreamingService(
       pluginHost, tapRegistry, eventBus,
       app.Services.GetRequiredService<ILoggerFactory>().CreateLogger<StreamingService>());
     await _streamingService.StartAsync(app.Lifetime.ApplicationStopping);
+
+    _eventManager = new EventManager(
+      pluginHost, eventBus,
+      app.Services.GetRequiredService<ILoggerFactory>().CreateLogger<EventManager>());
+    await _eventManager.StartAsync(app.Lifetime.ApplicationStopping);
 
     _recordingManager = new RecordingManager(
       pluginHost, tapRegistry, eventBus,
@@ -210,14 +216,9 @@ public static class AppSetup
     await _recordingManager.StartAsync(app.Lifetime.ApplicationStopping);
 
     _retentionEngine = new RetentionEngine(
-      pluginHost,
+      pluginHost, _recordingManager,
       app.Services.GetRequiredService<ILoggerFactory>().CreateLogger<RetentionEngine>());
     _retentionEngine.Start(app.Lifetime.ApplicationStopping);
-
-    _eventManager = new EventManager(
-      pluginHost, eventBus,
-      app.Services.GetRequiredService<ILoggerFactory>().CreateLogger<EventManager>());
-    await _eventManager.StartAsync(app.Lifetime.ApplicationStopping);
 
     _tunnelService = new TunnelService(
       app.Services.GetRequiredService<ICertificateService>(),
@@ -253,8 +254,8 @@ public static class AppSetup
     {
       while (!ct.IsCancellationRequested && systemHealth.Status == "degraded")
       {
-        try { await Task.Delay(TimeSpan.FromSeconds(30), ct); }
-        catch (OperationCanceledException) { break; }
+        await Task.Delay(TimeSpan.FromSeconds(30), ct).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        if (ct.IsCancellationRequested) break;
 
         logger.LogInformation("Retrying data provider start");
         try
@@ -319,6 +320,16 @@ public static class AppSetup
     {
       await foreach (var evt in eventBus.SubscribeAsync<CameraStatusChanged>(ct))
         statusTracker.SetStatus(evt.CameraId, evt.Profile, evt.Status);
+    }, ct);
+  }
+
+  private static void WatchRecordingStatus(
+    IEventBus eventBus, CameraStatusTracker statusTracker, CancellationToken ct)
+  {
+    _ = Task.Run(async () =>
+    {
+      await foreach (var evt in eventBus.SubscribeAsync<CameraRecordingChanged>(ct))
+        statusTracker.SetRecording(evt.CameraId, evt.Profile, evt.State);
     }, ct);
   }
 

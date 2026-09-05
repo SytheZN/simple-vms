@@ -10,6 +10,7 @@ public sealed class MjpegMuxStream : IMuxStream<JpegFragment>
   public MuxStreamInfo Info { get; }
   public ReadOnlyMemory<byte> Header => ReadOnlyMemory<byte>.Empty;
   public Type FrameType => typeof(JpegFragment);
+  public Action<MuxStreamStats>? OnStats { set => _muxer.OnStats = value; }
 
   public MjpegMuxStream(MjpegMuxer muxer, MuxStreamInfo info)
   {

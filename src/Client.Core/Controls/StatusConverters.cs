@@ -13,7 +13,7 @@ public sealed class StatusToIconKindConverter : IValueConverter
   public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
     value?.ToString() switch
     {
-      "online" => PhosphorIconKind.VideoCamera,
+      "online" or "recording" => PhosphorIconKind.VideoCamera,
       "error" => PhosphorIconKind.Warning,
       _ => PhosphorIconKind.VideoCameraSlash
     };
@@ -31,8 +31,9 @@ public sealed class StatusToBadgeBackgroundConverter : IValueConverter
   {
     var key = value?.ToString() switch
     {
-      "online" => "SuccessMutedBrush",
-      "error" => "DangerMutedBrush",
+      "recording" => "DangerMutedBrush",
+      "error" => "WarningMutedBrush",
+      "online" => "PrimaryMutedBrush",
       _ => "SurfaceSunkenBrush"
     };
     if (Application.Current?.TryGetResource(key, Application.Current.ActualThemeVariant, out var res) == true)
@@ -53,8 +54,9 @@ public sealed class StatusToBadgeForegroundConverter : IValueConverter
   {
     var key = value?.ToString() switch
     {
-      "online" => "SuccessBrush",
-      "error" => "DangerBrush",
+      "recording" => "DangerBrush",
+      "error" => "WarningBrush",
+      "online" => "PrimaryBrush",
       _ => "TextMutedBrush"
     };
     if (Application.Current?.TryGetResource(key, Application.Current.ActualThemeVariant, out var res) == true)

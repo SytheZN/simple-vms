@@ -35,8 +35,6 @@ public sealed class EventService : IEventService, IAsyncDisposable
       _shutdownCts = new CancellationTokenSource();
       _sessionCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownCts.Token);
 
-      // Marked as running before subscribing: subscribing fails while the tunnel is still down,
-      // and this flag is what lets the tunnel coming up subscribe for us.
       _running = true;
       _stream = await _tunnel.OpenStreamAsync(
         StreamTypes.EventChannel, ReadOnlyMemory<byte>.Empty, ct);

@@ -32,19 +32,15 @@ public class KeepaliveHandlerTests
 
     using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
 
-    try
-    {
-      await KeepaliveHandler.RunAsync(
-        inputChannel.Reader,
-        (data, ct) =>
-        {
-          response = MessagePackSerializer.Deserialize<KeepaliveMessage>(
-            data, ProtocolSerializer.Options);
-          return Task.CompletedTask;
-        },
-        () => { }, NullLogger.Instance, cts.Token);
-    }
-    catch (OperationCanceledException) { }
+    await KeepaliveHandler.RunAsync(
+      inputChannel.Reader,
+      (data, ct) =>
+      {
+        response = MessagePackSerializer.Deserialize<KeepaliveMessage>(
+          data, ProtocolSerializer.Options);
+        return Task.CompletedTask;
+      },
+      () => { }, NullLogger.Instance, cts.Token);
 
     Assert.That(response, Is.Not.Null);
     Assert.That(response!.Echo, Is.EqualTo(0xDEADBEEFUL));
@@ -69,15 +65,11 @@ public class KeepaliveHandlerTests
 
     using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
 
-    try
-    {
-      await KeepaliveHandler.RunAsync(
-        inputChannel.Reader,
-        (_, _) => Task.CompletedTask,
-        () => deadSignaled = true,
-        NullLogger.Instance, cts.Token);
-    }
-    catch (OperationCanceledException) { }
+    await KeepaliveHandler.RunAsync(
+      inputChannel.Reader,
+      (_, _) => Task.CompletedTask,
+      () => deadSignaled = true,
+      NullLogger.Instance, cts.Token);
 
     Assert.That(deadSignaled, Is.False);
   }
@@ -103,15 +95,11 @@ public class KeepaliveHandlerTests
 
     using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
-    try
-    {
-      await KeepaliveHandler.RunAsync(
-        inputChannel.Reader,
-        (_, _) => Task.CompletedTask,
-        () => deadSignaled = true,
-        NullLogger.Instance, sendInterval, receiveTimeout, cts.Token);
-    }
-    catch (OperationCanceledException) { }
+    await KeepaliveHandler.RunAsync(
+      inputChannel.Reader,
+      (_, _) => Task.CompletedTask,
+      () => deadSignaled = true,
+      NullLogger.Instance, sendInterval, receiveTimeout, cts.Token);
 
     Assert.That(deadSignaled, Is.True);
   }
@@ -157,8 +145,7 @@ public class KeepaliveHandlerTests
       () => deadSignaled = true,
       NullLogger.Instance, sendInterval, receiveTimeout, cts.Token);
 
-    try { await handlerTask; }
-    catch (OperationCanceledException) { }
+    await handlerTask;
 
     Assert.That(deadSignaled, Is.False);
     Assert.That(writeCount, Is.LessThanOrEqualTo(5),

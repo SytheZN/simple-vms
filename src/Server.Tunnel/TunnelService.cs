@@ -81,8 +81,7 @@ public sealed class TunnelService
 
     if (_acceptLoop != null)
     {
-      try { await _acceptLoop; }
-      catch (OperationCanceledException) { }
+      await _acceptLoop.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
       _acceptLoop = null;
     }
 
@@ -197,8 +196,8 @@ public sealed class TunnelService
       var readTask = muxer.RunReadLoopAsync(connectionCt);
       await Task.WhenAny(readTask, keepaliveTask);
       connectionCts.Cancel();
-      try { await readTask; } catch (OperationCanceledException) { }
-      try { await keepaliveTask; } catch (OperationCanceledException) { }
+      await readTask.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+      await keepaliveTask.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
     }
     catch (AuthenticationException ex)
     {
@@ -300,7 +299,7 @@ public sealed class TunnelService
           var sink = new TunnelStreamSink(muxer, streamId);
           try
           {
-            await LiveHandler.RunAsync(reader, sink, _tapRegistry,
+            await LiveHandler.RunAsync(reader, sink, _tapRegistry, _plugins,
               _loggerFactory.CreateLogger("LiveStream"), ct);
           }
           finally

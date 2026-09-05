@@ -14,6 +14,7 @@ import type {
   TimelineResponse,
   CameraEvent,
   RetentionPolicy,
+  SystemEventRetention,
   HealthResponse,
   VerifyRemoteAddressResponse,
   StorageResponse,
@@ -126,8 +127,10 @@ function qs(params: Record<string, string | number | undefined>): string {
 export const api = {
   enrollment: {
     start: () => post<StartEnrollmentResponse>('/api/v1/clients/enroll'),
-    hold: (token: string, signal: AbortSignal) =>
-      fetch(`/api/v1/clients/enroll/${token}/hold`, { signal }).catch(() => {}),
+    hold: (token: string, signal: AbortSignal): Promise<boolean> =>
+      fetch(`/api/v1/clients/enroll/${token}/hold`, { signal })
+        .then(r => r.ok)
+        .catch(() => false),
   },
 
   clients: {
@@ -178,6 +181,8 @@ export const api = {
   retention: {
     get: () => get<RetentionPolicy>('/api/v1/retention'),
     update: (body: RetentionPolicy) => put<void>('/api/v1/retention', body),
+    getSystemEvents: () => get<SystemEventRetention>('/api/v1/retention/system-events'),
+    updateSystemEvents: (body: SystemEventRetention) => put<void>('/api/v1/retention/system-events', body),
   },
 
   system: {

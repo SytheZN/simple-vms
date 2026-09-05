@@ -8,6 +8,11 @@ export class Fetcher {
   private gaps: { from: number, to: number }[] = []
   private fetchInFlight = false
   private live = false
+  private lastFetchFrom: number | null = null
+  private fetchProgressed = false
+  private exhaustedFrom: number | null = null
+  private exhaustedAt = 0
+  private static readonly exhaustedRetryMs = 2000
   private sendFetch: ((from: number, to: number) => void) | null = null
   private fetchResolve: (() => void) | null = null
 
@@ -40,7 +45,8 @@ export class Fetcher {
       if (newest === null || newest < toUs) {
         let from = newest !== null ? newest + 1 : fromUs
         from = this.skipGapsForward(from)
-        this.fetchInFlight = true
+        if (this.isExhausted(from)) return
+        this.beginFetch(from)
         this.sendFetch(from, from + 30_000_000)
       }
     } else {
@@ -48,13 +54,30 @@ export class Fetcher {
       if (oldest === null || oldest > toUs) {
         let from = oldest !== null ? oldest - 1 : fromUs
         from = this.skipGapsReverse(from)
-        this.fetchInFlight = true
+        if (this.isExhausted(from)) return
+        this.beginFetch(from)
         this.sendFetch(from, from - 30_000_000)
       }
     }
   }
 
+  private beginFetch(from: number) {
+    this.fetchInFlight = true
+    this.lastFetchFrom = from
+    this.fetchProgressed = false
+  }
+
+  private isExhausted(from: number): boolean {
+    return from === this.exhaustedFrom
+      && Date.now() - this.exhaustedAt < Fetcher.exhaustedRetryMs
+  }
+
   handleFetchComplete() {
+    if (this.lastFetchFrom !== null && !this.fetchProgressed) {
+      this.exhaustedFrom = this.lastFetchFrom
+      this.exhaustedAt = Date.now()
+    }
+    this.lastFetchFrom = null
     this.fetchInFlight = false
     if (this.fetchResolve) {
       this.fetchResolve()
@@ -71,8 +94,17 @@ export class Fetcher {
       })
     }
     this.fetchInFlight = true
+    this.lastFetchFrom = null
     this.sendFetch(ts, ts)
     return new Promise(resolve => { this.fetchResolve = resolve })
+  }
+
+  stats(): { gops: number, bytes: number } {
+    let bytes = 0
+    for (const gop of this.gops)
+      for (const chunk of gop.chunks)
+        bytes += chunk.length
+    return { gops: this.gops.length, bytes }
   }
 
   handleLive() {
@@ -85,14 +117,20 @@ export class Fetcher {
 
   handleGap(from: number, to: number) {
     this.gaps.push({ from, to })
+    this.exhaustedFrom = null
   }
 
-  appendData(timestamp: number, data: Uint8Array) {
+  appendData(timestamp: number, data: Uint8Array, begin: boolean) {
     const existing = this.gops.find(g => g.timestamp === timestamp)
     if (existing) {
-      existing.chunks.push(data)
+      if (begin)
+        existing.chunks = [data]
+      else
+        existing.chunks.push(data)
       return
     }
+    this.fetchProgressed = true
+    this.exhaustedFrom = null
     this.gops.push({ timestamp, chunks: [data] })
     this.gops.sort((a, b) => a.timestamp - b.timestamp)
   }
@@ -140,6 +178,9 @@ export class Fetcher {
     this.gaps = []
     this.fetchInFlight = false
     this.live = false
+    this.lastFetchFrom = null
+    this.fetchProgressed = false
+    this.exhaustedFrom = null
   }
 
   private skipGapsForward(ts: number): number {

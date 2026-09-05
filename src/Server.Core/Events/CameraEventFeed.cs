@@ -5,10 +5,6 @@ using Shared.Protocol;
 
 namespace Server.Core.Events;
 
-/// <summary>
-/// The set of system events a connected client is told about. Transports supply their own encoding
-/// so that the tunnel and the web UI observe one channel rather than two that drift apart.
-/// </summary>
 public static class CameraEventFeed
 {
   private const int QueueDepth = 256;
@@ -51,25 +47,53 @@ public static class CameraEventFeed
         };
         if (evt.Reason != null)
           metadata["reason"] = evt.Reason;
-        return (Build(evt.CameraId, "status", evt.Timestamp, metadata), EventChannelFlags.Start);
+        return (Build(evt.CameraId, "__status", evt.Timestamp, metadata), EventChannelFlags.Start);
       }),
       Subscribe<CameraRemoved>(eventBus, queue.Writer, token, evt =>
-        (Build(evt.CameraId, "removed", evt.Timestamp), EventChannelFlags.Start))
+        (Build(evt.CameraId, "__removed", evt.Timestamp), EventChannelFlags.Start)),
+      Subscribe<CameraRecordingChanged>(eventBus, queue.Writer, token, evt =>
+      {
+        var metadata = new Dictionary<string, string>
+        {
+          ["state"] = evt.State.ToString().ToLowerInvariant(),
+          ["profile"] = evt.Profile
+        };
+        return (Build(evt.CameraId, "__recording", evt.Timestamp, metadata), EventChannelFlags.Start);
+      }),
+      Subscribe<SystemEventRecorded>(eventBus, queue.Writer, token, evt =>
+      {
+        var metadata = evt.Metadata != null
+          ? new Dictionary<string, string>(evt.Metadata)
+          : new Dictionary<string, string>();
+        metadata["source"] = evt.Source;
+        return (new EventChannelMessage
+        {
+          Id = evt.Id,
+          CameraId = Guid.Empty,
+          Type = evt.Type,
+          StartTime = evt.Timestamp,
+          Metadata = metadata
+        }, EventChannelFlags.Start);
+      })
     };
 
     try
     {
-      await foreach (var (message, flags) in queue.Reader.ReadAllAsync(token))
-        await writeAsync(message, flags, token);
+      while (true)
+      {
+        bool available;
+        try { available = await queue.Reader.WaitToReadAsync(token); }
+        catch (OperationCanceledException) { break; }
+        if (!available) break;
+        while (queue.Reader.TryRead(out var item))
+          await writeAsync(item.Message, item.Flags, token);
+      }
     }
     finally
     {
       cts.Cancel();
       foreach (var subscription in subscriptions)
-      {
-        try { await subscription; }
-        catch (OperationCanceledException) { }
-      }
+        await subscription.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
     }
   }
 

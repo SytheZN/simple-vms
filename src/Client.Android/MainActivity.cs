@@ -39,9 +39,6 @@ public sealed class MainActivity : AvaloniaMainActivity
 
   protected override void OnCreate(Bundle? savedInstanceState)
   {
-    // On a relaunch into a live process Avalonia is already initialised, so
-    // OnFrameworkInitializationCompleted will not run again and the lifetime still holds the
-    // previous activity's view. Replace it before the base attaches whatever it finds.
     (Avalonia.Application.Current as AndroidApp)?.ResetMainView();
 
     base.OnCreate(savedInstanceState);
@@ -69,9 +66,6 @@ public sealed class MainActivity : AvaloniaMainActivity
       _ = app.ReconnectAsync();
   }
 
-  // Nothing is on screen once the activity stops, so holding the tunnel open only keeps the
-  // radio and the decode pipeline alive. Dropping it also tears down any live or playback
-  // stream, which is where the drain actually comes from.
   protected override void OnStop()
   {
     base.OnStop();
@@ -85,10 +79,6 @@ public sealed class MainActivity : AvaloniaMainActivity
     if (hasFocus && _shell != null) ApplyImmersive(_shell.IsFullscreen);
   }
 
-  // Killing our own process here leaves Android holding a task record pointing at a dead
-  // process, which is why the app could not be resumed from recents. OnStop has already
-  // dropped the tunnel and the foreground service, so there is nothing left running to
-  // justify it - the process can be reclaimed normally.
   protected override void OnDestroy()
   {
     if (_shell != null) _shell.PropertyChanged -= OnShellPropertyChanged;

@@ -2,6 +2,8 @@ namespace Client.Core.Decoding;
 
 public sealed class Fetcher
 {
+  private const long ExhaustedRetryMs = 2000;
+
   private readonly List<GopEntry> _gops = [];
   private readonly List<(ulong From, ulong To)> _gaps = [];
   private readonly Lock _lock = new();
@@ -10,6 +12,10 @@ public sealed class Fetcher
   private bool _fetchInFlight;
   private bool _live;
   private TaskCompletionSource? _fetchTcs;
+  private ulong? _lastFetchFrom;
+  private bool _fetchProgressed;
+  private ulong? _exhaustedFrom;
+  private long _exhaustedAtMs;
 
   public int BufferedGopCount
   {
@@ -88,7 +94,12 @@ public sealed class Fetcher
       }
 
       if (fetchFrom == null) return;
+      if (_exhaustedFrom == fetchFrom.Value
+          && Environment.TickCount64 - _exhaustedAtMs < ExhaustedRetryMs)
+        return;
       _fetchInFlight = true;
+      _lastFetchFrom = fetchFrom.Value;
+      _fetchProgressed = false;
       _ = _sendFetch(fetchFrom.Value, fetchTo);
     }
   }
@@ -98,6 +109,12 @@ public sealed class Fetcher
     TaskCompletionSource? tcs;
     lock (_lock)
     {
+      if (_lastFetchFrom != null && !_fetchProgressed)
+      {
+        _exhaustedFrom = _lastFetchFrom;
+        _exhaustedAtMs = Environment.TickCount64;
+      }
+      _lastFetchFrom = null;
       _fetchInFlight = false;
       tcs = _fetchTcs;
       _fetchTcs = null;
@@ -116,6 +133,7 @@ public sealed class Fetcher
         return existing.Task;
       }
       _fetchInFlight = true;
+      _lastFetchFrom = null;
       _fetchTcs = new TaskCompletionSource();
       var result = _fetchTcs.Task;
       _ = _sendFetch(ts, ts);
@@ -128,19 +146,26 @@ public sealed class Fetcher
 
   public void HandleGap(ulong from, ulong to)
   {
-    lock (_lock) _gaps.Add((from, to));
+    lock (_lock)
+    {
+      _gaps.Add((from, to));
+      _exhaustedFrom = null;
+    }
   }
 
-  public void AppendData(ulong timestamp, ReadOnlyMemory<byte> chunk)
+  public void AppendData(ulong timestamp, ReadOnlyMemory<byte> chunk, bool begin)
   {
     lock (_lock)
     {
       var existing = _gops.Find(g => g.Timestamp == timestamp);
       if (existing != null)
       {
+        if (begin) existing.Chunks.Clear();
         existing.Chunks.Add(chunk);
         return;
       }
+      _fetchProgressed = true;
+      _exhaustedFrom = null;
       var entry = new GopEntry(timestamp);
       entry.Chunks.Add(chunk);
       _gops.Add(entry);
@@ -181,6 +206,9 @@ public sealed class Fetcher
       _gaps.Clear();
       _fetchInFlight = false;
       _live = false;
+      _lastFetchFrom = null;
+      _fetchProgressed = false;
+      _exhaustedFrom = null;
       _fetchTcs?.TrySetResult();
       _fetchTcs = null;
     }

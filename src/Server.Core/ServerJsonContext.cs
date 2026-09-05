@@ -37,6 +37,7 @@ namespace Server.Core;
 [JsonSerializable(typeof(IReadOnlyList<EventDto>))]
 [JsonSerializable(typeof(List<EventDto>))]
 [JsonSerializable(typeof(RetentionPolicy))]
+[JsonSerializable(typeof(SystemEventRetentionDto))]
 [JsonSerializable(typeof(HealthResponse))]
 [JsonSerializable(typeof(VerifyRemoteAddressResponse))]
 [JsonSerializable(typeof(StorageResponse))]

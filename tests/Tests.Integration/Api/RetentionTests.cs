@@ -48,7 +48,7 @@ public sealed class RetentionTests
   public async Task SetRetention_PersistsPolicy()
   {
     var setResponse = await _client.PutAsJsonAsync("/api/v1/retention",
-      new { mode = "days", value = 90L });
+      new { mode = "days", value = 90L, minFreeSpaceGb = 2.0m });
     Assert.That(setResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
 
     var body = (await ApiTestFixture.Envelope<RetentionPolicy>(
@@ -71,7 +71,7 @@ public sealed class RetentionTests
   public async Task SetRetention_OverwritesPreviousPolicy()
   {
     await _client.PutAsJsonAsync("/api/v1/retention",
-      new { mode = "percent", value = 85L });
+      new { mode = "percent", value = 85L, minFreeSpaceGb = 2.0m });
 
     var body = (await ApiTestFixture.Envelope<RetentionPolicy>(
       await _client.GetAsync("/api/v1/retention"))).Body!;

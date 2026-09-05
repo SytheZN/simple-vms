@@ -19,7 +19,6 @@ internal static class FfmpegLoader
     if (dir == null)
       return;
 
-    // Load in dependency order so transitive deps resolve from our dir
     _loaded["avutil"] = LoadWithDiagnosis(Path.Combine(dir, MapName("avutil")));
     _loaded["swscale"] = LoadWithDiagnosis(Path.Combine(dir, MapName("swscale")));
     _loaded["avcodec"] = LoadWithDiagnosis(Path.Combine(dir, MapName("avcodec")));
@@ -50,7 +49,6 @@ internal static class FfmpegLoader
       }
       catch
       {
-        // PE parse failed; fall through with whatever we collected
       }
 
       if (missing.Count == 0)
@@ -76,11 +74,11 @@ internal static class FfmpegLoader
 
     while (blockReader.RemainingBytes >= 20)
     {
-      blockReader.ReadUInt32(); // OriginalFirstThunk
-      blockReader.ReadUInt32(); // TimeDateStamp
-      blockReader.ReadUInt32(); // ForwarderChain
+      blockReader.ReadUInt32();
+      blockReader.ReadUInt32();
+      blockReader.ReadUInt32();
       var nameRva = blockReader.ReadInt32();
-      blockReader.ReadUInt32(); // FirstThunk
+      blockReader.ReadUInt32();
 
       if (nameRva == 0) yield break;
 

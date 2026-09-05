@@ -4,7 +4,7 @@ using Shared.Models;
 
 namespace Cameras.Onvif.Services;
 
-public sealed class EventService(SoapClient soap)
+public sealed class EventService(ISoapClient soap)
 {
   private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(60);
 
@@ -44,7 +44,7 @@ public sealed class EventService(SoapClient soap)
     var body = new XElement(XmlHelpers.NsEvent + "PullMessages",
       new XElement(XmlHelpers.NsEvent + "Timeout", $"PT{(int)DefaultTimeout.TotalSeconds}S"),
       new XElement(XmlHelpers.NsEvent + "MessageLimit", 100));
-    var response = await soap.SendUnpacedAsync(pullPointUri, body, credentials, ct);
+    var response = await soap.SendAsync(pullPointUri, body, credentials, ct, logFaults: false);
 
     var result = response.Element(XmlHelpers.NsEvent + "PullMessagesResponse");
     if (result == null) return [];

@@ -8,4 +8,5 @@ public sealed class EventDto
   public required ulong StartTime { get; init; }
   public ulong? EndTime { get; init; }
   public Dictionary<string, string>? Metadata { get; init; }
+  public string? Source { get; init; }
 }

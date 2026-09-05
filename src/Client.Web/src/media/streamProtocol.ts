@@ -9,6 +9,11 @@ export const ServerMsg = {
   Status: 0x03,
 } as const
 
+export const GopFlag = {
+  Begin: 0x01,
+  End: 0x02,
+} as const
+
 export const Status = {
   Ack: 0x00,
   FetchComplete: 0x01,

@@ -14,7 +14,6 @@ public sealed class StreamingService : IAsyncDisposable
   private readonly StreamTapRegistry _tapRegistry;
   private readonly IEventBus _eventBus;
   private readonly ILogger<StreamingService> _logger;
-  private readonly StreamReconciler _reconciler;
   private CancellationTokenSource? _eventCts;
 
   public StreamingService(
@@ -27,14 +26,12 @@ public sealed class StreamingService : IAsyncDisposable
     _tapRegistry = tapRegistry;
     _eventBus = eventBus;
     _logger = logger;
-    _reconciler = new StreamReconciler(pluginHost, logger);
   }
 
   [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]
   public async Task StartAsync(CancellationToken ct)
   {
     var dataProvider = _pluginHost.DataProvider;
-    await _reconciler.ReconcileAllAsync(ct);
 
     var camerasResult = await dataProvider.Cameras.GetAllAsync(ct);
     if (camerasResult.IsT1)
@@ -66,7 +63,7 @@ public sealed class StreamingService : IAsyncDisposable
         }
         else
         {
-          await PersistMuxInfoAsync(pipeline, ct);
+          AttachStatsPersister(pipeline);
         }
       }
     }
@@ -75,10 +72,20 @@ public sealed class StreamingService : IAsyncDisposable
     WatchCameraAdded(_eventCts.Token);
     WatchCameraRemoved(_eventCts.Token);
     WatchCameraConfigChanged(_eventCts.Token);
-    WatchPipelineConfigMismatch(_eventCts.Token);
+    StartDemandSweep(_eventCts.Token);
 
     _logger.LogInformation("Streaming service started: {Count} pipeline(s) registered",
       _tapRegistry.Pipelines.Count);
+
+    foreach (var camera in camerasResult.AsT0)
+    {
+      await _eventBus.PublishAsync(new CameraReprobeRequested
+      {
+        CameraId = camera.Id,
+        Initiator = "streaming-service-startup",
+        Timestamp = DateTimeOffset.UtcNow.ToUnixMicroseconds()
+      }, ct);
+    }
   }
 
   [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]
@@ -119,7 +126,8 @@ public sealed class StreamingService : IAsyncDisposable
     {
       await foreach (var evt in _eventBus.SubscribeAsync<CameraConfigChanged>(ct))
       {
-        try { await ReconcilePipelinesForCameraAsync(evt.CameraId, null, ct); }
+        if (evt.Diff.Count > 0 && !evt.Diff.AffectsPipelines()) continue;
+        try { await ReconcilePipelinesForCameraAsync(evt.CameraId, ct); }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
           _logger.LogError(ex, "Failed to reconcile pipelines for camera {CameraId}", evt.CameraId);
@@ -128,27 +136,17 @@ public sealed class StreamingService : IAsyncDisposable
     }, ct);
   }
 
-  [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]
-  private void WatchPipelineConfigMismatch(CancellationToken ct)
+  private void StartDemandSweep(CancellationToken ct)
   {
     _ = Task.Run(async () =>
     {
-      await foreach (var evt in _eventBus.SubscribeAsync<PipelineConfigMismatch>(ct))
+      while (!ct.IsCancellationRequested)
       {
-        try
-        {
-          var affected = _tapRegistry.Pipelines
-            .OfType<CameraPipeline>()
-            .Where(p => p.ConnectionUri == evt.Uri)
-            .ToList();
+        await Task.Delay(TimeSpan.FromSeconds(30), ct).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        if (ct.IsCancellationRequested) return;
 
-          foreach (var cameraId in affected.Select(p => p.CameraId).Distinct())
-            await ReconcilePipelinesForCameraAsync(cameraId, evt.Uri, ct);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-          _logger.LogError(ex, "Failed to rebuild pipelines for stream {Uri}", evt.Uri);
-        }
+        foreach (var pipeline in _tapRegistry.Pipelines)
+          pipeline.Evaluate();
       }
     }, ct);
   }
@@ -184,9 +182,20 @@ public sealed class StreamingService : IAsyncDisposable
       }
       else
       {
-        await PersistMuxInfoAsync(pipeline, ct);
+        AttachStatsPersister(pipeline);
         _logger.LogInformation("Added pipeline for camera {CameraId} profile '{Profile}'",
           cameraId, stream.Profile);
+
+        if (pipeline is DerivedStreamPipeline)
+        {
+          await _eventBus.PublishAsync(new StreamStarted
+          {
+            CameraId = cameraId,
+            Profile = stream.Profile,
+            DataFormat = stream.Codec ?? stream.FormatId,
+            Timestamp = DateTimeOffset.UtcNow.ToUnixMicroseconds()
+          }, ct);
+        }
       }
     }
   }
@@ -197,8 +206,8 @@ public sealed class StreamingService : IAsyncDisposable
     int[] delays = [1, 2, 4, 8, 15];
     for (var attempt = 0; attempt < delays.Length; attempt++)
     {
-      try { await Task.Delay(TimeSpan.FromSeconds(delays[attempt]), ct); }
-      catch (OperationCanceledException) { return; }
+      await Task.Delay(TimeSpan.FromSeconds(delays[attempt]), ct).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+      if (ct.IsCancellationRequested) return;
 
       if (_tapRegistry.GetPipeline(pipeline.CameraId, pipeline.Profile) != pipeline)
         return;
@@ -206,7 +215,7 @@ public sealed class StreamingService : IAsyncDisposable
       var result = await pipeline.ConstructAsync(ct);
       if (result.IsT0)
       {
-        await PersistMuxInfoAsync(pipeline, ct);
+        AttachStatsPersister(pipeline);
         _logger.LogInformation("Pipeline constructed for camera {CameraId} profile '{Profile}' (retry {Attempt})",
           pipeline.CameraId, pipeline.Profile, attempt + 1);
         return;
@@ -237,13 +246,11 @@ public sealed class StreamingService : IAsyncDisposable
 
   [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]
   private async Task ReconcilePipelinesForCameraAsync(
-    Guid cameraId, string? mismatchedUri, CancellationToken ct)
+    Guid cameraId, CancellationToken ct)
   {
     var dataProvider = _pluginHost.DataProvider;
     var cameraResult = await dataProvider.Cameras.GetByIdAsync(cameraId, ct);
     if (cameraResult.IsT1) return;
-
-    await _reconciler.ReconcileCameraAsync(cameraId, ct);
 
     var camera = cameraResult.AsT0;
     var streamsResult = await dataProvider.Streams.GetByCameraIdAsync(cameraId, ct);
@@ -259,7 +266,7 @@ public sealed class StreamingService : IAsyncDisposable
 
     foreach (var pipeline in existingPipelines)
     {
-      var reason = DropReason(pipeline, camera, desiredStreams, mismatchedUri);
+      var reason = DropReason(pipeline, camera, desiredStreams);
       if (reason == null) continue;
 
       dropped.Add(pipeline.Profile);
@@ -292,27 +299,42 @@ public sealed class StreamingService : IAsyncDisposable
   }
 
   private string? DropReason(
-    IPipeline pipeline, Camera camera, Dictionary<string, CameraStream> desiredStreams,
-    string? mismatchedUri)
+    IPipeline pipeline, Camera camera, Dictionary<string, CameraStream> desiredStreams)
   {
     if (!desiredStreams.TryGetValue(pipeline.Profile, out var stream) || stream.DeletedAt != null)
       return "stream removed or soft-deleted";
 
     if (pipeline is CameraPipeline source)
     {
-      if (source.ConnectionUri == mismatchedUri)
-        return "the camera is no longer sending what the pipeline was constructed for";
-
       if (stream.Uri == null)
         return null;
 
       var uri = BuildConnectionInfo(camera, stream).Uri;
-      return source.ConnectionUri == uri ? null : $"URI changed: {source.ConnectionUri} -> {uri}";
+      if (source.ConnectionUri != uri)
+        return $"URI changed: {source.ConnectionUri} -> {uri}";
+
+      if (source.ExpectedCodec != null && stream.Codec != null
+        && !string.Equals(source.ExpectedCodec, stream.Codec, StringComparison.OrdinalIgnoreCase))
+        return $"codec changed: {source.ExpectedCodec} -> {stream.Codec}";
+
+      return null;
     }
 
-    if (pipeline is DerivedStreamPipeline derived
-      && (derived.ProducerId != stream.ProducerId || derived.FormatId != stream.FormatId))
-      return "producer or format changed";
+    if (pipeline is DerivedStreamPipeline derived)
+    {
+      if (derived.ProducerId != stream.ProducerId || derived.FormatId != stream.FormatId)
+        return "producer or format changed";
+
+      var currentParentProfile = stream.ParentStreamId is Guid pid
+        && desiredStreams.Values.FirstOrDefault(x => x.Id == pid) is { } parent
+          ? parent.Profile
+          : null;
+      if (currentParentProfile != null && derived.ParentProfile != currentParentProfile)
+        return $"parent stream changed: {derived.ParentProfile} -> {currentParentProfile}";
+
+      if (derived.NeedsRebuild)
+        return "analyzer requested rebuild";
+    }
 
     return null;
   }
@@ -333,23 +355,28 @@ public sealed class StreamingService : IAsyncDisposable
     await StopAsync();
   }
 
-  private async Task PersistMuxInfoAsync(IPipeline pipeline, CancellationToken ct)
+  private void AttachStatsPersister(IPipeline pipeline)
   {
-    var info = pipeline.MuxInfo;
-    if (info == null) return;
+    pipeline.OnStats = stats => _ = PersistStatsAsync(pipeline.CameraId, pipeline.Profile, stats);
+  }
 
-    var streams = await _pluginHost.DataProvider.Streams.GetByCameraIdAsync(pipeline.CameraId, ct);
+  private async Task PersistStatsAsync(Guid cameraId, string profile, MuxStreamStats stats)
+  {
+    var streams = await _pluginHost.DataProvider.Streams.GetByCameraIdAsync(cameraId, CancellationToken.None);
     if (streams.IsT1) return;
 
-    var row = streams.AsT0.FirstOrDefault(s => s.Profile == pipeline.Profile);
+    var row = streams.AsT0.FirstOrDefault(s => s.Profile == profile);
     if (row == null) return;
 
     var dirty = false;
-    if (row.Resolution != info.Resolution) { row.Resolution = info.Resolution; dirty = true; }
-    var fps = info.Fps == 0 ? (decimal?)null : info.Fps;
+    var resolution = string.IsNullOrEmpty(stats.Resolution) ? null : stats.Resolution;
+    if (row.Resolution != resolution) { row.Resolution = resolution; dirty = true; }
+    var fps = stats.Fps == 0m ? (decimal?)null : stats.Fps;
     if (row.Fps != fps) { row.Fps = fps; dirty = true; }
+    var bitrate = stats.BitrateKbps == 0 ? (int?)null : stats.BitrateKbps;
+    if (row.Bitrate != bitrate) { row.Bitrate = bitrate; dirty = true; }
     if (dirty)
-      await _pluginHost.DataProvider.Streams.UpsertAsync(row, ct);
+      await _pluginHost.DataProvider.Streams.UpsertAsync(row, CancellationToken.None);
   }
 
   [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]
@@ -402,7 +429,7 @@ public sealed class StreamingService : IAsyncDisposable
 
     var connectionInfo = BuildConnectionInfo(camera, stream);
     return new CameraPipeline(
-      camera.Id, stream.Profile, connectionInfo,
+      camera.Id, stream.Profile, stream.Codec, connectionInfo,
       captureSource, _pluginHost, _eventBus, _logger);
   }
 
@@ -434,6 +461,7 @@ public sealed class StreamingService : IAsyncDisposable
 
     return new CameraConnectionInfo
     {
+      CameraId = camera.Id,
       Uri = stream.Uri!,
       Credentials = credentials
     };

@@ -245,7 +245,7 @@ public class ApiClientTests
   public async Task GetRetention_DeserializesPolicy()
   {
     var (client, tunnel) = CreateClient();
-    tunnel.NextResponse = CreateResponse(Result.Success, new RetentionPolicy { Mode = "days", Value = 30 }, Json.RetentionPolicy);
+    tunnel.NextResponse = CreateResponse(Result.Success, new RetentionPolicy { Mode = "days", Value = 30, MinFreeSpaceGb = 2.0m }, Json.RetentionPolicy);
     var result = await client.GetRetentionAsync(CancellationToken.None);
     Assert.That(result.IsT0, Is.True);
     Assert.That(result.AsT0.Mode, Is.EqualTo("days"));
@@ -266,7 +266,7 @@ public class ApiClientTests
   {
     var (client, tunnel) = CreateClient();
     tunnel.NextResponse = CreateErrorResponse(Result.Success, "");
-    await client.UpdateRetentionAsync(new RetentionPolicy { Mode = "bytes", Value = 1000 }, CancellationToken.None);
+    await client.UpdateRetentionAsync(new RetentionPolicy { Mode = "bytes", Value = 1000, MinFreeSpaceGb = 2.0m }, CancellationToken.None);
     Assert.That(tunnel.LastRequest!.Method, Is.EqualTo("PUT"));
     Assert.That(tunnel.LastRequest.Path, Is.EqualTo("/api/v1/retention"));
   }

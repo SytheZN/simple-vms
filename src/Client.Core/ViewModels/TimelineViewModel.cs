@@ -77,7 +77,8 @@ public sealed class TimelineViewModel : ViewModelBase, IDisposable
 
         Events.Clear();
         foreach (var evt in timeline.Events)
-          Events.Add(evt);
+          if (evt.Type == "motion")
+            Events.Add(evt);
 
         OnPropertyChanged(nameof(Spans));
       }),
@@ -101,11 +102,9 @@ public sealed class TimelineViewModel : ViewModelBase, IDisposable
     _loadCts = new CancellationTokenSource();
     old?.Cancel();
     old?.Dispose();
-    try
-    {
-      await Task.Delay(150, _loadCts.Token);
-      await LoadAsync(_loadCts.Token);
-    }
+    await Task.Delay(150, _loadCts.Token).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+    if (_loadCts.IsCancellationRequested) return;
+    try { await LoadAsync(_loadCts.Token); }
     catch (OperationCanceledException) { }
   }
 

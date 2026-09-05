@@ -21,9 +21,12 @@ internal static class PlaybackHandler
     var request = MessagePackSerializer.Deserialize<PlaybackRequestMessage>(
       msg.Payload, ProtocolSerializer.Options);
 
-    await StreamSessionRunner.RunFetchAsync(
-      request.CameraId, request.Profile,
-      request.From, request.To ?? ulong.MaxValue,
-      sink, tapRegistry, plugins, logger, ct);
+    await StreamCommandLoop.RunAsync(
+      request.CameraId,
+      opCt => StreamSessionRunner.RunFetchAsync(
+        request.CameraId, request.Profile,
+        request.From, request.To ?? ulong.MaxValue,
+        sink, tapRegistry, plugins, logger, opCt),
+      reader, sink, tapRegistry, plugins, logger, ct);
   }
 }

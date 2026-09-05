@@ -4,6 +4,7 @@ using Server.Plugins;
 using Shared.Models;
 using Shared.Api;
 using Shared.Models.Entities;
+using Shared.Models.Events;
 
 namespace Server.Core.Services;
 
@@ -18,15 +19,18 @@ public sealed class EnrollmentService
   private readonly ICertificateService _certs;
   private readonly IPluginHost _plugins;
   private readonly ServerEndpoints _endpoints;
+  private readonly IEventBus _eventBus;
 
   public EnrollmentService(
     ICertificateService certs,
     IPluginHost plugins,
-    ServerEndpoints endpoints)
+    ServerEndpoints endpoints,
+    IEventBus eventBus)
   {
     _certs = certs;
     _plugins = plugins;
     _endpoints = endpoints;
+    _eventBus = eventBus;
   }
 
   public OneOf<StartEnrollmentResponse, Error> StartEnrollment()
@@ -50,7 +54,7 @@ public sealed class EnrollmentService
 
     try
     {
-      await Task.Delay(Timeout.Infinite, ct);
+      await state.Consumed.WaitAsync(ct);
     }
     catch (OperationCanceledException) { }
 
@@ -60,8 +64,10 @@ public sealed class EnrollmentService
     return new Success();
   }
 
+  private const int MaxDeviceNameLength = 64;
+
   public async Task<OneOf<EnrollResponse, Error>> CompleteEnrollmentAsync(
-    string token, CancellationToken ct)
+    string token, string? deviceName, CancellationToken ct)
   {
     if (!_pending.TryRemove(token, out var state))
       return new Error(
@@ -70,6 +76,7 @@ public sealed class EnrollmentService
         "Invalid or expired enrollment token");
 
     state.CancelGraceExpiry();
+    state.MarkConsumed();
 
     var clientId = Guid.NewGuid();
     var bundle = _certs.GenerateClientCert(clientId);
@@ -85,18 +92,30 @@ public sealed class EnrollmentService
       ClientId = clientId
     };
 
+    var trimmedName = deviceName?.Trim() ?? "";
+    if (trimmedName.Length > MaxDeviceNameLength)
+      trimmedName = trimmedName[..MaxDeviceNameLength];
+
+    var baseName = $"Client {clientId.ToString()[..8]}";
     var client = new Client
     {
       Id = clientId,
-      Name = $"Client {clientId.ToString()[..8]}",
+      Name = trimmedName.Length > 0 ? $"{baseName} {trimmedName}" : baseName,
       CertificateSerial = bundle.Serial,
       EnrolledAt = DateTimeOffset.UtcNow.ToUnixMicroseconds()
     };
 
     var result = await _plugins.DataProvider!.Clients.CreateAsync(client, ct);
-    return result.Match<OneOf<EnrollResponse, Error>>(
-      _ => response,
-      error => error);
+    if (result.IsT1) return result.AsT1;
+
+    await _eventBus.PublishAsync(new ClientEnrolled
+    {
+      ClientId = clientId,
+      Name = client.Name,
+      Timestamp = client.EnrolledAt
+    }, ct);
+
+    return response;
   }
 
   private async Task<string[]> BuildTunnelAddressesAsync(CancellationToken ct)
@@ -140,7 +159,13 @@ public sealed class EnrollmentService
 
   private sealed class TokenState
   {
+    private readonly TaskCompletionSource _consumed =
+      new(TaskCreationOptions.RunContinuationsAsynchronously);
     private CancellationTokenSource? _graceCts;
+
+    public Task Consumed => _consumed.Task;
+
+    public void MarkConsumed() => _consumed.TrySetResult();
 
     public void StartGraceExpiry(TimeSpan delay, Action onExpired)
     {
@@ -149,12 +174,8 @@ public sealed class EnrollmentService
       var cts = _graceCts;
       _ = Task.Run(async () =>
       {
-        try
-        {
-          await Task.Delay(delay, cts.Token);
-          onExpired();
-        }
-        catch (OperationCanceledException) { }
+        await Task.Delay(delay, cts.Token).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        if (!cts.IsCancellationRequested) onExpired();
       });
     }
 

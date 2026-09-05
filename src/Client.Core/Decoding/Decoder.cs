@@ -40,8 +40,13 @@ public sealed class Decoder : IDisposable
     var ct = _workerCts.Token;
     try
     {
-      while (await _decodeSignal.Reader.WaitToReadAsync(ct).ConfigureAwait(false))
+      while (true)
       {
+        bool available;
+        try { available = await _decodeSignal.Reader.WaitToReadAsync(ct).ConfigureAwait(false); }
+        catch (OperationCanceledException) { break; }
+        if (!available) break;
+
         while (_decodeSignal.Reader.TryRead(out _)) { }
         if (ct.IsCancellationRequested) break;
 
@@ -74,7 +79,6 @@ public sealed class Decoder : IDisposable
         if (targets != null) SetTargetInternal(targets);
       }
     }
-    catch (OperationCanceledException) { }
     catch (Exception ex)
     {
       _logger.LogError(ex, "Decoder worker crashed");
@@ -147,8 +151,12 @@ public sealed class Decoder : IDisposable
     _backend.Configure(config);
   }
 
-  public void FlushForSeek() =>
+  public void FlushForSeek()
+  {
+    FlushDecoded();
+    lock (_cacheLock) _lastWallClockUs = 0;
     EnqueueCommand(FlushForSeekInternal, null);
+  }
 
   private void FlushForSeekInternal()
   {
@@ -230,7 +238,12 @@ public sealed class Decoder : IDisposable
       var count = gop.Chunks.Count;
       lock (_cacheLock)
         decoded = _decodedChunks.TryGetValue(gopTs, out var n) ? n : 0;
-      if (decoded >= count) continue;
+      if (decoded > count)
+      {
+        lock (_cacheLock) _decodedChunks[gopTs] = count;
+        continue;
+      }
+      if (decoded == count) continue;
 
       for (var c = decoded; c < count; c++)
         DecodeChunk(gop.Chunks[c], gopTs);
@@ -238,7 +251,24 @@ public sealed class Decoder : IDisposable
     }
   }
 
-  // Nearest frame may live just across a GOP boundary, so probe idx+-1 too.
+  public bool HasFrameToward(long ts, int direction)
+  {
+    lock (_cacheLock)
+    {
+      foreach (var gop in _gops)
+        foreach (var f in gop.Frames)
+          if (Covers(f, ts, direction)) return true;
+      if (_currentGop != null)
+        foreach (var f in _currentGop.Frames)
+          if (Covers(f, ts, direction)) return true;
+      return false;
+    }
+  }
+
+  private static bool Covers(DecodedFrame frame, long ts, int direction) =>
+    frame.TimestampUs > 0
+    && (direction == 1 ? frame.TimestampUs >= ts : frame.TimestampUs <= ts);
+
   public DecodedFrame? GetFrame(long ts)
   {
     lock (_cacheLock)
@@ -305,13 +335,13 @@ public sealed class Decoder : IDisposable
     {
       var f = frames[lo];
       var d = Math.Abs(f.TimestampUs - ts);
-      if (d < bestDist) { best = f; bestDist = d; }
+      if (f.TimestampUs > 0 && d < bestDist) { best = f; bestDist = d; }
     }
     if (lo > 0)
     {
       var f = frames[lo - 1];
       var d = Math.Abs(f.TimestampUs - ts);
-      if (d < bestDist) { best = f; bestDist = d; }
+      if (f.TimestampUs > 0 && d < bestDist) { best = f; bestDist = d; }
     }
     return best;
   }
@@ -364,9 +394,6 @@ public sealed class Decoder : IDisposable
       }
       else if (_lastWallClockUs > 0)
       {
-        // No prft in this chunk: extrapolate PTS/DTS from the previous chunk's
-        // end. DTS is set equal to PTS - the real decode order is unknown
-        // without prft, but for the common B-frame-free case this matches.
         for (var i = 0; i < samples.Count; i++)
         {
           var s = samples[i];

@@ -56,6 +56,7 @@ public class ApiHandlerTests
     public ISegmentRepository Segments => null!;
     public IKeyframeRepository Keyframes => null!;
     public IEventRepository Events => null!;
+    public ISystemEventRepository SystemEvents => null!;
     public IClientRepository Clients => null!;
     public IConfigRepository Config { get; } = new StubConfigRepository();
     public IDataStore GetDataStore(string pluginId) => null!;

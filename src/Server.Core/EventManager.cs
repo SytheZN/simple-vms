@@ -47,9 +47,12 @@ public sealed class EventManager : IAsyncDisposable
 
     _eventCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
     WatchCameraAdded(_eventCts.Token);
+    WatchCameraUpdated(_eventCts.Token);
     WatchCameraRemoved(_eventCts.Token);
     WatchCameraConfigChanged(_eventCts.Token);
     WatchCameraStatusChanged(_eventCts.Token);
+    WatchCameraRecordingChanged(_eventCts.Token);
+    WatchClientEvents(_eventCts.Token);
 
     _logger.LogInformation("Event manager started: {Count} subscription(s)", _subscriptions.Count);
   }
@@ -121,8 +124,8 @@ public sealed class EventManager : IAsyncDisposable
             _logger.LogError("Giving up event subscription for camera {CameraId}", camera.Id);
             return;
           }
-          try { await DelayBackoff(consecutiveFailures, ct); }
-          catch (OperationCanceledException) { return; }
+          await DelayBackoff(consecutiveFailures, ct).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+          if (ct.IsCancellationRequested) return;
           continue;
         }
 
@@ -166,8 +169,8 @@ public sealed class EventManager : IAsyncDisposable
             return;
           }
 
-          try { await DelayBackoff(consecutiveFailures, ct); }
-          catch (OperationCanceledException) { return; }
+          await DelayBackoff(consecutiveFailures, ct).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+          if (ct.IsCancellationRequested) return;
         }
       }
     }
@@ -356,12 +359,34 @@ public sealed class EventManager : IAsyncDisposable
       {
         try
         {
-          await RecordAsync(evt.CameraId, "added", evt.Timestamp, null, ct);
+          var camera = await GetCameraAsync(evt.CameraId, ct);
+          await RecordSystemAsync(SystemEventFactory.CameraAdded(
+            evt.CameraId, camera?.Name ?? "", camera?.Address ?? "", evt.Timestamp), ct);
           await ReconcileAsync(evt.CameraId, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
           _logger.LogError(ex, "Failed to reconcile events on CameraAdded for {CameraId}", evt.CameraId);
+        }
+      }
+    }, ct);
+  }
+
+  private void WatchCameraUpdated(CancellationToken ct)
+  {
+    _ = Task.Run(async () =>
+    {
+      await foreach (var evt in _eventBus.SubscribeAsync<CameraUpdated>(ct))
+      {
+        try
+        {
+          await RecordSystemAsync(SystemEventFactory.CameraUpdated(
+            evt.CameraId, evt.Name, evt.PreviousName, evt.Address,
+            evt.ProviderId, evt.CredentialsUpdated, evt.RtspPortOverride, evt.Timestamp), ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+          _logger.LogError(ex, "Failed to record camera update for {CameraId}", evt.CameraId);
         }
       }
     }, ct);
@@ -373,7 +398,12 @@ public sealed class EventManager : IAsyncDisposable
     {
       await foreach (var evt in _eventBus.SubscribeAsync<CameraRemoved>(ct))
       {
-        try { await StopSubscriptionAsync(evt.CameraId); }
+        try
+        {
+          await RecordSystemAsync(SystemEventFactory.CameraRemoved(
+            evt.CameraId, evt.Name, evt.Timestamp), ct);
+          await StopSubscriptionAsync(evt.CameraId);
+        }
         catch (Exception ex)
         {
           _logger.LogError(ex, "Failed to stop events on CameraRemoved for {CameraId}", evt.CameraId);
@@ -390,7 +420,10 @@ public sealed class EventManager : IAsyncDisposable
       {
         try
         {
-          await RecordAsync(evt.CameraId, "config", evt.Timestamp, null, ct);
+          var camera = await GetCameraAsync(evt.CameraId, ct);
+          var profiles = await LoadStreamProfilesAsync(evt.CameraId, ct);
+          await RecordSystemAsync(SystemEventFactory.CameraReconfigured(
+            evt.CameraId, camera?.Name ?? "", evt.Diff, profiles, evt.Timestamp), ct);
           await StopSubscriptionAsync(evt.CameraId);
           await ReconcileAsync(evt.CameraId, ct);
         }
@@ -416,11 +449,11 @@ public sealed class EventManager : IAsyncDisposable
           if (evt is { Status: "offline", Reason: "disconnected" })
           {
             if (_disconnected.TryAdd(key, true))
-              await RecordAsync(evt.CameraId, "disconnect", evt.Timestamp, metadata, ct);
+              await RecordAsync(evt.CameraId, "camera-disconnect", evt.Timestamp, metadata, ct);
           }
           else if (evt.Status == "online" && _disconnected.TryRemove(key, out _))
           {
-            await RecordAsync(evt.CameraId, "connect", evt.Timestamp, metadata, ct);
+            await RecordAsync(evt.CameraId, "camera-connect", evt.Timestamp, metadata, ct);
           }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -428,6 +461,114 @@ public sealed class EventManager : IAsyncDisposable
           _logger.LogError(ex, "Failed to record status change for {CameraId}", evt.CameraId);
         }
       }
+    }, ct);
+  }
+
+  private void WatchCameraRecordingChanged(CancellationToken ct)
+  {
+    _ = Task.Run(async () =>
+    {
+      await foreach (var evt in _eventBus.SubscribeAsync<CameraRecordingChanged>(ct))
+      {
+        try
+        {
+          var metadata = new Dictionary<string, string> { ["profile"] = evt.Profile };
+          var type = evt.State switch
+          {
+            RecordingState.Active => "camera-recording-started",
+            RecordingState.Error => "camera-recording-error",
+            RecordingState.None => "camera-recording-stopped",
+            _ => null
+          };
+          if (type != null)
+            await RecordAsync(evt.CameraId, type, evt.Timestamp, metadata, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+          _logger.LogError(ex, "Failed to record recording change for {CameraId}", evt.CameraId);
+        }
+      }
+    }, ct);
+  }
+
+  private void WatchClientEvents(CancellationToken ct)
+  {
+    WatchClient<ClientConnected>(ct, async evt => SystemEventFactory.ClientConnected(
+      evt.ClientId, await GetClientNameAsync(evt.ClientId, ct), evt.RemoteAddress, evt.Timestamp));
+    WatchClient<ClientDisconnected>(ct, async evt => SystemEventFactory.ClientDisconnected(
+      evt.ClientId, await GetClientNameAsync(evt.ClientId, ct), evt.Timestamp));
+    WatchClient<ClientEnrolled>(ct, evt => Task.FromResult(SystemEventFactory.ClientEnrolled(
+      evt.ClientId, evt.Name, evt.Timestamp)));
+    WatchClient<ClientRevoked>(ct, evt => Task.FromResult(SystemEventFactory.ClientRevoked(
+      evt.ClientId, evt.Name, evt.Timestamp)));
+    WatchClient<ClientRenamed>(ct, evt => Task.FromResult(SystemEventFactory.ClientRenamed(
+      evt.ClientId, evt.Name, evt.PreviousName, evt.Timestamp)));
+  }
+
+  private void WatchClient<T>(
+    CancellationToken ct, Func<T, Task<SystemEvent>> project) where T : ISystemEvent
+  {
+    _ = Task.Run(async () =>
+    {
+      await foreach (var evt in _eventBus.SubscribeAsync<T>(ct))
+      {
+        try
+        {
+          await RecordSystemAsync(await project(evt), ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+          _logger.LogError(ex, "Failed to record {EventType} system event", typeof(T).Name);
+        }
+      }
+    }, ct);
+  }
+
+  private async Task<string> GetClientNameAsync(Guid clientId, CancellationToken ct)
+  {
+    var result = await _plugins.DataProvider.Clients.GetByIdAsync(clientId, ct);
+    return result.IsT0 ? result.AsT0.Name : "";
+  }
+
+  private async Task<IReadOnlyDictionary<Guid, string>> LoadStreamProfilesAsync(
+    Guid cameraId, CancellationToken ct)
+  {
+    try
+    {
+      var streamsResult = await _plugins.DataProvider.Streams.GetByCameraIdAsync(cameraId, ct);
+      return streamsResult.IsT0
+        ? streamsResult.AsT0.ToDictionary(s => s.Id, s => s.Profile)
+        : new Dictionary<Guid, string>();
+    }
+    catch
+    {
+      return new Dictionary<Guid, string>();
+    }
+  }
+
+  private async Task<Camera?> GetCameraAsync(Guid cameraId, CancellationToken ct)
+  {
+    var result = await _plugins.DataProvider.Cameras.GetByIdAsync(cameraId, ct);
+    return result.IsT0 ? result.AsT0 : null;
+  }
+
+  private async Task RecordSystemAsync(SystemEvent evt, CancellationToken ct)
+  {
+    var result = await _plugins.DataProvider.SystemEvents.CreateAsync(evt, ct);
+    if (result.IsT1)
+    {
+      _logger.LogWarning("Failed to persist '{Type}' system event: {Message}",
+        evt.Type, result.AsT1.Message);
+      return;
+    }
+
+    await _eventBus.PublishAsync(new SystemEventRecorded
+    {
+      Id = evt.Id,
+      Type = evt.Type,
+      Source = evt.Source,
+      Timestamp = evt.Timestamp,
+      Metadata = evt.Metadata
     }, ct);
   }
 

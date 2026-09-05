@@ -8,6 +8,7 @@ public interface IDataProvider
   ISegmentRepository Segments { get; }
   IKeyframeRepository Keyframes { get; }
   IEventRepository Events { get; }
+  ISystemEventRepository SystemEvents { get; }
   IClientRepository Clients { get; }
   IConfigRepository Config { get; }
   IDataStore GetDataStore(string pluginId);

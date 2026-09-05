@@ -2,10 +2,6 @@ using SimpleVms.FFmpeg.Native;
 
 namespace Client.Core.Decoding;
 
-/// <summary>
-/// Refcounted; anything that takes a frame out of the cache must IncrementRef
-/// and Dispose to match. OnReleased runs when the last ref drops.
-/// </summary>
 public abstract class DecodedFrame : IDisposable
 {
   private int _refCount = 1;

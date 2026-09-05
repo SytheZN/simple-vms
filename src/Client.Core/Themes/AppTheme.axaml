@@ -30,7 +30,8 @@
       <Color x:Key="DangerMutedColor">#23D14E95</Color>
 
       <Color x:Key="MotionColor">#59DD7B2B</Color>
-      <Color x:Key="MotionActiveColor">#8CDD7B2B</Color>
+      <Color x:Key="MotionActiveColor">#8CFFCFA7</Color>
+      <Color x:Key="MotionDimColor">#59000000</Color>
 
       <Color x:Key="SpanRecordingColor">#4C244ECC</Color>
       <Color x:Key="SpanMotionColor">#66DD7B2B</Color>
@@ -61,6 +62,7 @@
 
       <SolidColorBrush x:Key="MotionBrush" Color="{DynamicResource MotionColor}" />
       <SolidColorBrush x:Key="MotionActiveBrush" Color="{DynamicResource MotionActiveColor}" />
+      <SolidColorBrush x:Key="MotionDimBrush" Color="{DynamicResource MotionDimColor}" />
 
       <SolidColorBrush x:Key="SpanRecordingBrush" Color="{DynamicResource SpanRecordingColor}" />
       <SolidColorBrush x:Key="SpanMotionBrush" Color="{DynamicResource SpanMotionColor}" />
@@ -93,7 +95,8 @@
       <Color x:Key="DangerMutedColor">#26D67EA9</Color>
 
       <Color x:Key="MotionColor">#4CDC9A6C</Color>
-      <Color x:Key="MotionActiveColor">#7FDC9A6C</Color>
+      <Color x:Key="MotionActiveColor">#80FFCFA7</Color>
+      <Color x:Key="MotionDimColor">#59000000</Color>
 
       <Color x:Key="SpanRecordingColor">#4C6B8DD8</Color>
       <Color x:Key="SpanMotionColor">#66DC9A6C</Color>
@@ -124,6 +127,7 @@
 
       <SolidColorBrush x:Key="MotionBrush" Color="{DynamicResource MotionColor}" />
       <SolidColorBrush x:Key="MotionActiveBrush" Color="{DynamicResource MotionActiveColor}" />
+      <SolidColorBrush x:Key="MotionDimBrush" Color="{DynamicResource MotionDimColor}" />
 
       <SolidColorBrush x:Key="SpanRecordingBrush" Color="{DynamicResource SpanRecordingColor}" />
       <SolidColorBrush x:Key="SpanMotionBrush" Color="{DynamicResource SpanMotionColor}" />

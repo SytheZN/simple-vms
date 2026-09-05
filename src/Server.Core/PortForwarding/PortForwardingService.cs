@@ -121,10 +121,7 @@ public sealed class PortForwardingService : IHostedService, IAsyncDisposable, IP
     if (_loopCts == null) return;
     _loopCts.Cancel();
     if (_loopTask != null)
-    {
-      try { await _loopTask; }
-      catch (OperationCanceledException) { }
-    }
+      await _loopTask.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
     _loopCts.Dispose();
     _loopCts = null;
     _loopTask = null;
@@ -347,8 +344,8 @@ public sealed class PortForwardingService : IHostedService, IAsyncDisposable, IP
         }
       }
 
-      try { await Task.Delay(ReconcileInterval, ct); }
-      catch (OperationCanceledException) { break; }
+      await Task.Delay(ReconcileInterval, ct).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+      if (ct.IsCancellationRequested) break;
     }
   }
 

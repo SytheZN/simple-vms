@@ -1,4 +1,6 @@
+using System.Globalization;
 using Microsoft.Extensions.Logging;
+using Server.Core;
 using Server.Plugins;
 using Shared.Models;
 using Shared.Models.Entities;
@@ -7,19 +9,31 @@ namespace Server.Recording;
 
 public sealed class RetentionEngine : IAsyncDisposable
 {
-  private const int DefaultIntervalMinutes = 15;
+  private const int TickIntervalMinutes = 1;
+  private const int FullEvaluationEveryTicks = 15;
+  private const long GbBytes = 1024L * 1024L * 1024L;
+  private const long HardFloorBytes = (long)(0.2 * GbBytes);
+  private const int PurgeChunkSize = 200;
+  private const int MaxPurgeChunks = 20;
   private const string GlobalModeKey = "retention.mode";
   private const string GlobalValueKey = "retention.value";
+  private const string MinFreeSpaceGbKey = "retention.minFreeSpaceGb";
+  private const decimal MinFreeSpaceGbFloor = 0.5m;
+  private const decimal MinFreeSpaceGbDefault = 2.0m;
+  private const string SystemEventDaysKey = "retention.systemEventDays";
+  private const int DefaultSystemEventDays = 180;
 
   private readonly IPluginHost _plugins;
+  private readonly IRecordingController _recording;
   private readonly ILogger _logger;
   private CancellationTokenSource? _cts;
   private Task? _loop;
   private bool _disposed;
 
-  public RetentionEngine(IPluginHost plugins, ILogger logger)
+  public RetentionEngine(IPluginHost plugins, IRecordingController recording, ILogger logger)
   {
     _plugins = plugins;
+    _recording = recording;
     _logger = logger;
   }
 
@@ -31,11 +45,14 @@ public sealed class RetentionEngine : IAsyncDisposable
 
   private async Task RunLoopAsync(CancellationToken ct)
   {
+    var tick = 0;
     while (!ct.IsCancellationRequested)
     {
       try
       {
-        await EvaluateAsync(ct);
+        await GuardFreeSpaceAsync(ct);
+        if (tick % FullEvaluationEveryTicks == 0)
+          await EvaluateAsync(ct);
       }
       catch (OperationCanceledException)
       {
@@ -43,19 +60,119 @@ public sealed class RetentionEngine : IAsyncDisposable
       }
       catch (Exception ex)
       {
-        _logger.LogError(ex, "Retention evaluation failed");
+        _logger.LogError(ex, "Retention loop iteration failed");
       }
 
-      try
-      {
-        await Task.Delay(TimeSpan.FromMinutes(DefaultIntervalMinutes), ct);
-      }
-      catch (OperationCanceledException)
-      {
-        break;
-      }
+      tick++;
+      await Task.Delay(TimeSpan.FromMinutes(TickIntervalMinutes), ct)
+        .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+      if (ct.IsCancellationRequested) break;
     }
   }
+
+  internal async Task GuardFreeSpaceAsync(CancellationToken ct)
+  {
+    var data = _plugins.DataProvider;
+    var storage = _plugins.StorageProviders.FirstOrDefault();
+    if (storage == null) return;
+
+    var minGb = await ReadMinFreeSpaceGbAsync(ct);
+    var minBytes = (long)(minGb * GbBytes);
+
+    var stats = await storage.GetStatsAsync(ct);
+    var freeBefore = stats.FreeBytes;
+
+    if (freeBefore < HardFloorBytes && !_recording.IsHalted)
+    {
+      var haltedCount = _recording.WriterCount;
+      _logger.LogCritical(
+        "Free space {FreeBytes} bytes below hard floor {Floor}; halting all recording",
+        freeBefore, HardFloorBytes);
+      await LogSystemEventAsync(
+        SystemEventFactory.RetentionEmergencyStop(freeBefore, HardFloorBytes, haltedCount, NowMicros()),
+        ct);
+      await _recording.HaltAllAsync();
+    }
+
+    if (freeBefore >= minBytes)
+    {
+      if (_recording.IsHalted && freeBefore >= minBytes)
+      {
+        _logger.LogInformation(
+          "Free space {FreeBytes} bytes above trim threshold {Min}; resuming recording",
+          freeBefore, minBytes);
+        await LogSystemEventAsync(
+          SystemEventFactory.RetentionRecordingResumed(freeBefore, minBytes, NowMicros()),
+          ct);
+        await _recording.ResumeAsync(ct);
+      }
+      return;
+    }
+
+    _logger.LogWarning(
+      "Free space {FreeBytes} bytes below minimum {Min}; trimming oldest segments",
+      freeBefore, minBytes);
+
+    var purgedSegments = 0;
+    var purgedBytes = 0L;
+    var freeAfter = freeBefore;
+
+    for (var i = 0; i < MaxPurgeChunks; i++)
+    {
+      ct.ThrowIfCancellationRequested();
+      var batchResult = await data.Segments.GetOldestAcrossStreamsAsync(PurgeChunkSize, ct);
+      if (batchResult.IsT1 || batchResult.AsT0.Count == 0) break;
+
+      var batch = batchResult.AsT0.ToList();
+      await PurgeSegmentsAsync(data, storage, batch, ct);
+      purgedSegments += batch.Count;
+      purgedBytes += batch.Sum(s => s.SizeBytes);
+
+      var chunkStats = await storage.GetStatsAsync(ct);
+      freeAfter = chunkStats.FreeBytes;
+      if (freeAfter >= minBytes) break;
+    }
+
+    await LogSystemEventAsync(
+      SystemEventFactory.RetentionLowSpacePurge(
+        freeBefore, freeAfter, minBytes, purgedSegments, purgedBytes, NowMicros()),
+      ct);
+
+    if (freeAfter < minBytes)
+      _logger.LogWarning(
+        "Free-space guard exhausted purge cap: still {Free} bytes free after removing {Segments} segments ({Bytes} bytes)",
+        freeAfter, purgedSegments, purgedBytes);
+
+    if (_recording.IsHalted && freeAfter >= minBytes)
+    {
+      await LogSystemEventAsync(
+        SystemEventFactory.RetentionRecordingResumed(freeAfter, minBytes, NowMicros()),
+        ct);
+      await _recording.ResumeAsync(ct);
+    }
+  }
+
+  private async Task<decimal> ReadMinFreeSpaceGbAsync(CancellationToken ct)
+  {
+    var result = await _plugins.DataProvider.Config.GetAsync("server", MinFreeSpaceGbKey, ct);
+    if (result.IsT0
+        && result.AsT0 != null
+        && decimal.TryParse(result.AsT0, NumberStyles.Float, CultureInfo.InvariantCulture, out var v)
+        && v >= MinFreeSpaceGbFloor)
+      return v;
+    return MinFreeSpaceGbDefault;
+  }
+
+  private async Task LogSystemEventAsync(SystemEvent evt, CancellationToken ct)
+  {
+    var result = await _plugins.DataProvider.SystemEvents.CreateAsync(evt, ct);
+    if (result.IsT1)
+      _logger.LogWarning("Failed to persist system event {Type}: {Message}",
+        evt.Type, result.AsT1.Message);
+  }
+
+  private static ulong NowMicros() =>
+    DateTimeOffset.UtcNow.ToUnixMicroseconds();
 
   internal async Task EvaluateAsync(CancellationToken ct)
   {
@@ -66,6 +183,8 @@ public sealed class RetentionEngine : IAsyncDisposable
 
     var globalPolicy = await GetGlobalPolicyAsync(ct);
     StorageStats? storageStats = null;
+
+    await PurgeSystemEventsAsync(data, ct);
 
     var camerasResult = await data.Cameras.GetAllAsync(ct);
     if (camerasResult.IsT1)
@@ -247,9 +366,6 @@ public sealed class RetentionEngine : IAsyncDisposable
       segments.Count, segments.Sum(s => s.SizeBytes));
   }
 
-  // Every retention mode works by purging segments, so whatever survives a purge is the
-  // boundary for days, bytes and percent alike. Anchoring events to the oldest remaining
-  // segment therefore follows the policy without having to know which mode produced it.
   private async Task PurgeEventsAsync(
     IDataProvider data, Camera camera, IReadOnlyList<CameraStream> streams, CancellationToken ct)
   {
@@ -280,6 +396,22 @@ public sealed class RetentionEngine : IAsyncDisposable
     if (deleteResult.AsT0 > 0)
       _logger.LogInformation("Purged {Count} events for camera {CameraId}",
         deleteResult.AsT0, camera.Id);
+  }
+
+  private async Task PurgeSystemEventsAsync(IDataProvider data, CancellationToken ct)
+  {
+    var daysResult = await data.Config.GetAsync("server", SystemEventDaysKey, ct);
+    var days = daysResult.IsT0 && int.TryParse(daysResult.AsT0, out var d) && d > 0
+      ? d
+      : DefaultSystemEventDays;
+
+    var cutoff = DateTimeOffset.UtcNow.AddDays(-days).ToUnixMicroseconds();
+    var result = await data.SystemEvents.DeleteOlderThanAsync(cutoff, ct);
+    if (result.IsT1)
+      _logger.LogWarning("Retention: failed to purge system events: {Message}", result.AsT1.Message);
+    else if (result.AsT0 > 0)
+      _logger.LogInformation("Retention: purged {Count} system event(s) older than {Days} days",
+        result.AsT0, days);
   }
 
   private async Task<(RetentionMode Mode, long Value)> GetGlobalPolicyAsync(CancellationToken ct)

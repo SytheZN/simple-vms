@@ -6,7 +6,8 @@ internal static class MigrationScripts
 {
   public static SqlScript[] All => [
     Initial,
-    StreamsDerived
+    StreamsDerived,
+    SystemEvents
   ];
 
   private static SqlScript Initial => new("0001_initial", """
@@ -136,5 +137,18 @@ internal static class MigrationScripts
     CREATE INDEX idx_streams_camera_id ON streams(camera_id);
     CREATE INDEX idx_streams_parent ON streams(parent_stream_id);
     CREATE UNIQUE INDEX uk_streams_producer_active ON streams(camera_id, producer_id, profile) WHERE deleted_at IS NULL;
+    """);
+
+  private static SqlScript SystemEvents => new("0003_system_events", """
+    CREATE TABLE system_events (
+      id TEXT NOT NULL PRIMARY KEY,
+      type TEXT NOT NULL,
+      source TEXT NOT NULL,
+      timestamp INTEGER NOT NULL,
+      metadata TEXT
+    );
+
+    CREATE INDEX idx_system_events_time ON system_events(timestamp);
+    CREATE INDEX idx_system_events_type_time ON system_events(type, timestamp);
     """);
 }

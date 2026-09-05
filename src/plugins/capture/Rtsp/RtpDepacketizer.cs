@@ -127,6 +127,7 @@ public sealed class RtpH264Depacketizer : IRtpDepacketizer
       Timestamp = wallClockTimestamp,
       MediaTimestamp = mediaTimestamp,
       IsSyncPoint = nalType == H264NalType.Idr,
+      IsHeader = nalType is H264NalType.Sps or H264NalType.Pps,
       NalType = nalType
     };
   }
@@ -265,6 +266,7 @@ public sealed class RtpH265Depacketizer : IRtpDepacketizer
       Timestamp = wallClockTimestamp,
       MediaTimestamp = mediaTimestamp,
       IsSyncPoint = nalType is H265NalType.IdrWRadl or H265NalType.IdrNLp,
+      IsHeader = nalType is H265NalType.Vps or H265NalType.Sps or H265NalType.Pps,
       NalType = nalType
     };
   }

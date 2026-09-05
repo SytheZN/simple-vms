@@ -27,4 +27,6 @@ public sealed partial class ThumbnailPlugin : IDataStreamAnalyzerStreamOutput
     _workers[(cameraId, parentProfile)] = worker;
     return OneOf<IDataStream, Error>.FromT0(worker);
   }
+
+  public bool NeedsRebuild(Guid cameraId, string parentProfile) => false;
 }

@@ -3,10 +3,6 @@ using Shared.Api;
 
 namespace Client.Core.ViewModels;
 
-/// <summary>
-/// A camera as the gallery shows it. The thumbnail outlives any particular camera record, so a
-/// refresh replaces what the list says about the camera without dropping the picture.
-/// </summary>
 public sealed class CameraTile : ViewModelBase
 {
   private CameraDto _camera;

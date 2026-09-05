@@ -7,10 +7,13 @@ namespace Cameras.Onvif;
 
 public sealed partial class OnvifProvider : IPlugin
 {
+  private const int MaxConcurrentRequestsPerHost = 4;
+  private static readonly TimeSpan MinRequestStartGap = TimeSpan.FromMilliseconds(50);
+
   private IConfig _config = null!;
   private IEventBus? _eventBus;
   private HttpClient _http = null!;
-  private SoapClient _soap = null!;
+  private ISoapClient _soap = null!;
   private DeviceService _device = null!;
   private MediaService _media = null!;
   private EventService _events = null!;
@@ -30,7 +33,10 @@ public sealed partial class OnvifProvider : IPlugin
     _config = context.Config;
     _eventBus = context.EventBus;
     _http = new HttpClient { Timeout = TimeSpan.FromSeconds(75) };
-    _soap = new SoapClient(_http, context.LoggerFactory.CreateLogger("Soap"));
+    _soap = new PacedSoapClient(
+      new SoapClient(_http, context.LoggerFactory.CreateLogger("Soap")),
+      MaxConcurrentRequestsPerHost,
+      MinRequestStartGap);
     _logger = context.LoggerFactory.CreateLogger("OnvifProvider");
     _device = new DeviceService(_soap);
     _media = new MediaService(_soap);

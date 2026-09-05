@@ -2,29 +2,48 @@ import type { CameraEvent, TimelineEvent } from '@/types/api'
 
 export type EventTone = 'danger' | 'warning' | 'success' | 'info' | 'muted'
 
+export type EventScope = 'camera' | 'system'
+
 export interface EventDescriptor {
   label: string
   icon: string
   tone: EventTone
+  scope: EventScope
+  legacy?: boolean
 }
 
 const descriptors: Record<string, EventDescriptor> = {
-  motion: { label: 'Motion', icon: 'ph ph-person', tone: 'warning' },
-  tamper: { label: 'Tamper', icon: 'ph ph-shield-warning', tone: 'danger' },
-  io: { label: 'Input / Output', icon: 'ph ph-toggle-left', tone: 'info' },
-  access: { label: 'Access', icon: 'ph ph-door', tone: 'info' },
-  storage: { label: 'Storage', icon: 'ph ph-hard-drives', tone: 'danger' },
-  generic: { label: 'Camera event', icon: 'ph ph-lightning', tone: 'info' },
-  added: { label: 'Camera added', icon: 'ph ph-plus-circle', tone: 'muted' },
-  config: { label: 'Reconfigured', icon: 'ph ph-gear', tone: 'muted' },
-  connect: { label: 'Reconnected', icon: 'ph ph-wifi-high', tone: 'success' },
-  disconnect: { label: 'Disconnected', icon: 'ph ph-wifi-slash', tone: 'danger' },
+  motion: { label: 'Motion', icon: 'ph ph-person', tone: 'warning', scope: 'camera' },
+  tamper: { label: 'Tamper', icon: 'ph ph-shield-warning', tone: 'danger', scope: 'camera' },
+  io: { label: 'Input / Output', icon: 'ph ph-toggle-left', tone: 'info', scope: 'camera' },
+  access: { label: 'Access', icon: 'ph ph-door', tone: 'info', scope: 'camera' },
+  storage: { label: 'Storage', icon: 'ph ph-hard-drives', tone: 'danger', scope: 'camera' },
+  generic: { label: 'Camera event', icon: 'ph ph-lightning', tone: 'info', scope: 'camera' },
+  'camera-connect': { label: 'Reconnected', icon: 'ph ph-wifi-high', tone: 'success', scope: 'camera' },
+  'camera-disconnect': { label: 'Disconnected', icon: 'ph ph-wifi-slash', tone: 'danger', scope: 'camera' },
+  'camera-recording-started': { label: 'Recording started', icon: 'ph ph-record', tone: 'danger', scope: 'camera' },
+  'camera-recording-stopped': { label: 'Recording stopped', icon: 'ph ph-stop-circle', tone: 'muted', scope: 'camera' },
+  'camera-recording-error': { label: 'Recording error', icon: 'ph ph-warning', tone: 'warning', scope: 'camera' },
+  'camera-added': { label: 'Camera added', icon: 'ph ph-plus-circle', tone: 'muted', scope: 'system' },
+  'camera-updated': { label: 'Camera updated', icon: 'ph ph-pencil', tone: 'muted', scope: 'system' },
+  'camera-reconfigured': { label: 'Reconfigured', icon: 'ph ph-gear', tone: 'muted', scope: 'system' },
+  'camera-removed': { label: 'Camera removed', icon: 'ph ph-minus-circle', tone: 'muted', scope: 'system' },
+  'client-connected': { label: 'Client connected', icon: 'ph ph-monitor', tone: 'success', scope: 'system' },
+  'client-disconnected': { label: 'Client disconnected', icon: 'ph ph-monitor', tone: 'muted', scope: 'system' },
+  'client-enroll': { label: 'Client enrolled', icon: 'ph ph-monitor', tone: 'info', scope: 'system' },
+  'client-revoke': { label: 'Client revoked', icon: 'ph ph-monitor', tone: 'danger', scope: 'system' },
+  'client-rename': { label: 'Client renamed', icon: 'ph ph-monitor', tone: 'muted', scope: 'system' },
+  added: { label: 'Camera added', icon: 'ph ph-plus-circle', tone: 'muted', scope: 'camera', legacy: true },
+  config: { label: 'Reconfigured', icon: 'ph ph-gear', tone: 'muted', scope: 'camera', legacy: true },
+  connect: { label: 'Reconnected', icon: 'ph ph-wifi-high', tone: 'success', scope: 'camera', legacy: true },
+  disconnect: { label: 'Disconnected', icon: 'ph ph-wifi-slash', tone: 'danger', scope: 'camera', legacy: true },
 }
 
 const fallback: EventDescriptor = {
   label: 'Unknown',
   icon: 'ph ph-question',
   tone: 'muted',
+  scope: 'camera',
 }
 
 const toneText: Record<EventTone, string> = {
@@ -48,6 +67,11 @@ export function describeEvent(type: string): EventDescriptor {
 }
 
 export const eventTypes = Object.keys(descriptors)
+  .filter(type => !descriptors[type].legacy)
+
+export function eventTypesFor(scope: EventScope): string[] {
+  return eventTypes.filter(type => descriptors[type].scope === scope)
+}
 
 export function eventTextClass(type: string): string {
   return toneText[describeEvent(type).tone]
@@ -77,6 +101,11 @@ export function eventDetail(evt: CameraEvent): string | null {
   const profile = evt.metadata?.profile
   if (profile) return profile
 
+  const subject = evt.metadata?.clientName ?? evt.metadata?.name
+  const previous = evt.metadata?.previousName
+  if (previous && subject) return `${previous} > ${subject}`
+  if (subject) return subject
+
   return null
 }
 
@@ -88,7 +117,7 @@ export function eventSource(evt: CameraEvent): string | null {
   return entries.length > 0 ? entries.join(', ') : null
 }
 
-const detailKeys = ['topic', 'profile', 'active']
+const detailKeys = ['topic', 'profile', 'active', 'name', 'clientName', 'previousName']
 
 /**
  * Everything not already rendered as the row's own detail line, so the

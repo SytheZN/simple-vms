@@ -2,6 +2,7 @@ using Server.Plugins;
 using Shared.Models;
 using Shared.Api;
 using Shared.Models.Entities;
+using Shared.Models.Events;
 
 namespace Server.Core.Services;
 
@@ -9,11 +10,13 @@ public sealed class ClientService
 {
   private readonly IPluginHost _plugins;
   private readonly ConnectionTracker _connections;
+  private readonly IEventBus _eventBus;
 
-  public ClientService(IPluginHost plugins, ConnectionTracker connections)
+  public ClientService(IPluginHost plugins, ConnectionTracker connections, IEventBus eventBus)
   {
     _plugins = plugins;
     _connections = connections;
+    _eventBus = eventBus;
   }
 
   public async Task<OneOf<IReadOnlyList<ClientDto>, Error>> GetAllAsync(
@@ -41,8 +44,20 @@ public sealed class ClientService
     if (result.IsT1) return result.AsT1;
 
     var client = result.AsT0;
+    var previousName = client.Name;
     client.Name = request.Name;
-    return await _plugins.DataProvider!.Clients.UpdateAsync(client, ct);
+    var updateResult = await _plugins.DataProvider!.Clients.UpdateAsync(client, ct);
+    if (updateResult.IsT1) return updateResult;
+
+    await _eventBus.PublishAsync(new ClientRenamed
+    {
+      ClientId = id,
+      PreviousName = previousName,
+      Name = client.Name,
+      Timestamp = DateTimeOffset.UtcNow.ToUnixMicroseconds()
+    }, ct);
+
+    return updateResult;
   }
 
   public async Task<OneOf<Success, Error>> RevokeAsync(
@@ -54,7 +69,17 @@ public sealed class ClientService
     var client = result.AsT0;
     client.Revoked = true;
     _connections.Remove(id);
-    return await _plugins.DataProvider!.Clients.UpdateAsync(client, ct);
+    var updateResult = await _plugins.DataProvider!.Clients.UpdateAsync(client, ct);
+    if (updateResult.IsT1) return updateResult;
+
+    await _eventBus.PublishAsync(new ClientRevoked
+    {
+      ClientId = id,
+      Name = client.Name,
+      Timestamp = DateTimeOffset.UtcNow.ToUnixMicroseconds()
+    }, ct);
+
+    return updateResult;
   }
 
   private ClientDto ToDto(Client c) =>

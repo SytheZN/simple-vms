@@ -30,13 +30,14 @@ Use `badge` base + variant.
 | Class | Usage |
 |-------|-------|
 | `badge` | Base - always required |
-| `badge-success` | Positive status (online, recording) |
-| `badge-warning` | Attention needed |
-| `badge-danger` | Error/critical |
+| `badge-info` | Camera online, not recording |
+| `badge-success` | Positive (connected, running, live) |
+| `badge-warning` | Attention needed (recording failing) |
+| `badge-danger` | Critical / actively recording |
 | `badge-neutral` | Inactive/default (offline, idle) |
 
 ```html
-<span class="badge badge-success"><i class="ph-fill ph-circle icon-sm"></i> Online</span>
+<span class="badge badge-danger"><i class="ph-fill ph-circle icon-sm"></i> Recording</span>
 ```
 
 ## Form
@@ -48,12 +49,16 @@ Use `badge` base + variant.
 | `label` | Form field label |
 | `toggle-track` | Toggle switch container (use `role="switch"` + `aria-checked`) |
 | `toggle-knob` | Toggle switch knob (child of track) |
+| `toggle-track[data-tristate]` | Three-state toggle: left=off, center=inherit, right=on. Use `aria-checked`: `"false"` / `"mixed"` / `"true"` |
 
 ```html
 <label class="label">Name</label>
 <input class="input" />
 <input class="input input-error" />
 <button class="toggle-track" role="switch" aria-checked="true">
+  <span class="toggle-knob"></span>
+</button>
+<button class="toggle-track" role="switch" data-tristate aria-checked="mixed">
   <span class="toggle-knob"></span>
 </button>
 ```
@@ -218,6 +223,14 @@ Content uses `card` with `relative` to sit above backdrop.
 | Class | Usage |
 |-------|-------|
 | `video-overlay-text` | White text with heavy shadow for video overlays. Always white in both themes. |
+
+The motion overlay canvas is painted programmatically and uses theme variables
+directly instead of classes:
+
+| Variable | Usage |
+|----------|-------|
+| `--color-motion-active` | Motion grid cell fill. Carries its own alpha; the cell value scales opacity further. |
+| `--color-motion-dim` | Canvas background dimming the video while the overlay is active. |
 
 ## Icons
 

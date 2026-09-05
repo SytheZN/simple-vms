@@ -22,15 +22,10 @@ public sealed partial class SqliteProvider : IDataProvider
   public ISegmentRepository Segments { get; private set; } = null!;
   public IKeyframeRepository Keyframes { get; private set; } = null!;
   public IEventRepository Events { get; private set; } = null!;
+  public ISystemEventRepository SystemEvents { get; private set; } = null!;
   public IClientRepository Clients { get; private set; } = null!;
   public IConfigRepository Config { get; private set; } = null!;
 
-  /// <summary>
-  /// WAL normally indexes itself through a -shm file mapped into memory, which a network
-  /// filesystem cannot provide. EXCLUSIVE locking mode is the supported alternative - the
-  /// index lives on the heap instead - and it only takes effect when set before the first
-  /// WAL access, so every connection to this database must be opened through here.
-  /// </summary>
   internal void OpenDatabase(string databasePath)
   {
     var dir = Path.GetDirectoryName(databasePath);
@@ -53,10 +48,6 @@ public sealed partial class SqliteProvider : IDataProvider
     ExecutePragma("PRAGMA foreign_keys = ON");
   }
 
-  /// <summary>
-  /// The exclusive lock is held for the lifetime of the connection, so a start that does not
-  /// reach a running provider has to hand the database back or no later attempt can open it.
-  /// </summary>
   internal void CloseDatabase()
   {
     _checkpointTimer?.Dispose();
@@ -91,6 +82,7 @@ public sealed partial class SqliteProvider : IDataProvider
     Segments = new SegmentRepository(_queue);
     Keyframes = new KeyframeRepository(_queue);
     Events = new EventRepository(_queue);
+    SystemEvents = new SystemEventRepository(_queue);
     Clients = new ClientRepository(_queue);
     Config = new ConfigRepository(_queue);
 
@@ -98,11 +90,6 @@ public sealed partial class SqliteProvider : IDataProvider
       _ => Checkpoint(), null, CheckpointInterval, CheckpointInterval);
   }
 
-  /// <summary>
-  /// An unbounded WAL is recovery work the next start inherits, paid at the latency of
-  /// whatever storage the database sits on. Checkpointing through the queue keeps it
-  /// serialised with every other statement on the single connection.
-  /// </summary>
   private void Checkpoint()
   {
     _ = _queue.ExecuteAsync(connection =>

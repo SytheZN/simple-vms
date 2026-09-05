@@ -227,6 +227,9 @@ public class RecordingManagerTests
     public bool IsConstructed => true;
     public ReadOnlyMemory<byte> MuxHeader => ReadOnlyMemory<byte>.Empty;
     public MuxStreamInfo? MuxInfo => null;
+    public Action<MuxStreamStats>? OnStats { set { } }
+    public int GetDemand() => 0;
+    public void Evaluate() { }
 
     [System.Diagnostics.CodeAnalysis.RequiresDynamicCode(
       "Pipeline construction uses dynamic fan-out types")]
@@ -328,6 +331,7 @@ public class RecordingManagerTests
     public ISegmentRepository Segments { get; } = new FakeSegmentRepo();
     public IKeyframeRepository Keyframes { get; } = new FakeKeyframeRepo();
     public IEventRepository Events => throw new NotImplementedException();
+    public ISystemEventRepository SystemEvents => throw new NotImplementedException();
     public IClientRepository Clients => throw new NotImplementedException();
     public IConfigRepository Config { get; } = new FakeConfigRepo();
     public IDataStore GetDataStore(string pluginId) => throw new NotImplementedException();
@@ -405,6 +409,9 @@ public class RecordingManagerTests
       throw new NotImplementedException();
     public Task<OneOf<IReadOnlyList<Segment>, Error>> GetOldestAsync(
       Guid streamId, int limit, CancellationToken ct) =>
+      throw new NotImplementedException();
+    public Task<OneOf<IReadOnlyList<Segment>, Error>> GetOldestAcrossStreamsAsync(
+      int limit, CancellationToken ct) =>
       throw new NotImplementedException();
     public Task<OneOf<long, Error>> GetTotalSizeAsync(Guid streamId, CancellationToken ct) =>
       throw new NotImplementedException();

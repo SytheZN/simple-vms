@@ -8,24 +8,26 @@ using Shared.Protocol;
 
 namespace Client.Core.Streaming;
 
-/// <summary>
-/// Keeps the gallery's tiles supplied with thumbnails. Holding a subscription is what starts the
-/// analyzer producing them, so the streams live exactly as long as the gallery is on screen.
-/// </summary>
 public sealed class GalleryThumbnailService : IGalleryThumbnails, IDisposable
 {
   private const string ThumbnailSuffix = "-thumbnail";
   private const string ThumbnailFormat = "mjpeg";
   private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(5);
 
-  // MJPG magic, version, 8-byte timestamp, 4-byte payload length.
-  private const int FragmentHeaderBytes = 17;
+  private const int FragmentVersionBytes = 1;
+  private const int FragmentTimestampBytes = 8;
+  private const int FragmentPayloadLengthBytes = 4;
   private static ReadOnlySpan<byte> FragmentMagic => "MJPG"u8;
+  private static readonly int FragmentPayloadLengthOffset =
+    FragmentMagic.Length + FragmentVersionBytes + FragmentTimestampBytes;
+  private static readonly int FragmentHeaderBytes =
+    FragmentPayloadLengthOffset + FragmentPayloadLengthBytes;
 
   private readonly ILiveStreamService _live;
   private readonly ILogger<GalleryThumbnailService> _logger;
   private readonly Lock _lock = new();
   private readonly Dictionary<Guid, Subscription> _subscriptions = [];
+  private bool _visible = true;
 
   public GalleryThumbnailService(ILiveStreamService live, ILogger<GalleryThumbnailService> logger)
   {
@@ -94,10 +96,6 @@ public sealed class GalleryThumbnailService : IGalleryThumbnails, IDisposable
         && s.Profile.EndsWith(ThumbnailSuffix, StringComparison.Ordinal))
       .Select(s => s.Profile)];
 
-  /// <summary>
-  /// A profile the server cannot serve right now is not a profile that does not exist, so the
-  /// candidates are tried in turn and then retried from the top rather than given up on.
-  /// </summary>
   private async Task RunAsync(Subscription subscription)
   {
     var candidate = 0;
@@ -130,7 +128,7 @@ public sealed class GalleryThumbnailService : IGalleryThumbnails, IDisposable
     {
       feed = await _live.SubscribeAsync(subscription.Tile.Id, profile, subscription.Token);
 
-      feed.OnGop += gop => Publish(subscription.Tile, gop.Data.Span);
+      feed.OnGop += gop => Publish(subscription, gop.Data.Span);
       feed.OnStatus += status =>
       {
         if (status == StreamStatus.Error)
@@ -171,24 +169,60 @@ public sealed class GalleryThumbnailService : IGalleryThumbnails, IDisposable
     }
   }
 
-  private void Publish(CameraTile tile, ReadOnlySpan<byte> fragment)
+  private void Publish(Subscription subscription, ReadOnlySpan<byte> fragment)
   {
     var jpeg = Unwrap(fragment);
     if (jpeg.IsEmpty) return;
 
+    if (!Volatile.Read(ref _visible))
+    {
+      Interlocked.Exchange(ref subscription.LatestWhileHidden, jpeg.ToArray());
+      return;
+    }
+
+    Interlocked.Exchange(ref subscription.LatestWhileHidden, null);
+    DecodeAndPaint(subscription, jpeg.ToArray());
+  }
+
+  private void DecodeAndPaint(Subscription subscription, byte[] bytes)
+  {
     Bitmap bitmap;
     try
     {
-      using var stream = new MemoryStream(jpeg.ToArray());
+      using var stream = new MemoryStream(bytes);
       bitmap = new Bitmap(stream);
     }
     catch (Exception ex)
     {
-      _logger.LogDebug(ex, "Discarding undecodable thumbnail for camera {CameraId}", tile.Id);
+      _logger.LogDebug(ex, "Discarding undecodable thumbnail for camera {CameraId}", subscription.Tile.Id);
       return;
     }
+    RunOnUi(() =>
+    {
+      if (!Volatile.Read(ref _visible))
+      {
+        bitmap.Dispose();
+        return;
+      }
+      subscription.Tile.Thumbnail = bitmap;
+    });
+  }
 
-    RunOnUi(() => tile.Thumbnail = bitmap);
+  public void SetVisible(bool visible)
+  {
+    if (Volatile.Read(ref _visible) == visible) return;
+    Volatile.Write(ref _visible, visible);
+    if (!visible) return;
+
+    List<Subscription> subs;
+    lock (_lock) subs = [.. _subscriptions.Values];
+
+    foreach (var sub in subs)
+    {
+      var bytes = Interlocked.Exchange(ref sub.LatestWhileHidden, null);
+      if (bytes != null)
+        _ = Task.Run(() => DecodeAndPaint(sub, bytes));
+    }
   }
 
   private static void ClearThumbnail(CameraTile tile) => RunOnUi(() => tile.Thumbnail = null);
@@ -206,7 +240,7 @@ public sealed class GalleryThumbnailService : IGalleryThumbnails, IDisposable
     if (fragment.Length <= FragmentHeaderBytes) return default;
     if (!fragment[..FragmentMagic.Length].SequenceEqual(FragmentMagic)) return default;
 
-    var length = BinaryPrimitives.ReadUInt32LittleEndian(fragment[13..]);
+    var length = BinaryPrimitives.ReadUInt32LittleEndian(fragment[FragmentPayloadLengthOffset..]);
     if (length == 0 || FragmentHeaderBytes + length > fragment.Length) return default;
 
     return fragment.Slice(FragmentHeaderBytes, (int)length);
@@ -238,6 +272,12 @@ public sealed class GalleryThumbnailService : IGalleryThumbnails, IDisposable
     public List<string> Profiles => profiles;
     public CancellationToken Token => _cts.Token;
 
-    public Task CancelAsync() => _cts.CancelAsync();
+    public byte[]? LatestWhileHidden;
+
+    public async Task CancelAsync()
+    {
+      await _cts.CancelAsync();
+      Interlocked.Exchange(ref LatestWhileHidden, null);
+    }
   }
 }

@@ -8,14 +8,73 @@ public class DataStreamFanOutTests
 {
   private static StreamInfo TestInfo => new() { DataFormat = "h264" };
 
-  private static H264NalUnit MakeUnit(ulong ts) => new()
+  private static H264NalUnit MakeUnit(ulong ts, bool sync = false) => new()
   {
     Data = new byte[] { 0x00, 0x00, 0x00, 0x01, 0x65 },
     Timestamp = ts,
     MediaTimestamp = ts,
-    IsSyncPoint = false,
-    NalType = H264NalType.Slice
+    IsSyncPoint = sync,
+    IsHeader = false,
+    NalType = sync ? H264NalType.Idr : H264NalType.Slice
   };
+
+  private static async Task<List<ulong>> Drain(ChannelDataStream<H264NalUnit> sub)
+  {
+    var received = new List<ulong>();
+    var cts = new CancellationTokenSource(100);
+    await foreach (var item in sub.ReadAsync(cts.Token))
+      received.Add(item.Timestamp);
+    return received;
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A demanding subscriber has consumed a GOP, then unsubscribes while no other demand remains
+  ///
+  /// ACTION:
+  /// Subscribe again before the next sync point arrives
+  ///
+  /// EXPECTED RESULT:
+  /// The new subscriber does not receive the GOP the previous subscriber already consumed
+  /// </summary>
+  [Test]
+  public async Task LastDemandUnsubscribe_ClearsGopCache()
+  {
+    await using var fanOut = new DataStreamFanOut<H264NalUnit>(TestInfo);
+
+    var first = fanOut.Subscribe();
+    fanOut.Write(MakeUnit(1, sync: true));
+    fanOut.Write(MakeUnit(2));
+    first.Dispose();
+
+    using var second = fanOut.Subscribe();
+
+    Assert.That(await Drain(second), Is.Empty);
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A demanding subscriber is still attached after a GOP has been written
+  ///
+  /// ACTION:
+  /// A second subscriber joins mid-GOP
+  ///
+  /// EXPECTED RESULT:
+  /// The second subscriber receives the cached GOP from its sync point
+  /// </summary>
+  [Test]
+  public async Task SubscribeWithLiveDemand_ReplaysGopCache()
+  {
+    await using var fanOut = new DataStreamFanOut<H264NalUnit>(TestInfo);
+
+    using var first = fanOut.Subscribe();
+    fanOut.Write(MakeUnit(1, sync: true));
+    fanOut.Write(MakeUnit(2));
+
+    using var second = fanOut.Subscribe();
+
+    Assert.That(await Drain(second), Is.EqualTo(new ulong[] { 1, 2 }));
+  }
 
   /// <summary>
   /// SCENARIO:
@@ -40,12 +99,8 @@ public class DataStreamFanOutTests
 
     var received = new List<ulong>();
     var cts = new CancellationTokenSource(100);
-    try
-    {
-      await foreach (var item in sub.ReadAsync(cts.Token))
-        received.Add(item.Timestamp);
-    }
-    catch (OperationCanceledException) { }
+    await foreach (var item in sub.ReadAsync(cts.Token))
+      received.Add(item.Timestamp);
 
     Assert.That(received, Is.EqualTo(new ulong[] { 1, 2, 3 }));
   }
@@ -74,21 +129,13 @@ public class DataStreamFanOutTests
     var cts = new CancellationTokenSource(100);
 
     var received1 = new List<ulong>();
-    try
-    {
-      await foreach (var item in sub1.ReadAsync(cts.Token))
-        received1.Add(item.Timestamp);
-    }
-    catch (OperationCanceledException) { }
+    await foreach (var item in sub1.ReadAsync(cts.Token))
+      received1.Add(item.Timestamp);
 
     var received2 = new List<ulong>();
     cts = new CancellationTokenSource(100);
-    try
-    {
-      await foreach (var item in sub2.ReadAsync(cts.Token))
-        received2.Add(item.Timestamp);
-    }
-    catch (OperationCanceledException) { }
+    await foreach (var item in sub2.ReadAsync(cts.Token))
+      received2.Add(item.Timestamp);
 
     Assert.That(received1, Is.EqualTo(new ulong[] { 10, 20 }));
     Assert.That(received2, Is.EqualTo(new ulong[] { 10, 20 }));
@@ -116,12 +163,8 @@ public class DataStreamFanOutTests
 
     var received = new List<ulong>();
     var cts = new CancellationTokenSource(100);
-    try
-    {
-      await foreach (var item in sub.ReadAsync(cts.Token))
-        received.Add(item.Timestamp);
-    }
-    catch (OperationCanceledException) { }
+    await foreach (var item in sub.ReadAsync(cts.Token))
+      received.Add(item.Timestamp);
 
     Assert.That(received.Count, Is.LessThanOrEqualTo(2));
     Assert.That(received[^1], Is.EqualTo(5));
@@ -159,55 +202,32 @@ public class DataStreamFanOutTests
 
   /// <summary>
   /// SCENARIO:
-  /// OnEmpty callback is set on a fan-out with one demand subscriber
+  /// Demand subscribers are added and removed
   ///
   /// ACTION:
-  /// Subscriber is disposed (last demand subscriber leaves)
+  /// Check GetDemand at each stage
   ///
   /// EXPECTED RESULT:
-  /// OnEmpty callback is invoked
+  /// GetDemand reflects the live demand subscribers: 0 -> 1 -> 2 -> 1 -> 0
   /// </summary>
   [Test]
-  public async Task OnEmpty_InvokedWhenLastSubscriberLeaves()
+  public async Task GetDemand_TracksLiveDemandSubscribers()
   {
     await using var fanOut = new DataStreamFanOut<H264NalUnit>(TestInfo);
 
-    var emptyCalled = false;
-    fanOut.OnEmpty = () => emptyCalled = true;
-
-    var sub = fanOut.Subscribe();
-    sub.Dispose();
-
-    Assert.That(emptyCalled, Is.True);
-  }
-
-  /// <summary>
-  /// SCENARIO:
-  /// OnEmpty callback is set on a fan-out with two demand subscribers
-  ///
-  /// ACTION:
-  /// First subscriber is disposed
-  ///
-  /// EXPECTED RESULT:
-  /// OnEmpty is NOT invoked (one subscriber remains)
-  /// </summary>
-  [Test]
-  public async Task OnEmpty_NotInvokedWhileSubscribersRemain()
-  {
-    await using var fanOut = new DataStreamFanOut<H264NalUnit>(TestInfo);
-
-    var emptyCalled = false;
-    fanOut.OnEmpty = () => emptyCalled = true;
+    Assert.That(fanOut.GetDemand(), Is.EqualTo(0));
 
     var sub1 = fanOut.Subscribe();
+    Assert.That(fanOut.GetDemand(), Is.EqualTo(1));
+
     var sub2 = fanOut.Subscribe();
+    Assert.That(fanOut.GetDemand(), Is.EqualTo(2));
 
     sub1.Dispose();
-    Assert.That(emptyCalled, Is.False);
-    Assert.That(fanOut.SubscriberCount, Is.EqualTo(1));
+    Assert.That(fanOut.GetDemand(), Is.EqualTo(1));
 
     sub2.Dispose();
-    Assert.That(emptyCalled, Is.True);
+    Assert.That(fanOut.GetDemand(), Is.EqualTo(0));
   }
 
   /// <summary>
@@ -215,87 +235,60 @@ public class DataStreamFanOutTests
   /// A passive subscriber is connected to the fan-out
   ///
   /// ACTION:
-  /// Write items, then dispose the passive subscriber
+  /// Write items, read them, check GetDemand
   ///
   /// EXPECTED RESULT:
-  /// Passive subscriber receives items but does not trigger OnEmpty or OnDemand
+  /// Passive subscriber receives items but contributes no demand
   /// </summary>
   [Test]
-  public async Task PassiveSubscriber_DoesNotTriggerDemand()
+  public async Task PassiveSubscriber_ContributesNoDemand()
   {
     await using var fanOut = new DataStreamFanOut<H264NalUnit>(TestInfo);
 
-    var demandCalled = false;
-    var emptyCalled = false;
-    fanOut.OnDemand = () => demandCalled = true;
-    fanOut.OnEmpty = () => emptyCalled = true;
-
     using var sub = fanOut.SubscribePassive();
 
-    Assert.That(demandCalled, Is.False);
+    Assert.That(fanOut.GetDemand(), Is.EqualTo(0));
+    Assert.That(fanOut.SubscriberCount, Is.EqualTo(1));
 
     fanOut.Write(MakeUnit(1));
 
     var received = new List<ulong>();
     var cts = new CancellationTokenSource(100);
-    try
-    {
-      await foreach (var item in sub.ReadAsync(cts.Token))
-        received.Add(item.Timestamp);
-    }
-    catch (OperationCanceledException) { }
+    await foreach (var item in sub.ReadAsync(cts.Token))
+      received.Add(item.Timestamp);
 
     Assert.That(received, Is.EqualTo(new ulong[] { 1 }));
-
-    sub.Dispose();
-    Assert.That(emptyCalled, Is.False);
   }
 
   /// <summary>
   /// SCENARIO:
-  /// OnDemand callback is set, first demand subscriber is added
+  /// Changed callback is set on the fan-out
   ///
   /// ACTION:
-  /// Subscribe (demand)
+  /// Subscribe (demand and passive), then dispose both
   ///
   /// EXPECTED RESULT:
-  /// OnDemand fires
+  /// Changed fires on every subscribe and unsubscribe
   /// </summary>
   [Test]
-  public async Task OnDemand_FiredOnFirstDemandSubscriber()
+  public async Task Changed_FiresOnEverySubscriptionChange()
   {
     await using var fanOut = new DataStreamFanOut<H264NalUnit>(TestInfo);
 
-    var demandCalled = false;
-    fanOut.OnDemand = () => demandCalled = true;
+    var changedCount = 0;
+    fanOut.Changed = () => changedCount++;
 
-    fanOut.Subscribe();
+    var sub1 = fanOut.Subscribe();
+    Assert.That(changedCount, Is.EqualTo(1));
 
-    Assert.That(demandCalled, Is.True);
-  }
+    var sub2 = fanOut.SubscribePassive();
+    Assert.That(changedCount, Is.EqualTo(2));
 
-  /// <summary>
-  /// SCENARIO:
-  /// Two demand subscribers added
-  ///
-  /// ACTION:
-  /// Subscribe twice
-  ///
-  /// EXPECTED RESULT:
-  /// OnDemand fires only once (on first subscriber)
-  /// </summary>
-  [Test]
-  public async Task OnDemand_FiredOnlyOnce()
-  {
-    await using var fanOut = new DataStreamFanOut<H264NalUnit>(TestInfo);
+    sub1.Dispose();
+    Assert.That(changedCount, Is.EqualTo(3));
 
-    var demandCount = 0;
-    fanOut.OnDemand = () => demandCount++;
-
-    fanOut.Subscribe();
-    fanOut.Subscribe();
-
-    Assert.That(demandCount, Is.EqualTo(1));
+    sub2.Dispose();
+    Assert.That(changedCount, Is.EqualTo(4));
   }
 
   /// <summary>
@@ -342,12 +335,8 @@ public class DataStreamFanOutTests
     {
       var received = new List<ulong>();
       var cts = new CancellationTokenSource(200);
-      try
-      {
-        await foreach (var item in fanOut.ReadAsync(cts.Token))
-          received.Add(item.Timestamp);
-      }
-      catch (OperationCanceledException) { }
+      await foreach (var item in fanOut.ReadAsync(cts.Token))
+        received.Add(item.Timestamp);
       return received;
     });
 

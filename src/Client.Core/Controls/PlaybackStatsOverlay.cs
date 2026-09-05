@@ -20,10 +20,12 @@ public sealed class PlaybackStatsOverlay : Control
     set => SetValue(DiagnosticsProperty, value);
   }
 
+  public Func<PipelineStats[]>? PipelineStatsPull { get; set; }
+
   private const double Width_ = 340;
   private const double GraphHeight = 64;
   private const double LineHeight = 13;
-  private const int LineCount = 7;
+  private const double HalfGap = 6.5;
   private const double Padding = 8;
 
   private static Typeface? _monoFace;
@@ -38,15 +40,31 @@ public sealed class PlaybackStatsOverlay : Control
 
   private DispatcherTimer? _timer;
   private readonly double[] _samples = new double[FrameTimingRecorder.Capacity];
+  private int _lastPipelineCount = -1;
 
-  protected override Size MeasureOverride(Size _) =>
-    new(Width_, LineCount * LineHeight + GraphHeight + Padding * 3);
+  protected override Size MeasureOverride(Size _)
+  {
+    var pipelineCount = PipelineStatsPull != null ? PipelineStatsPull().Length : 1;
+    var textHeight = 2 * LineHeight + HalfGap
+                     + pipelineCount * (3 * LineHeight + HalfGap)
+                     + 2 * LineHeight + HalfGap;
+    return new(Width_, textHeight + GraphHeight + Padding * 2);
+  }
 
   protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
   {
     base.OnAttachedToVisualTree(e);
     _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
-    _timer.Tick += (_, _) => InvalidateVisual();
+    _timer.Tick += (_, _) =>
+    {
+      var current = PipelineStatsPull?.Invoke().Length ?? 1;
+      if (current != _lastPipelineCount)
+      {
+        _lastPipelineCount = current;
+        InvalidateMeasure();
+      }
+      InvalidateVisual();
+    };
     _timer.Start();
   }
 
@@ -64,10 +82,16 @@ public sealed class PlaybackStatsOverlay : Control
     var s = d.Snapshot();
     d.FrameTiming.CopyMs(_samples);
 
-    var w = Bounds.Width > 0 ? Bounds.Width : Width_;
-    var h = Bounds.Height > 0 ? Bounds.Height : (LineCount * LineHeight + GraphHeight + Padding * 3);
+    var pipelines = PipelineStatsPull?.Invoke() ?? [];
 
-    dc.FillRectangle(BgBrush, new Rect(0, 0, w, h), 4);
+    var pipelineCount = Math.Max(pipelines.Length, 1);
+    var textHeight = 2 * LineHeight + HalfGap
+                     + pipelineCount * (3 * LineHeight + HalfGap)
+                     + 2 * LineHeight + HalfGap;
+    var w = Bounds.Width > 0 ? Bounds.Width : Width_;
+    var totalHeight = textHeight + GraphHeight + Padding * 2;
+
+    dc.FillRectangle(BgBrush, new Rect(0, 0, w, totalHeight), 4);
 
     double last = 0, sum = 0, min = double.MaxValue, max = 0;
     var count = d.FrameTiming.SampleCount;
@@ -97,35 +121,32 @@ public sealed class PlaybackStatsOverlay : Control
     var secFps = sumSec > 0 ? 1000.0 * secCount / sumSec : 0;
 
     var c = CultureInfo.InvariantCulture;
-    var lines = new[]
-    {
-      $"{s.BackendName} / {s.RendererName}",
-      string.Create(c, $"{s.Mode}/{s.State}  {s.Rate:0.00}x  catchup {s.CatchupRate:0.000}x"),
-      string.Create(c, $"decode buf {s.BufferUs / 1000.0,+5:0}ms  pos {FormatTs(s.PositionUs)}"),
-      string.Create(c, $"fetcher {s.FetcherGops} GOPs / {s.FetcherBytes / 1024.0 / 1024.0:0.0} MiB"),
-      string.Create(c, $"decoder {s.DecodedGops} GOPs / {s.DecodedFrames} frames  {(s.Buffering ? "BUFFERING" : "")}"),
-      string.Create(c, $"dt  last {last,4:0}ms  avg {avg,4:0}ms  min {min,4:0}ms  max {max,4:0}ms"),
-      string.Create(c, $"fps cur {curFps,6:0.00}    1s {secFps,6:0.00}    avg {avgFps,6:0.00}")
-    };
-
     var y = Padding;
-    for (var i = 0; i < lines.Length; i++)
+
+    DrawLine(dc, ref y, $"{s.BackendName} / {s.RendererName}");
+    DrawLine(dc, ref y, string.Create(c,
+      $"{s.Mode}/{s.State}  {s.Rate:0.00}x  catchup {s.CatchupRate:0.000}x{(s.Buffering ? "  BUFFERING" : "")}"));
+    y += HalfGap;
+
+    foreach (var p in pipelines)
     {
-      var ft = new FormattedText(
-        lines[i],
-        CultureInfo.InvariantCulture,
-        FlowDirection.LeftToRight,
-        MonoFace,
-        10,
-        TextBrush);
-      dc.DrawText(ft, new Point(Padding, y));
-      y += LineHeight;
+      DrawLine(dc, ref y, string.Create(c, $"{p.Label}  {p.Profile}"));
+      DrawLine(dc, ref y, string.Create(c,
+        $"decode buf {p.BufferUs / 1000.0,5:0}ms  pos {FormatTs(p.PositionUs)}"));
+      DrawLine(dc, ref y, string.Create(c,
+        $"fetch  {p.FetcherGops} GOPs  {p.FetcherBytes / 1024.0 / 1024.0:0.0}MiB    decode  {p.DecoderGops} GOPs  {p.DecoderFrames} fr"));
+      y += HalfGap;
     }
 
-    var gy = y + Padding;
+    DrawLine(dc, ref y, string.Create(c,
+      $"dt  last {last,4:0}ms  avg {avg,4:0}ms  min {min,4:0}ms  max {max,4:0}ms"));
+    DrawLine(dc, ref y, string.Create(c,
+      $"fps  cur {curFps,6:0.00}   1s {secFps,6:0.00}  avg {avgFps,6:0.00}"));
+    y += HalfGap;
+
     var gw = w - Padding * 2;
     dc.FillRectangle(new SolidColorBrush(Color.FromArgb(60, 0, 0, 0)),
-      new Rect(Padding, gy, gw, GraphHeight));
+      new Rect(Padding, y, gw, GraphHeight));
 
     if (count > 0)
     {
@@ -139,7 +160,7 @@ public sealed class PlaybackStatsOverlay : Control
         if (v <= 0) continue;
         var barH = Math.Min(barArea, v / scale * barArea);
         var brush = v <= 45 ? OkBrush : v <= 80 ? WarnBrush : BadBrush;
-        dc.FillRectangle(brush, new Rect(Padding + i * barW, gy + GraphHeight - barH, Math.Max(1, barW - 0.5), barH));
+        dc.FillRectangle(brush, new Rect(Padding + i * barW, y + GraphHeight - barH, Math.Max(1, barW - 0.5), barH));
       }
 
       var scaleLabel = new FormattedText(
@@ -149,8 +170,21 @@ public sealed class PlaybackStatsOverlay : Control
         MonoFace,
         9,
         AxisBrush);
-      dc.DrawText(scaleLabel, new Point(Padding + 2, gy + 1));
+      dc.DrawText(scaleLabel, new Point(Padding + 2, y + 1));
     }
+  }
+
+  private void DrawLine(DrawingContext dc, ref double y, string text)
+  {
+    var ft = new FormattedText(
+      text,
+      CultureInfo.InvariantCulture,
+      FlowDirection.LeftToRight,
+      MonoFace,
+      10,
+      TextBrush);
+    dc.DrawText(ft, new Point(Padding, y));
+    y += LineHeight;
   }
 
   private static string FormatTs(long us)

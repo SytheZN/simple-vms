@@ -21,7 +21,9 @@ const {
 } = useGalleryThumbnails()
 
 function onServerEvent(event: LiveEvent) {
-  if (['config', 'added', 'removed', 'status'].includes(event.type)) {
+  if (event.type.startsWith('client-')) return
+  if (event.type.startsWith('__')
+    || ['camera-added', 'camera-updated', 'camera-reconfigured', 'camera-removed'].includes(event.type)) {
     loadCameras()
     return
   }
@@ -56,20 +58,25 @@ async function loadCameras() {
 }
 
 function statusIcon(status: string): string {
-  if (status === 'online') return 'ph ph-video-camera'
+  if (status === 'online' || status === 'recording') return 'ph ph-video-camera'
   if (status === 'error') return 'ph ph-warning'
   return 'ph ph-video-camera-slash'
 }
 
 function statusBadge(status: string): string {
-  if (status === 'online') return 'badge-success'
-  if (status === 'error') return 'badge-danger'
+  if (status === 'recording') return 'badge-danger'
+  if (status === 'error') return 'badge-warning'
+  if (status === 'online') return 'badge-info'
   return 'badge-neutral'
 }
 
 function statusIconColor(status: string): string {
   if (status === 'error') return 'text-danger'
   return 'text-text-muted'
+}
+
+function statusBadgeIcon(status: string): string {
+  return status === 'error' ? 'ph-fill ph-warning' : 'ph-fill ph-circle'
 }
 
 function qualityStreams(cam: CameraListItem) {
@@ -123,7 +130,7 @@ onUnmounted(() => {
           <div class="flex items-center justify-between">
             <span class="text-sm font-medium text-text">{{ cam.name }}</span>
             <span class="badge" :class="statusBadge(cam.status)">
-              <i class="ph-fill ph-circle icon-sm"></i> {{ cam.status }}
+              <i :class="[statusBadgeIcon(cam.status), 'icon-sm']"></i> {{ cam.status }}
             </span>
           </div>
           <div class="flex gap-2 text-xs text-text-muted">

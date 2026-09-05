@@ -92,8 +92,6 @@ public partial class CameraGrid : UserControl
       flashBrush = res as IBrush;
     flashBrush ??= Brushes.Orange;
 
-    // The extra thickness is taken out of the margin so the border grows into the gap between
-    // cards rather than into the content, which would nudge the thumbnail on every flash.
     var margin = card.Margin;
     var grown = FlashBorderThickness - card.BorderThickness.Left;
 

@@ -127,6 +127,7 @@ public class ClientValidationTests
     public ISegmentRepository Segments => null!;
     public IKeyframeRepository Keyframes => null!;
     public IEventRepository Events => null!;
+    public ISystemEventRepository SystemEvents => null!;
     public IClientRepository Clients { get; }
     public IConfigRepository Config => null!;
     public IDataStore GetDataStore(string pluginId) => null!;

@@ -19,7 +19,7 @@ public class FetcherTests
   public void AppendData_NewGop_AddsEntry()
   {
     var cache = new Fetcher();
-    cache.AppendData(1000, new byte[] { 1, 2, 3 });
+    cache.AppendData(1000, new byte[] { 1, 2, 3 }, true);
 
     var gop = cache.FindGop(1000);
     Assert.That(gop, Is.Not.Null);
@@ -41,8 +41,8 @@ public class FetcherTests
   public void AppendData_SameTimestamp_AppendsChunk()
   {
     var cache = new Fetcher();
-    cache.AppendData(1000, new byte[] { 1 });
-    cache.AppendData(1000, new byte[] { 2 });
+    cache.AppendData(1000, new byte[] { 1 }, true);
+    cache.AppendData(1000, new byte[] { 2 }, false);
 
     var gop = cache.FindGop(1000);
     Assert.That(gop!.Chunks, Has.Count.EqualTo(2));
@@ -62,8 +62,8 @@ public class FetcherTests
   public void FindGop_BetweenEntries_ReturnsLowerOrEqual()
   {
     var cache = new Fetcher();
-    cache.AppendData(1000, new byte[] { 1 });
-    cache.AppendData(2000, new byte[] { 2 });
+    cache.AppendData(1000, new byte[] { 1 }, true);
+    cache.AppendData(2000, new byte[] { 2 }, true);
 
     var gop = cache.FindGop(1500);
     Assert.That(gop!.Timestamp, Is.EqualTo(1000UL));
@@ -83,7 +83,7 @@ public class FetcherTests
   public void FindGop_BeforeFirstEntry_ReturnsNull()
   {
     var cache = new Fetcher();
-    cache.AppendData(2000, new byte[] { 1 });
+    cache.AppendData(2000, new byte[] { 1 }, true);
 
     var gop = cache.FindGop(1000);
     Assert.That(gop, Is.Null);
@@ -103,9 +103,9 @@ public class FetcherTests
   public void GopTimestamps_ReturnsSorted()
   {
     var cache = new Fetcher();
-    cache.AppendData(3000, new byte[] { 1 });
-    cache.AppendData(1000, new byte[] { 1 });
-    cache.AppendData(2000, new byte[] { 1 });
+    cache.AppendData(3000, new byte[] { 1 }, true);
+    cache.AppendData(1000, new byte[] { 1 }, true);
+    cache.AppendData(2000, new byte[] { 1 }, true);
 
     Assert.That(cache.GopTimestamps(), Is.EqualTo(new ulong[] { 1000, 2000, 3000 }));
   }
@@ -126,7 +126,7 @@ public class FetcherTests
     var cache = new Fetcher();
     cache.HandleLive();
     for (ulong t = 1000; t <= 5000; t += 1000)
-      cache.AppendData(t, new byte[] { 1 });
+      cache.AppendData(t, new byte[] { 1 }, true);
 
     cache.SetTarget(4000, 4000 + 30_000_000);
 
@@ -294,8 +294,8 @@ public class FetcherTests
   public void Reset_ClearsGops()
   {
     var cache = new Fetcher();
-    cache.AppendData(1000, new byte[] { 1 });
-    cache.AppendData(2000, new byte[] { 2 });
+    cache.AppendData(1000, new byte[] { 1 }, true);
+    cache.AppendData(2000, new byte[] { 2 }, true);
 
     cache.Reset();
 

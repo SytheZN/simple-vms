@@ -40,7 +40,7 @@ public static class ApiRoutes
     {
       var enrollment = req.Resolve<EnrollmentService>();
       var body = req.Body(ServerJsonContext.Default.EnrollRequest);
-      var result = await enrollment.CompleteEnrollmentAsync(body.Token, ct);
+      var result = await enrollment.CompleteEnrollmentAsync(body.Token, body.DeviceName, ct);
       return ApiResult.Ok(result, new DebugTag(ModuleIds.Enrollment, 0x0011),
         ServerJsonContext.Default.EnrollResponse);
     });
@@ -255,6 +255,22 @@ public static class ApiRoutes
       var result = await retention.SetGlobalAsync(
         req.Body(ServerJsonContext.Default.RetentionPolicy), ct);
       return ApiResult.Ok(result, new DebugTag(ModuleIds.Retention, 0x0011));
+    });
+
+    dispatcher.Add("GET", "/api/v1/retention/system-events", async (req, ct) =>
+    {
+      var retention = req.Resolve<RetentionService>();
+      var result = await retention.GetSystemEventRetentionAsync(ct);
+      return ApiResult.Ok(result, new DebugTag(ModuleIds.Retention, 0x0012),
+        ServerJsonContext.Default.SystemEventRetentionDto);
+    });
+
+    dispatcher.Add("PUT", "/api/v1/retention/system-events", async (req, ct) =>
+    {
+      var retention = req.Resolve<RetentionService>();
+      var result = await retention.SetSystemEventRetentionAsync(
+        req.Body(ServerJsonContext.Default.SystemEventRetentionDto), ct);
+      return ApiResult.Ok(result, new DebugTag(ModuleIds.Retention, 0x0013));
     });
   }
 

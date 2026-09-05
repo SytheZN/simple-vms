@@ -124,7 +124,10 @@ public sealed class MainShellViewModel : ViewModelBase, IDisposable
     private set
     {
       if (SetProperty(ref _overlayViewModel, value))
+      {
         OnPropertyChanged(nameof(IsGalleryVisible));
+        _galleryViewModel?.SetVisible(IsGalleryVisible);
+      }
     }
   }
 
@@ -184,9 +187,6 @@ public sealed class MainShellViewModel : ViewModelBase, IDisposable
   public ICommand ToggleSidebarCommand { get; }
   public ICommand ToggleFullscreenCommand { get; }
 
-  // The gallery view is kept alive underneath whatever is pushed over it so that returning to it
-  // does not rebuild the grid: a rebuilt grid loses its scroll offset and re-runs the column
-  // layout. Everything else is transient and disposed as it is replaced.
   public void NavigateTo(ViewKind view)
   {
     _logger.LogDebug("NavigateTo {View}", view);

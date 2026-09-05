@@ -85,7 +85,7 @@ async function loadTimeline() {
       props.profile
     )
     spans.value = result.spans
-    events.value = result.events
+    events.value = result.events.filter(e => e.type === 'motion')
   } catch {
     spans.value = []
     events.value = []
@@ -402,10 +402,6 @@ onUnmounted(() => {
       <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 timeline-span-recording rounded-sm"></span> Recording</span>
       <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 timeline-span-motion rounded-sm"></span> Motion</span>
       <span class="flex items-center gap-1"><span class="inline-block w-3 h-0.5 timeline-event-warning"></span> Motion</span>
-      <span class="flex items-center gap-1"><span class="inline-block w-3 h-0.5 timeline-event-danger"></span> Fault</span>
-      <span class="flex items-center gap-1"><span class="inline-block w-3 h-0.5 timeline-event-success"></span> Restored</span>
-      <span class="flex items-center gap-1"><span class="inline-block w-3 h-0.5 timeline-event-info"></span> Event</span>
-      <span class="flex items-center gap-1"><span class="inline-block w-3 h-0.5 timeline-event-muted"></span> System</span>
     </div>
   </div>
 </template>

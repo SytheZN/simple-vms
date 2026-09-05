@@ -2,12 +2,14 @@
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import QRCode from 'qrcode'
 import { api, ApiError } from '@/api/client'
-import type { ClientListItem } from '@/types/api'
+import { useServerEvents } from '@/composables/useServerEvents'
+import type { ClientListItem, LiveEvent } from '@/types/api'
 
 const clients = ref<ClientListItem[]>([])
 const token = ref('')
 const qrDataUrl = ref('')
 const enrolling = ref(false)
+const tokenUsed = ref(false)
 const error = ref('')
 const internalEndpoint = ref<string | null>(null)
 const editingId = ref<string | null>(null)
@@ -15,6 +17,12 @@ const editName = ref('')
 
 let holdAbort: AbortController | undefined
 let pollInterval: ReturnType<typeof setInterval> | undefined
+
+function onServerEvent(event: LiveEvent) {
+  if (event.type.startsWith('client-')) loadClients()
+}
+
+const { start: startEvents, stop: stopEvents } = useServerEvents(onServerEvent)
 
 async function loadClients() {
   try {
@@ -35,6 +43,7 @@ async function loadSettings() {
 
 async function startEnrollment() {
   enrolling.value = true
+  tokenUsed.value = false
   error.value = ''
   token.value = ''
   qrDataUrl.value = ''
@@ -60,7 +69,16 @@ async function startEnrollment() {
     })
 
     holdAbort = new AbortController()
-    api.enrollment.hold(res.token, holdAbort.signal)
+    const heldToken = res.token
+    api.enrollment.hold(heldToken, holdAbort.signal).then((burned) => {
+      if (!burned || token.value !== heldToken) return
+      holdAbort = undefined
+      clearInterval(pollInterval)
+      token.value = ''
+      qrDataUrl.value = ''
+      tokenUsed.value = true
+      loadClients()
+    })
     pollInterval = setInterval(loadClients, 3000)
   } catch (e) {
     enrolling.value = false
@@ -73,6 +91,7 @@ function cancelEnrollment() {
   holdAbort = undefined
   clearInterval(pollInterval)
   enrolling.value = false
+  tokenUsed.value = false
   token.value = ''
   qrDataUrl.value = ''
 }
@@ -113,8 +132,12 @@ watch(enrolling, (val) => {
   }
 })
 
-onMounted(loadClients)
+onMounted(() => {
+  loadClients()
+  startEvents()
+})
 onUnmounted(() => {
+  stopEvents()
   holdAbort?.abort()
   clearInterval(pollInterval)
 })
@@ -198,17 +221,28 @@ onUnmounted(() => {
           <i class="ph ph-x icon-sm"></i>
         </button>
       </div>
-      <p class="text-sm text-text-muted">Scan the QR code with a mobile client, or enter the token manually on a desktop client.</p>
+      <template v-if="tokenUsed">
+        <div class="flex flex-col items-center gap-3 py-6">
+          <i class="ph ph-check-circle icon-xl text-success"></i>
+          <p class="text-sm text-text">Client token used</p>
+        </div>
+        <div class="flex justify-center">
+          <button class="btn btn-primary" @click="cancelEnrollment">Close</button>
+        </div>
+      </template>
+      <template v-else>
+        <p class="text-sm text-text-muted">Scan the QR code with a mobile client, or enter the token manually on a desktop client.</p>
 
-      <div v-if="qrDataUrl" class="flex justify-center">
-        <img :src="qrDataUrl" alt="Enrollment QR code" class="rounded-lg" />
-      </div>
+        <div v-if="qrDataUrl" class="flex justify-center">
+          <img :src="qrDataUrl" alt="Enrollment QR code" class="rounded-lg" />
+        </div>
 
-      <div class="flex items-center justify-center gap-2 text-2xl font-bold font-mono text-text tracking-widest">
-        {{ token }}
-      </div>
+        <div class="flex items-center justify-center gap-2 text-2xl font-bold font-mono text-text tracking-widest">
+          {{ token }}
+        </div>
 
-      <p class="text-xs text-text-muted text-center">Token is valid while this panel is open.</p>
+        <p class="text-xs text-text-muted text-center">Token is valid while this panel is open.</p>
+      </template>
     </div>
   </div>
 </template>

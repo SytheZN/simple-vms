@@ -127,6 +127,7 @@ internal sealed class StubDataProvider(
   public ISegmentRepository Segments => segments ?? new StubSegmentRepository();
   public IKeyframeRepository Keyframes => null!;
   public IEventRepository Events => null!;
+  public ISystemEventRepository SystemEvents => null!;
   public IClientRepository Clients => null!;
   public IConfigRepository Config => null!;
   public IDataStore GetDataStore(string pluginId) => null!;
@@ -183,6 +184,11 @@ internal sealed class StubSegmentRepository(
 
   public Task<OneOf<IReadOnlyList<Segment>, Error>> GetOldestAsync(
     Guid streamId, int limit, CancellationToken ct) =>
+    Task.FromResult(
+      OneOf<IReadOnlyList<Segment>, Error>.FromT0((IReadOnlyList<Segment>)Array.Empty<Segment>()));
+
+  public Task<OneOf<IReadOnlyList<Segment>, Error>> GetOldestAcrossStreamsAsync(
+    int limit, CancellationToken ct) =>
     Task.FromResult(
       OneOf<IReadOnlyList<Segment>, Error>.FromT0((IReadOnlyList<Segment>)Array.Empty<Segment>()));
 

@@ -195,6 +195,8 @@ public sealed class TlsTransportFactory : ITransportFactory
     public override void Write(byte[] buffer, int offset, int count) =>
       throw new NotSupportedException("Use WriteAsync");
 
+    private const int TransportReadBufferBytes = 16384;
+
     public override async Task<int> ReadAsync(
       byte[] buffer, int offset, int count, CancellationToken ct)
     {
@@ -205,69 +207,17 @@ public sealed class TlsTransportFactory : ITransportFactory
         {
           ct.ThrowIfCancellationRequested();
 
-          int consumed = 0;
-          await _protocolLock.WaitAsync(ct).ConfigureAwait(false);
-          try
+          var consumed = await DrainDecryptedPlaintextInto(buffer, offset, count, ct)
+            .ConfigureAwait(false);
+          if (consumed > 0) return consumed;
+
+          rbuf ??= ArrayPool<byte>.Shared.Rent(TransportReadBufferBytes);
+          var bytesRead = await ReadCiphertextAndOfferInSequence(rbuf, ct).ConfigureAwait(false);
+
+          if (bytesRead <= 0)
           {
-            var available = _protocol.GetAvailableInputBytes();
-            if (available > 0)
-            {
-              var toRead = Math.Min(available, count);
-              consumed = _protocol.ReadInput(buffer, offset, toRead);
-            }
-          }
-          finally { _protocolLock.Release(); }
-
-          if (consumed > 0)
-            return consumed;
-
-          rbuf ??= ArrayPool<byte>.Shared.Rent(16384);
-
-          // TLS 1.3 AEAD keys its nonce on the record sequence number, so ciphertext must
-          // reach OfferInput in the order it came off the socket. The socket lock therefore
-          // spans read + offer: releasing it between the two lets a concurrent reader offer
-          // a later chunk first, which fails the MAC on every subsequent record.
-          var n = 0;
-          await _socketReadLock.WaitAsync(ct).ConfigureAwait(false);
-          try
-          {
-            n = await _transport.ReadAsync(rbuf.AsMemory(0, 16384), ct).ConfigureAwait(false);
-            if (n > 0)
-            {
-              await _protocolLock.WaitAsync(ct).ConfigureAwait(false);
-              try
-              {
-                _protocol.OfferInput(rbuf, 0, n);
-                var outAvail = _protocol.GetAvailableOutputBytes();
-                if (outAvail > 0)
-                {
-                  var pending = ArrayPool<byte>.Shared.Rent(outAvail);
-                  try
-                  {
-                    var pendingLen = _protocol.ReadOutput(pending, 0, outAvail);
-                    await _transport.WriteAsync(pending.AsMemory(0, pendingLen), ct).ConfigureAwait(false);
-                  }
-                  finally { ArrayPool<byte>.Shared.Return(pending); }
-                }
-              }
-              finally { _protocolLock.Release(); }
-            }
-          }
-          finally { _socketReadLock.Release(); }
-
-          if (n <= 0)
-          {
-            // Transport EOF: one final drain for any plaintext already decrypted
-            // into the input buffer (e.g. last app-data record co-arriving with close-notify).
-            await _protocolLock.WaitAsync(ct).ConfigureAwait(false);
-            try
-            {
-              var tail = _protocol.GetAvailableInputBytes();
-              if (tail > 0)
-                return _protocol.ReadInput(buffer, offset, Math.Min(tail, count));
-            }
-            finally { _protocolLock.Release(); }
-            return 0;
+            return await DrainDecryptedPlaintextInto(buffer, offset, count, ct)
+              .ConfigureAwait(false);
           }
         }
       }
@@ -278,26 +228,68 @@ public sealed class TlsTransportFactory : ITransportFactory
       }
     }
 
+    private async Task<int> DrainDecryptedPlaintextInto(
+      byte[] buffer, int offset, int count, CancellationToken ct)
+    {
+      await _protocolLock.WaitAsync(ct).ConfigureAwait(false);
+      try
+      {
+        var available = _protocol.GetAvailableInputBytes();
+        if (available <= 0) return 0;
+        return _protocol.ReadInput(buffer, offset, Math.Min(available, count));
+      }
+      finally { _protocolLock.Release(); }
+    }
+
+    private async Task<int> ReadCiphertextAndOfferInSequence(byte[] rbuf, CancellationToken ct)
+    {
+      await _socketReadLock.WaitAsync(ct).ConfigureAwait(false);
+      try
+      {
+        var bytesRead = await _transport.ReadAsync(rbuf.AsMemory(0, TransportReadBufferBytes), ct)
+          .ConfigureAwait(false);
+        if (bytesRead > 0)
+          await OfferCiphertextAndSendResponse(rbuf, bytesRead, ct).ConfigureAwait(false);
+        return bytesRead;
+      }
+      finally { _socketReadLock.Release(); }
+    }
+
+    private async Task OfferCiphertextAndSendResponse(byte[] rbuf, int length, CancellationToken ct)
+    {
+      await _protocolLock.WaitAsync(ct).ConfigureAwait(false);
+      try
+      {
+        _protocol.OfferInput(rbuf, 0, length);
+        await SendPendingProtocolOutput(ct).ConfigureAwait(false);
+      }
+      finally { _protocolLock.Release(); }
+    }
+
     public override async Task WriteAsync(
       byte[] buffer, int offset, int count, CancellationToken ct)
     {
-      // Hold the protocol lock across encrypt + socket write: see record-ordering note in ReadAsync.
       await _protocolLock.WaitAsync(ct).ConfigureAwait(false);
       try
       {
         _protocol.WriteApplicationData(buffer, offset, count);
-        var avail = _protocol.GetAvailableOutputBytes();
-        if (avail <= 0) return;
-
-        var outBytes = ArrayPool<byte>.Shared.Rent(avail);
-        try
-        {
-          var outLen = _protocol.ReadOutput(outBytes, 0, avail);
-          await _transport.WriteAsync(outBytes.AsMemory(0, outLen), ct).ConfigureAwait(false);
-        }
-        finally { ArrayPool<byte>.Shared.Return(outBytes); }
+        await SendPendingProtocolOutput(ct).ConfigureAwait(false);
       }
       finally { _protocolLock.Release(); }
+    }
+
+    private async Task SendPendingProtocolOutput(CancellationToken ct)
+    {
+      var avail = _protocol.GetAvailableOutputBytes();
+      if (avail <= 0) return;
+
+      var outBytes = ArrayPool<byte>.Shared.Rent(avail);
+      try
+      {
+        var outLen = _protocol.ReadOutput(outBytes, 0, avail);
+        await _transport.WriteAsync(outBytes.AsMemory(0, outLen), ct).ConfigureAwait(false);
+      }
+      finally { ArrayPool<byte>.Shared.Return(outBytes); }
     }
 
     public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
@@ -340,38 +332,34 @@ public sealed class TlsTransportFactory : ITransportFactory
     {
       if (_disposed) return;
       _disposed = true;
-      if (disposing)
-      {
-        // Close() rewrites record-layer state, so it must not overlap an in-flight
-        // OfferInput or encrypt. Skip the close_notify rather than corrupt a decrypt
-        // that is still running: the socket is going away regardless.
-        var locked = _protocolLock.Wait(CloseLockTimeout);
-        try
-        {
-          if (locked)
-            _protocol.Close();
-          else
-            _logger.LogDebug("TLS close skipped: protocol still in use");
-        }
-        catch (Exception ex)
-        {
-          _logger.LogDebug(ex, "TlsClientProtocol.Close failed");
-        }
-        finally
-        {
-          if (locked) _protocolLock.Release();
-        }
-      }
+      if (disposing) SendCloseNotifyIfProtocolIdle();
       base.Dispose(disposing);
+    }
+
+    private void SendCloseNotifyIfProtocolIdle()
+    {
+      var locked = _protocolLock.Wait(CloseLockTimeout);
+      try
+      {
+        if (locked)
+          _protocol.Close();
+        else
+          _logger.LogDebug("TLS close_notify skipped: protocol is still in use");
+      }
+      catch (Exception ex)
+      {
+        _logger.LogDebug(ex, "TlsClientProtocol.Close failed");
+      }
+      finally
+      {
+        if (locked) _protocolLock.Release();
+      }
     }
   }
 
-  // Exactly one signature scheme: rsa_pss_rsae_sha256 (0x0804). Server is under our control
-  // and always issues RSA-2048 leaf certs, so we don't negotiate.
   private static readonly SignatureAndHashAlgorithm PinnedSignatureAlgorithm =
     new(HashAlgorithm.Intrinsic, SignatureAlgorithm.rsa_pss_rsae_sha256);
 
-  // Exactly one TLS 1.3 cipher suite - narrows attack surface to a single modern AEAD.
   private static readonly int[] PinnedCipherSuites = [CipherSuite.TLS_AES_128_GCM_SHA256];
 
   private sealed class PinnedTlsClient : DefaultTlsClient
@@ -407,7 +395,6 @@ public sealed class TlsTransportFactory : ITransportFactory
     protected override IList<SignatureAndHashAlgorithm> GetSupportedSignatureAlgorithms() =>
       [PinnedSignatureAlgorithm];
 
-    // Server cert is self-issued by the pinned CA and has no SNI: suppress the extension entirely.
     protected override IList<ServerName>? GetSniServerNames() => null;
 
     public override TlsAuthentication GetAuthentication() =>
@@ -442,19 +429,11 @@ public sealed class TlsTransportFactory : ITransportFactory
       if (chain == null || chain.IsEmpty)
         throw new TlsFatalAlert(AlertDescription.bad_certificate);
 
-      // Single-tier CA: leaf is signed directly by the pinned root. The CA also issues
-      // client certs (id-kp-clientAuth); the serverAuth EKU check here is what prevents
-      // a leaked client cert from being usable as a server cert.
       try
       {
-        var leafEncoded = chain.GetCertificateAt(0).GetEncoded();
-        var leaf = new Org.BouncyCastle.X509.X509CertificateParser().ReadCertificate(leafEncoded);
-        leaf.Verify(_caCert.GetPublicKey());
-        leaf.CheckValidity();
-
-        var ekus = leaf.GetExtendedKeyUsage();
-        if (ekus == null || !ekus.Contains(KeyPurposeID.id_kp_serverAuth))
-          throw new InvalidOperationException("Server cert missing serverAuth EKU");
+        var leaf = ParseLeafCertificate(chain);
+        RejectIfNotIssuedByPinnedCa(leaf);
+        RejectIfNotUsableForServerAuth(leaf);
       }
       catch (Exception ex)
       {
@@ -462,17 +441,28 @@ public sealed class TlsTransportFactory : ITransportFactory
       }
     }
 
+    private static Org.BouncyCastle.X509.X509Certificate ParseLeafCertificate(Certificate chain)
+    {
+      var leafEncoded = chain.GetCertificateAt(0).GetEncoded();
+      return new Org.BouncyCastle.X509.X509CertificateParser().ReadCertificate(leafEncoded);
+    }
+
+    private void RejectIfNotIssuedByPinnedCa(Org.BouncyCastle.X509.X509Certificate leaf)
+    {
+      leaf.Verify(_caCert.GetPublicKey());
+      leaf.CheckValidity();
+    }
+
+    private static void RejectIfNotUsableForServerAuth(Org.BouncyCastle.X509.X509Certificate leaf)
+    {
+      var ekus = leaf.GetExtendedKeyUsage();
+      if (ekus == null || !ekus.Contains(KeyPurposeID.id_kp_serverAuth))
+        throw new InvalidOperationException("Server cert missing serverAuth EKU");
+    }
+
     public TlsCredentials GetClientCredentials(CertificateRequest certificateRequest)
     {
-      // Surface server/client disagreement immediately rather than at verify-time.
-      var serverAlgs = certificateRequest?.SupportedSignatureAlgorithms;
-      if (serverAlgs != null && !serverAlgs.Any(a =>
-        a.Hash == PinnedSignatureAlgorithm.Hash &&
-        a.Signature == PinnedSignatureAlgorithm.Signature))
-      {
-        throw new TlsFatalAlert(AlertDescription.handshake_failure,
-          new InvalidOperationException("Server does not accept pinned signature scheme"));
-      }
+      RejectIfServerRejectsPinnedSignatureScheme(certificateRequest);
 
       var tlsCert = (TlsCertificate)new BcTlsCertificate(_crypto, _clientCert.CertificateStructure);
       var certificate = new Certificate(
@@ -484,6 +474,19 @@ public sealed class TlsTransportFactory : ITransportFactory
         _clientKey,
         certificate,
         PinnedSignatureAlgorithm);
+    }
+
+    private static void RejectIfServerRejectsPinnedSignatureScheme(CertificateRequest? request)
+    {
+      var serverAlgs = request?.SupportedSignatureAlgorithms;
+      if (serverAlgs == null) return;
+      if (serverAlgs.Any(a =>
+            a.Hash == PinnedSignatureAlgorithm.Hash &&
+            a.Signature == PinnedSignatureAlgorithm.Signature))
+        return;
+
+      throw new TlsFatalAlert(AlertDescription.handshake_failure,
+        new InvalidOperationException("Server does not accept pinned signature scheme"));
     }
   }
 }

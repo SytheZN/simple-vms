@@ -9,9 +9,12 @@ import {
   eventDetail,
   eventSource,
   eventTypes,
+  eventTypesFor,
   extraMetadata,
   hasDetail,
 } from '@/lib/events'
+
+const SYSTEM_SOURCE = '00000000-0000-0000-0000-000000000000'
 
 const events = ref<CameraEvent[]>([])
 const cameras = ref<CameraListItem[]>([])
@@ -104,7 +107,7 @@ async function loadCameras() {
 }
 
 function onServerEvent(event: LiveEvent) {
-  if (event.type === 'status' || event.type === 'removed') return
+  if (event.type.startsWith('__')) return
 
   const existing = events.value.find(evt => evt.id === event.id)
   if (existing) {
@@ -137,9 +140,26 @@ function cameraName(id: string): string {
   return cameras.value.find(c => c.id === id)?.name ?? id
 }
 
+function sourceName(evt: CameraEvent): string {
+  return evt.cameraId === SYSTEM_SOURCE ? 'System' : cameraName(evt.cameraId)
+}
+
+const availableTypes = computed(() => {
+  if (filterCameraId.value === undefined) return eventTypes
+  if (filterCameraId.value === SYSTEM_SOURCE) return eventTypesFor('system')
+  return eventTypesFor('camera')
+})
+
+function onSourceChange() {
+  if (filterType.value && !availableTypes.value.includes(filterType.value))
+    filterType.value = undefined
+  offset.value = 0
+  loadEvents()
+}
+
 function searchText(evt: CameraEvent): string {
   return [
-    cameraName(evt.cameraId),
+    sourceName(evt),
     evt.type,
     describeEvent(evt.type).label,
     eventDetail(evt) ?? '',
@@ -202,15 +222,16 @@ onUnmounted(() => {
 
     <div class="flex flex-wrap gap-3">
       <div class="w-48">
-        <select class="input" v-model="filterCameraId" @change="offset = 0; loadEvents()">
-          <option :value="undefined">All Cameras</option>
-          <option v-for="cam in cameras" :key="cam.id" :value="cam.id">{{ cam.name }}</option>
+        <select class="input" v-model="filterCameraId" @change="onSourceChange">
+          <option :value="undefined">All Sources</option>
+          <option :value="SYSTEM_SOURCE">System</option>
+          <option v-for="cam in cameras" :key="cam.id" :value="cam.id">Camera - {{ cam.name }}</option>
         </select>
       </div>
       <div class="w-40">
         <select class="input" v-model="filterType" @change="offset = 0; loadEvents()">
           <option :value="undefined">All types</option>
-          <option v-for="type in eventTypes" :key="type" :value="type">
+          <option v-for="type in availableTypes" :key="type" :value="type">
             {{ describeEvent(type).label }}
           </option>
         </select>
@@ -243,7 +264,7 @@ onUnmounted(() => {
           <thead>
             <tr>
               <th class="w-8"></th>
-              <th>Camera</th>
+              <th>Source</th>
               <th>Event</th>
               <th>Detail</th>
               <th>Start</th>
@@ -260,7 +281,15 @@ onUnmounted(() => {
                     :class="expanded.has(evt.id) ? 'ph-caret-down' : 'ph-caret-right'"
                   ></i>
                 </td>
-                <td>{{ cameraName(evt.cameraId) }}</td>
+                <td>
+                  <span class="flex items-center gap-2">
+                    <i
+                      class="ph icon-sm text-text-muted"
+                      :class="evt.cameraId === SYSTEM_SOURCE ? 'ph-monitor' : 'ph-video-camera'"
+                    ></i>
+                    <span>{{ sourceName(evt) }}</span>
+                  </span>
+                </td>
                 <td>
                   <span class="flex items-center gap-2">
                     <i class="icon-sm" :class="[describeEvent(evt.type).icon, eventTextClass(evt.type)]"></i>

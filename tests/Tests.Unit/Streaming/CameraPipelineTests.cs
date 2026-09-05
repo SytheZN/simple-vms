@@ -283,21 +283,152 @@ public class CameraPipelineTests
     await pipeline.DisposeAsync();
   }
 
+  /// <summary>
+  /// SCENARIO:
+  /// A recorder-like subscriber holds the mux stream while the last data tap leaves
+  /// (the dropped-recording bug: preview source switched away, recorder still attached)
+  ///
+  /// ACTION:
+  /// Subscribe mux, subscribe data, then dispose the data subscription
+  ///
+  /// EXPECTED RESULT:
+  /// The source stays connected because the mux subscriber still holds demand
+  /// </summary>
+  [Test]
+  public async Task MuxSubscriberHoldsDemand_WhenLastDataTapLeaves()
+  {
+    var captureSource = new FreshConnectionCaptureSource();
+    var pipeline = CreatePipeline(captureSource: captureSource, withFormat: true);
+    pipeline.DisconnectLinger = TimeSpan.FromMilliseconds(50);
+    await pipeline.ConstructAsync(CancellationToken.None);
+
+    var muxResult = await pipeline.SubscribeMuxAsync(CancellationToken.None);
+    Assert.That(muxResult.IsT0, Is.True);
+    await WaitUntilAsync(() => pipeline.IsActive);
+
+    var dataResult = await pipeline.SubscribeDataAsync(CancellationToken.None);
+    Assert.That(dataResult.IsT0, Is.True);
+    Assert.That(pipeline.GetDemand(), Is.EqualTo(2));
+
+    (dataResult.AsT0 as IDisposable)!.Dispose();
+
+    await Task.Delay(300);
+    Assert.That(pipeline.GetDemand(), Is.EqualTo(1));
+    Assert.That(pipeline.IsActive, Is.True);
+
+    await pipeline.DisposeAsync();
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Demand appears, disappears, and reappears on a constructed pipeline
+  ///
+  /// ACTION:
+  /// Subscribe data, dispose the subscription, subscribe again
+  ///
+  /// EXPECTED RESULT:
+  /// The source connects on demand, disconnects after the linger when demand is gone,
+  /// and reconnects when demand returns
+  /// </summary>
+  [Test]
+  public async Task Demand_ConnectsDisconnectsAndReconnectsSource()
+  {
+    var captureSource = new FreshConnectionCaptureSource();
+    var pipeline = CreatePipeline(captureSource: captureSource);
+    pipeline.DisconnectLinger = TimeSpan.FromMilliseconds(50);
+    await pipeline.ConstructAsync(CancellationToken.None);
+    Assert.That(pipeline.IsActive, Is.False);
+
+    var sub1 = await pipeline.SubscribeDataAsync(CancellationToken.None);
+    await WaitUntilAsync(() => pipeline.IsActive);
+
+    (sub1.AsT0 as IDisposable)!.Dispose();
+    await WaitUntilAsync(() => !pipeline.IsActive);
+
+    var sub2 = await pipeline.SubscribeDataAsync(CancellationToken.None);
+    await WaitUntilAsync(() => pipeline.IsActive);
+
+    (sub2.AsT0 as IDisposable)!.Dispose();
+    await pipeline.DisposeAsync();
+  }
+
+  private static async Task WaitUntilAsync(Func<bool> condition)
+  {
+    var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+    while (!condition())
+    {
+      if (DateTime.UtcNow > deadline)
+        Assert.Fail("Condition not met within timeout");
+      await Task.Delay(10);
+    }
+  }
+
   private static CameraPipeline CreatePipeline(
-    MockCaptureSource? captureSource = null,
+    ICaptureSource? captureSource = null,
     MockStreamConnection? connection = null,
-    RecordingEventBus? eventBus = null)
+    RecordingEventBus? eventBus = null,
+    bool withFormat = false)
   {
     var cs = captureSource ?? new MockCaptureSource();
-    if (connection != null)
-      cs.Connection = connection;
+    if (connection != null && cs is MockCaptureSource mock)
+      mock.Connection = connection;
+
+    var host = withFormat
+      ? new FakePluginHost { StreamFormats = [new FakeFmp4Format()] }
+      : new FakePluginHost();
 
     return new CameraPipeline(
-      Guid.NewGuid(), "main",
-      new CameraConnectionInfo { Uri = "rtsp://192.168.1.100/stream" },
-      cs, new FakePluginHost(),
+      Guid.NewGuid(), "main", null,
+      new CameraConnectionInfo { CameraId = Guid.NewGuid(), Uri = "rtsp://192.168.1.100/stream" },
+      cs, host,
       eventBus ?? new RecordingEventBus(),
       Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance);
+  }
+
+  private sealed class FreshConnectionCaptureSource : ICaptureSource
+  {
+    public string Protocol => "rtsp";
+
+    public Task<OneOf<IStreamConnection, Error>> ConnectAsync(
+      CameraConnectionInfo info, CancellationToken ct) =>
+      Task.FromResult(OneOf<IStreamConnection, Error>.FromT0(new MockStreamConnection()));
+  }
+
+  private sealed class FakeFmp4Format : IStreamFormat
+  {
+    public string FormatId => "fmp4";
+    public string FileExtension => "mp4";
+    public Type InputType => typeof(H264NalUnit);
+    public Type OutputType => typeof(Fmp4Fragment);
+
+    public Task<OneOf<IMuxStream, Error>> CreatePipelineAsync(
+      IDataStream input, StreamInfo info, CancellationToken ct) =>
+      Task.FromResult(OneOf<IMuxStream, Error>.FromT0(new IdleMuxStream()));
+
+    public OneOf<ISegmentReader, Error> CreateReader(Stream input) =>
+      throw new NotImplementedException();
+
+    private sealed class IdleMuxStream : IMuxStream<Fmp4Fragment>
+    {
+      public MuxStreamInfo Info { get; } = new()
+      {
+        DataFormat = "fmp4",
+        MimeType = "video/mp4",
+        FileExtension = "mp4",
+        Resolution = "1920x1080",
+        Fps = 30
+      };
+      public ReadOnlyMemory<byte> Header => ReadOnlyMemory<byte>.Empty;
+      public Type FrameType => typeof(Fmp4Fragment);
+      public Action<MuxStreamStats>? OnStats { set { } }
+
+      public async IAsyncEnumerable<Fmp4Fragment> ReadAsync(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+      {
+        await Task.Delay(Timeout.Infinite, ct);
+        yield break;
+      }
+    }
   }
 
   private sealed class MockCaptureSource : ICaptureSource

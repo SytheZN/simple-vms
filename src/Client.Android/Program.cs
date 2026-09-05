@@ -43,6 +43,7 @@ public static class Program
     });
 
     services.AddSingleton(new DiagnosticsInfo(logPath));
+    services.AddSingleton<IDeviceIdentity>(_ => new AndroidDeviceIdentity(context));
     services.AddSingleton<ICredentialStore>(sp =>
       new AndroidCredentialStore(context, sp.GetRequiredService<ILogger<AndroidCredentialStore>>()));
     services.AddSingleton<INotificationService>(_ => new AndroidNotificationService(context));

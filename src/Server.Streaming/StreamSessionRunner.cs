@@ -286,8 +286,6 @@ public static class StreamSessionRunner
 
           gopStream.Write(frame.Data.Span);
 
-          // Frames are atomic on the wire but GOPs need not be. Splitting them bounds how
-          // much of an abandoned stream a seek has to drain before new data gets through.
           if (!reverse && gopStream.Length >= GopChunkBytes)
           {
             await SendChunkAsync(gopChunked ? GopFlags.None : GopFlags.Begin);

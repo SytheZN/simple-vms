@@ -15,24 +15,45 @@ public sealed class DerivedStreamPipeline : IPipeline
   private readonly bool _recordable;
   private readonly ILogger _logger;
   private readonly Lock _lock = new();
+  private readonly DemandEvaluator _evaluator;
 
   private IDataStreamFanOut? _dataFanOut;
   private IMuxStreamFanOut? _muxFanOut;
   private IDisposable? _muxSubscription;
   private CancellationTokenSource? _runCts;
   private Task? _feedLoop;
+  private IDataStream? _runStream;
   private Type? _frameType;
+  private int _startFailures;
   private bool _constructed;
   private bool _disposed;
 
+  internal static readonly TimeSpan[] StartRetryDelays =
+  [
+    TimeSpan.FromSeconds(1),
+    TimeSpan.FromSeconds(2),
+    TimeSpan.FromSeconds(4),
+    TimeSpan.FromSeconds(8),
+    TimeSpan.FromSeconds(15),
+    TimeSpan.FromSeconds(30)
+  ];
+
   public Guid CameraId => _cameraId;
   public string Profile => _profile;
+  public string ParentProfile => _parentProfile;
   public string ProducerId => _analyzerIdentity.AnalyzerId;
   public string FormatId => _format.FormatId;
   public bool IsConstructed { get { lock (_lock) return _constructed; } }
   public bool Recordable => _recordable;
+  public bool IsRunning { get { lock (_lock) return _runCts != null; } }
+  public bool NeedsRebuild => _analyzer.NeedsRebuild(_cameraId, _parentProfile);
   public ReadOnlyMemory<byte> MuxHeader { get { lock (_lock) return _muxFanOut?.Header ?? ReadOnlyMemory<byte>.Empty; } }
   public MuxStreamInfo? MuxInfo { get { lock (_lock) return _muxFanOut?.Info; } }
+
+  public Action<MuxStreamStats>? OnStats
+  {
+    set { lock (_lock) { if (_muxFanOut != null) _muxFanOut.OnStats = value; } }
+  }
 
   public DerivedStreamPipeline(
     Guid cameraId,
@@ -52,7 +73,24 @@ public sealed class DerivedStreamPipeline : IPipeline
     _format = format;
     _recordable = recordable;
     _logger = logger;
+    _evaluator = new DemandEvaluator(EvaluateOnceAsync,
+      ex => _logger.LogError(ex, "Demand evaluation failed for derived stream {CameraId}/{Profile}",
+        _cameraId, _profile));
   }
+
+  public int GetDemand()
+  {
+    IDataStreamFanOut? dataFanOut;
+    IMuxStreamFanOut? muxFanOut;
+    lock (_lock)
+    {
+      dataFanOut = _dataFanOut;
+      muxFanOut = _muxFanOut;
+    }
+    return (dataFanOut?.GetDemand() ?? 0) + (muxFanOut?.GetDemand() ?? 0);
+  }
+
+  public void Evaluate() => _evaluator.Schedule();
 
   [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]
   public async Task<OneOf<Success, Error>> ConstructAsync(CancellationToken ct)
@@ -105,7 +143,10 @@ public sealed class DerivedStreamPipeline : IPipeline
     }
 
     probeCts.Cancel();
-    try { await probeFeed; } catch (OperationCanceledException) { }
+    await probeFeed.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+
+    if (dataStream is IAsyncDisposable probeDisposable)
+      await probeDisposable.DisposeAsync();
 
     lock (_lock)
     {
@@ -116,6 +157,7 @@ public sealed class DerivedStreamPipeline : IPipeline
       _constructed = true;
     }
 
+    Evaluate();
     return new Success();
   }
 
@@ -151,46 +193,60 @@ public sealed class DerivedStreamPipeline : IPipeline
     }
   }
 
-  private void OnDemand()
+  private async Task EvaluateOnceAsync()
   {
-    _ = Task.Run(async () =>
+    lock (_lock)
     {
-      _logger.LogDebug("Derived demand for camera {CameraId} profile '{Profile}'", _cameraId, _profile);
-      await StartRunAsync(CancellationToken.None);
-    });
-  }
+      if (_disposed || !_constructed)
+        return;
+    }
 
-  private void OnEmpty()
-  {
-    var dataSubs = _dataFanOut?.SubscriberCount ?? 0;
-    var muxSubs = _muxFanOut?.SubscriberCount ?? 0;
-    if (dataSubs + muxSubs > 0) return;
+    var want = GetDemand() > 0;
+    bool running;
+    lock (_lock)
+      running = _runCts != null;
 
-    _ = Task.Run(async () =>
+    if (want && !running)
     {
-      _logger.LogDebug("Derived idle for camera {CameraId} profile '{Profile}'", _cameraId, _profile);
+      var started = await StartRunAsync();
+      if (started)
+      {
+        _startFailures = 0;
+      }
+      else
+      {
+        var delay = StartRetryDelays[Math.Min(_startFailures, StartRetryDelays.Length - 1)];
+        _startFailures++;
+        _ = Task.Run(async () =>
+        {
+          await Task.Delay(delay);
+          Evaluate();
+        });
+      }
+    }
+    else if (!want && running)
+    {
       await StopRunAsync();
-    });
+    }
   }
 
-  private async Task StartRunAsync(CancellationToken ct)
+  private async Task<bool> StartRunAsync()
   {
     CancellationTokenSource cts;
     lock (_lock)
     {
-      if (_disposed) return;
-      if (_runCts != null) return;
-      cts = _runCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+      if (_disposed || _runCts != null) return true;
+      cts = _runCts = new CancellationTokenSource();
     }
 
     var startResult = await _analyzer.StartStreamAsync(_cameraId, _parentProfile, cts.Token);
     if (startResult.IsT1)
     {
-      _logger.LogError("Analyzer {AnalyzerId} StartAsync failed: {Message}",
-        _analyzerIdentity.AnalyzerId, startResult.AsT1.Message);
+      _logger.LogWarning("Analyzer {AnalyzerId} StartAsync failed for {CameraId}/{Profile}: {Message}",
+        _analyzerIdentity.AnalyzerId, _cameraId, _profile, startResult.AsT1.Message);
       lock (_lock) _runCts = null;
       cts.Dispose();
-      return;
+      return false;
     }
 
     var stream = startResult.AsT0;
@@ -200,7 +256,9 @@ public sealed class DerivedStreamPipeline : IPipeline
         _analyzerIdentity.AnalyzerId, stream.FrameType.Name, _frameType?.Name);
       lock (_lock) _runCts = null;
       cts.Dispose();
-      return;
+      if (stream is IAsyncDisposable disposable)
+        await disposable.DisposeAsync();
+      return false;
     }
 
     var feed = Task.Run(async () =>
@@ -215,33 +273,76 @@ public sealed class DerivedStreamPipeline : IPipeline
       {
         _logger.LogError(ex, "Derived feed loop failed for {CameraId}/{Profile}", _cameraId, _profile);
       }
+      finally
+      {
+        OnRunEnded(cts, stream);
+      }
     });
 
-    lock (_lock) _feedLoop = feed;
+    lock (_lock)
+    {
+      if (_runCts == cts)
+      {
+        _feedLoop = feed;
+        _runStream = stream;
+      }
+    }
+
+    return true;
+  }
+
+  private void OnRunEnded(CancellationTokenSource cts, IDataStream stream)
+  {
+    bool current;
+    lock (_lock)
+    {
+      current = _runCts == cts;
+      if (current)
+      {
+        _runCts = null;
+        _feedLoop = null;
+        _runStream = null;
+      }
+    }
+
+    if (!current) return;
+
+    cts.Dispose();
+    _ = Task.Run(async () =>
+    {
+      if (stream is IAsyncDisposable disposable)
+        await disposable.DisposeAsync();
+    });
+
+    _logger.LogDebug("Run ended for derived stream {CameraId}/{Profile}", _cameraId, _profile);
+    Evaluate();
   }
 
   private async Task StopRunAsync()
   {
     CancellationTokenSource? cts;
     Task? loop;
+    IDataStream? stream;
     lock (_lock)
     {
       cts = _runCts;
       _runCts = null;
       loop = _feedLoop;
       _feedLoop = null;
+      stream = _runStream;
+      _runStream = null;
     }
 
     if (cts != null)
     {
       cts.Cancel();
       if (loop != null)
-      {
-        try { await loop; }
-        catch (OperationCanceledException) { }
-      }
+        await loop.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
       cts.Dispose();
     }
+
+    if (stream is IAsyncDisposable disposable)
+      await disposable.DisposeAsync();
   }
 
   [RequiresDynamicCode("Fan-out generic type is constructed at runtime")]
@@ -249,8 +350,7 @@ public sealed class DerivedStreamPipeline : IPipeline
   {
     var fanOutType = typeof(DataStreamFanOut<>).MakeGenericType(dataStream.FrameType);
     var fanOut = (IDataStreamFanOut)Activator.CreateInstance(fanOutType, dataStream.Info)!;
-    fanOut.OnDemand = OnDemand;
-    fanOut.OnEmpty = OnEmpty;
+    fanOut.Changed = Evaluate;
     fanOut.Logger = _logger;
     return fanOut;
   }
@@ -260,8 +360,7 @@ public sealed class DerivedStreamPipeline : IPipeline
   {
     var fanOutType = typeof(MuxStreamFanOut<>).MakeGenericType(muxStream.FrameType);
     var fanOut = (IMuxStreamFanOut)Activator.CreateInstance(fanOutType, muxStream)!;
-    fanOut.OnDemand = OnDemand;
-    fanOut.OnEmpty = OnEmpty;
+    fanOut.Changed = Evaluate;
     fanOut.Logger = _logger;
     return fanOut;
   }

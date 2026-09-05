@@ -138,6 +138,7 @@ public class CameraRegistryTests
     public ISegmentRepository Segments => throw new NotImplementedException();
     public IKeyframeRepository Keyframes => throw new NotImplementedException();
     public IEventRepository Events => throw new NotImplementedException();
+    public ISystemEventRepository SystemEvents => throw new NotImplementedException();
     public IClientRepository Clients => throw new NotImplementedException();
     public IConfigRepository Config => throw new NotImplementedException();
     public IDataStore GetDataStore(string pluginId) => throw new NotImplementedException();

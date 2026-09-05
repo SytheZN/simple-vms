@@ -41,6 +41,7 @@ public static class Program
     });
     services.AddSingleton(new DiagnosticsInfo(logPath));
     services.AddSingleton<ICredentialStore>(CredentialStoreFactory.Create());
+    services.AddSingleton<IDeviceIdentity, DesktopDeviceIdentity>();
     services.AddSingleton<INotificationService, DesktopNotificationService>();
     services.AddSingleton<DesktopSettings>();
     services.AddSingleton<TrayService>();
@@ -93,8 +94,6 @@ public static class Program
     if (OperatingSystem.IsLinux())
       builder = builder.With(new X11PlatformOptions { WmClass = "sVMS" });
 
-    // disabled until csd support is added.
-    //if (IsWaylandSession()) builder = builder.UseWayland();
 
     return builder.LogToTrace();
   }

@@ -4,7 +4,7 @@ using Shared.Models;
 
 namespace Cameras.Onvif.Services;
 
-public sealed class DeviceService(SoapClient soap)
+public sealed class DeviceService(ISoapClient soap)
 {
   public async Task<DeviceInfo> GetDeviceInformationAsync(
     string deviceUri, Credentials credentials, CancellationToken ct)

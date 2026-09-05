@@ -2,7 +2,6 @@ namespace Client.Core.Decoding;
 
 public enum FrameKind { Cpu, Gpu }
 
-/// <summary>Thread ownership is the caller's responsibility.</summary>
 public interface IDecodeBackend : IDisposable
 {
   FrameKind Kind { get; }

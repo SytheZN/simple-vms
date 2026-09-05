@@ -296,7 +296,7 @@ public class GalleryViewModelTests
     vm.CameraEventReceived += id => highlighted.Add(id);
 
     events.Fire(
-      new EventChannelMessage { CameraId = camera.Id, Type = "config", StartTime = 1000 },
+      new EventChannelMessage { CameraId = camera.Id, Type = "__config", StartTime = 1000 },
       EventChannelFlags.Start);
     await Task.Delay(100);
 
@@ -333,7 +333,7 @@ public class GalleryViewModelTests
 
     api.CameraList = [MakeCamera(camera.Id, "Cam1", "192.168.1.1", "offline")];
     events.Fire(
-      new EventChannelMessage { CameraId = camera.Id, Type = "status", StartTime = 1000 },
+      new EventChannelMessage { CameraId = camera.Id, Type = "__status", StartTime = 1000 },
       EventChannelFlags.Start);
     await Task.Delay(100);
 

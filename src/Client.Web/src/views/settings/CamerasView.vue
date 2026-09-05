@@ -223,7 +223,7 @@ onMounted(async () => {
               <td class="text-text-muted">{{ cam.hostname ?? '--' }}</td>
               <td>{{ cam.name ?? '--' }}</td>
               <td class="text-text-muted">{{ cam.manufacturer ?? '--' }}</td>
-              <td class="text-text-muted">{{ cam.model ?? '--' }}</td>
+              <td class="font-mono text-text-muted">{{ cam.model ?? '--' }}</td>
               <td class="text-right">
                 <button
                   v-if="!cam.alreadyAdded"
@@ -352,7 +352,7 @@ onMounted(async () => {
               </tr>
               <tr>
                 <td class="text-text-muted pr-4 py-0.5">Model</td>
-                <td class="text-text py-0.5">{{ dialogProbe.config.model || '--' }}</td>
+                <td class="font-mono text-text py-0.5">{{ dialogProbe.config.model || '--' }}</td>
               </tr>
               <tr>
                 <td class="text-text-muted pr-4 py-0.5">Serial</td>

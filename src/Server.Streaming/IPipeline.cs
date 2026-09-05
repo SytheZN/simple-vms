@@ -11,6 +11,9 @@ public interface IPipeline : IAsyncDisposable
   bool Recordable { get; }
   ReadOnlyMemory<byte> MuxHeader { get; }
   MuxStreamInfo? MuxInfo { get; }
+  Action<MuxStreamStats>? OnStats { set; }
+  int GetDemand();
+  void Evaluate();
   [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]
   Task<OneOf<Success, Error>> ConstructAsync(CancellationToken ct);
   Task<OneOf<IDataStream, Error>> SubscribeDataAsync(CancellationToken ct);

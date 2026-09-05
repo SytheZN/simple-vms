@@ -1,21 +1,24 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { api, ApiError } from '@/api/client'
-import type { ServerSettings, RetentionPolicy } from '@/types/api'
+import type { ServerSettings, RetentionPolicy, SystemEventRetention } from '@/types/api'
 
 const error = ref('')
 const saving = ref(false)
 const settings = ref<ServerSettings>({})
-const retention = ref<RetentionPolicy>({ mode: 'days', value: 30 })
+const retention = ref<RetentionPolicy>({ mode: 'days', value: 30, minFreeSpaceGb: 2.0 })
+const systemEventRetention = ref<SystemEventRetention>({ days: 180 })
 
 async function load() {
   try {
-    const [s, r] = await Promise.all([
+    const [s, r, se] = await Promise.all([
       api.system.settings(),
       api.retention.get(),
+      api.retention.getSystemEvents(),
     ])
     settings.value = s
     retention.value = r
+    systemEventRetention.value = se
   } catch (e) {
     if (e instanceof ApiError) error.value = e.message
   }
@@ -27,6 +30,7 @@ async function save() {
   try {
     await api.system.updateSettings(settings.value)
     await api.retention.update(retention.value)
+    await api.retention.updateSystemEvents(systemEventRetention.value)
   } catch (e) {
     if (e instanceof ApiError) error.value = e.message
   } finally {
@@ -60,7 +64,7 @@ onMounted(load)
     </section>
 
     <section class="space-y-4">
-      <h2 class="section-subheading">Retention Policy</h2>
+      <h2 class="section-subheading">Recording Retention Policy</h2>
       <div class="card p-6 space-y-4">
         <div class="space-y-1">
           <label class="label">Mode</label>
@@ -73,6 +77,29 @@ onMounted(load)
         <div class="space-y-1">
           <label class="label">Value</label>
           <input class="input" type="number" v-model.number="retention.value" />
+        </div>
+        <div class="space-y-1">
+          <label class="label">Minimum free space (GB)</label>
+          <input class="input" type="number" step="0.1" min="0.5"
+                 v-model.number="retention.minFreeSpaceGb" />
+        </div>
+
+        <div class="toast toast-warning">
+          <i class="ph ph-warning icon-xl"></i>
+          <div>
+            <span class="font-medium">Warning</span>
+            <p>Oldest recordings are trimmed regardless of retention policy when free space drops below this threshold. Recording halts on all streams if free space falls below 0.2 GB, and resumes once free space returns above the threshold.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="space-y-4">
+      <h2 class="section-subheading">System Event Retention</h2>
+      <div class="card p-6 space-y-4">
+        <div class="space-y-1">
+          <label class="label">Days</label>
+          <input class="input" type="number" v-model.number="systemEventRetention.days" placeholder="180" />
         </div>
       </div>
     </section>

@@ -303,10 +303,10 @@ public class EventManagerTests
   /// Publish CameraAdded on the bus the running manager is watching
   ///
   /// EXPECTED RESULT:
-  /// An "added" event is written to history
+  /// A "camera-added" system event is written with the camera as source
   /// </summary>
   [Test]
-  public async Task CameraAdded_RecordsAdded()
+  public async Task CameraAdded_RecordsSystemEvent()
   {
     var data = new FakeDataProvider();
     var eventBus = new EventBus();
@@ -321,9 +321,42 @@ public class EventManagerTests
     }, CancellationToken.None);
     await Task.Delay(100);
 
-    Assert.That(data.CreatedEvents, Has.Count.EqualTo(1));
-    Assert.That(data.CreatedEvents[0].Type, Is.EqualTo("added"));
-    Assert.That(data.CreatedEvents[0].CameraId, Is.EqualTo(cameraId));
+    Assert.That(data.CreatedSystemEvents, Has.Count.EqualTo(1));
+    Assert.That(data.CreatedSystemEvents[0].Type, Is.EqualTo("camera-added"));
+    Assert.That(data.CreatedSystemEvents[0].Source, Is.EqualTo($"camera:{cameraId}"));
+    Assert.That(data.CreatedSystemEvents[0].Metadata!["cameraId"], Is.EqualTo(cameraId.ToString()));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A camera is removed
+  ///
+  /// ACTION:
+  /// Publish CameraRemoved on the bus the running manager is watching
+  ///
+  /// EXPECTED RESULT:
+  /// A "camera-removed" system event is written carrying the camera's name
+  /// </summary>
+  [Test]
+  public async Task CameraRemoved_RecordsSystemEvent()
+  {
+    var data = new FakeDataProvider();
+    var eventBus = new EventBus();
+    var cameraId = Guid.NewGuid();
+
+    await using var manager = await StartManagerAsync(data, eventBus);
+
+    await eventBus.PublishAsync(new CameraRemoved
+    {
+      CameraId = cameraId,
+      Name = "Porch",
+      Timestamp = 3_000_000
+    }, CancellationToken.None);
+    await Task.Delay(100);
+
+    Assert.That(data.CreatedSystemEvents, Has.Count.EqualTo(1));
+    Assert.That(data.CreatedSystemEvents[0].Type, Is.EqualTo("camera-removed"));
+    Assert.That(data.CreatedSystemEvents[0].Metadata!["name"], Is.EqualTo("Porch"));
   }
 
   /// <summary>
@@ -334,7 +367,7 @@ public class EventManagerTests
   /// Publish CameraStatusChanged on the bus the running manager is watching
   ///
   /// EXPECTED RESULT:
-  /// A "disconnect" event is written to history naming the profile
+  /// A "camera-disconnect" event is written to history naming the profile
   /// </summary>
   [Test]
   public async Task StatusChanged_Disconnected_RecordsDisconnect()
@@ -348,7 +381,7 @@ public class EventManagerTests
     await PublishStatusAsync(eventBus, cameraId, "offline", "disconnected");
 
     Assert.That(data.CreatedEvents, Has.Count.EqualTo(1));
-    Assert.That(data.CreatedEvents[0].Type, Is.EqualTo("disconnect"));
+    Assert.That(data.CreatedEvents[0].Type, Is.EqualTo("camera-disconnect"));
     Assert.That(data.CreatedEvents[0].CameraId, Is.EqualTo(cameraId));
     Assert.That(data.CreatedEvents[0].Metadata!["profile"], Is.EqualTo("main"));
   }
@@ -384,7 +417,7 @@ public class EventManagerTests
   /// Publish a disconnected status followed by an online status
   ///
   /// EXPECTED RESULT:
-  /// The recovery is recorded as "connect" after the "disconnect"
+  /// The recovery is recorded as "camera-connect" after the "camera-disconnect"
   /// </summary>
   [Test]
   public async Task StatusChanged_OnlineAfterDisconnect_RecordsConnect()
@@ -399,7 +432,7 @@ public class EventManagerTests
     await PublishStatusAsync(eventBus, cameraId, "online", null);
 
     Assert.That(data.CreatedEvents.Select(e => e.Type),
-      Is.EqualTo(new[] { "disconnect", "connect" }));
+      Is.EqualTo(new[] { "camera-disconnect", "camera-connect" }));
   }
 
   /// <summary>
@@ -433,10 +466,10 @@ public class EventManagerTests
   /// Publish CameraConfigChanged on the bus the running manager is watching
   ///
   /// EXPECTED RESULT:
-  /// A "config" event is written to history
+  /// A "camera-reconfigured" system event is written
   /// </summary>
   [Test]
-  public async Task ConfigChanged_RecordsConfig()
+  public async Task ConfigChanged_RecordsSystemEvent()
   {
     var data = new FakeDataProvider();
     var eventBus = new EventBus();
@@ -447,13 +480,51 @@ public class EventManagerTests
     await eventBus.PublishAsync(new CameraConfigChanged
     {
       CameraId = cameraId,
+      Diff = new Dictionary<string, DiffChange>(),
       Timestamp = 4_000_000
     }, CancellationToken.None);
     await Task.Delay(100);
 
-    Assert.That(data.CreatedEvents, Has.Count.EqualTo(1));
-    Assert.That(data.CreatedEvents[0].Type, Is.EqualTo("config"));
-    Assert.That(data.CreatedEvents[0].CameraId, Is.EqualTo(cameraId));
+    Assert.That(data.CreatedSystemEvents, Has.Count.EqualTo(1));
+    Assert.That(data.CreatedSystemEvents[0].Type, Is.EqualTo("camera-reconfigured"));
+    Assert.That(data.CreatedSystemEvents[0].Source, Is.EqualTo($"camera:{cameraId}"));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A camera's details are edited by the user, changing its name
+  ///
+  /// ACTION:
+  /// Publish CameraUpdated on the bus the running manager is watching
+  ///
+  /// EXPECTED RESULT:
+  /// A "camera-updated" system event is written carrying only the changed fields
+  /// </summary>
+  [Test]
+  public async Task CameraUpdated_RecordsChangedFields()
+  {
+    var data = new FakeDataProvider();
+    var eventBus = new EventBus();
+    var cameraId = Guid.NewGuid();
+
+    await using var manager = await StartManagerAsync(data, eventBus);
+
+    await eventBus.PublishAsync(new CameraUpdated
+    {
+      CameraId = cameraId,
+      Name = "Driveway",
+      PreviousName = "Porch",
+      Timestamp = 5_000_000
+    }, CancellationToken.None);
+    await Task.Delay(100);
+
+    Assert.That(data.CreatedSystemEvents, Has.Count.EqualTo(1));
+    var recorded = data.CreatedSystemEvents[0];
+    Assert.That(recorded.Type, Is.EqualTo("camera-updated"));
+    Assert.That(recorded.Metadata!["name"], Is.EqualTo("Driveway"));
+    Assert.That(recorded.Metadata!["previousName"], Is.EqualTo("Porch"));
+    Assert.That(recorded.Metadata!.ContainsKey("address"), Is.False);
+    Assert.That(recorded.Metadata!.ContainsKey("credentialsUpdated"), Is.False);
   }
 
   private static async Task<EventManager> StartManagerAsync(
@@ -530,11 +601,13 @@ public class EventManagerTests
     public ISegmentRepository Segments => throw new NotImplementedException();
     public IKeyframeRepository Keyframes => throw new NotImplementedException();
     public IEventRepository Events { get; } = new FakeEventRepo();
+    public ISystemEventRepository SystemEvents { get; } = new FakeSystemEventRepo();
     public IClientRepository Clients => throw new NotImplementedException();
     public IConfigRepository Config => throw new NotImplementedException();
     public IDataStore GetDataStore(string pluginId) => throw new NotImplementedException();
 
     public List<CameraEvent> CreatedEvents => ((FakeEventRepo)Events).Created;
+    public List<SystemEvent> CreatedSystemEvents => ((FakeSystemEventRepo)SystemEvents).Created;
   }
 
   private sealed class EmptyCameraRepo : ICameraRepository
@@ -553,6 +626,28 @@ public class EventManagerTests
       throw new NotImplementedException();
     public Task<OneOf<Success, Error>> DeleteAsync(Guid id, CancellationToken ct = default) =>
       throw new NotImplementedException();
+  }
+
+  private sealed class FakeSystemEventRepo : ISystemEventRepository
+  {
+    public List<SystemEvent> Created { get; } = [];
+
+    public Task<OneOf<IReadOnlyList<SystemEvent>, Error>> QueryAsync(
+      string? type, ulong from, ulong to, int limit, int offset, CancellationToken ct = default) =>
+      Task.FromResult<OneOf<IReadOnlyList<SystemEvent>, Error>>(Array.Empty<SystemEvent>());
+
+    public Task<OneOf<SystemEvent, Error>> GetByIdAsync(Guid id, CancellationToken ct = default) =>
+      Task.FromResult<OneOf<SystemEvent, Error>>(
+        Error.Create(0, 0, Result.NotFound, $"System event {id} not found"));
+
+    public Task<OneOf<Success, Error>> CreateAsync(SystemEvent evt, CancellationToken ct = default)
+    {
+      Created.Add(evt);
+      return Task.FromResult<OneOf<Success, Error>>(new Success());
+    }
+
+    public Task<OneOf<int, Error>> DeleteOlderThanAsync(ulong cutoff, CancellationToken ct = default) =>
+      Task.FromResult<OneOf<int, Error>>(0);
   }
 
   private sealed class FakeEventRepo : IEventRepository

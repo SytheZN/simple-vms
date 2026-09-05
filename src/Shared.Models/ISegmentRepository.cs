@@ -8,6 +8,7 @@ public interface ISegmentRepository
   Task<OneOf<IReadOnlyList<Segment>, Error>> GetByTimeRangeAsync(Guid streamId, ulong from, ulong to, CancellationToken ct = default);
   Task<OneOf<PlaybackPoint, Error>> FindPlaybackPointAsync(Guid streamId, ulong timestamp, CancellationToken ct = default);
   Task<OneOf<IReadOnlyList<Segment>, Error>> GetOldestAsync(Guid streamId, int limit, CancellationToken ct = default);
+  Task<OneOf<IReadOnlyList<Segment>, Error>> GetOldestAcrossStreamsAsync(int limit, CancellationToken ct = default);
   Task<OneOf<long, Error>> GetTotalSizeAsync(Guid streamId, CancellationToken ct = default);
   Task<OneOf<IReadOnlyList<StreamStorageUsage>, Error>> GetSizeBreakdownAsync(CancellationToken ct = default);
   Task<OneOf<Success, Error>> CreateAsync(Segment segment, CancellationToken ct = default);

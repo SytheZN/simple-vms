@@ -4,8 +4,6 @@ namespace Shared.Protocol;
 
 public static class MessageEnvelope
 {
-  // Both ends compare this for exact equality during the handshake, so it lives here rather
-  // than being declared separately by each side.
   public const uint CurrentVersion = 2;
 
   public const int HeaderSize = 6;

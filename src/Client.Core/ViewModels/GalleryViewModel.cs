@@ -85,11 +85,9 @@ public sealed class GalleryViewModel : ViewModelBase, IDisposable
       });
   }
 
-  /// <summary>
-  /// Releases the thumbnail streams for a shell that keeps the gallery alive behind another view.
-  /// The next load restores them.
-  /// </summary>
   public void Suspend() => _thumbnails.Stop();
+
+  public void SetVisible(bool visible) => _thumbnails.SetVisible(visible);
 
   private void Reconcile(IReadOnlyList<CameraDto> incoming)
   {
@@ -169,7 +167,7 @@ public sealed class GalleryViewModel : ViewModelBase, IDisposable
 
   private void OnEvent(EventChannelMessage msg, EventChannelFlags flags)
   {
-    if (msg.Type is "config" or "added" or "removed" or "status" or "connect" or "disconnect")
+    if (msg.Type.StartsWith("__", StringComparison.Ordinal))
     {
       _ = LoadAsync(CancellationToken.None);
       return;

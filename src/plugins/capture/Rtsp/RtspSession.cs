@@ -8,6 +8,7 @@ namespace Capture.Rtsp;
 
 internal sealed class RtspSession : IAsyncDisposable
 {
+  private readonly Guid _cameraId;
   private readonly string _uri;
   private readonly string? _username;
   private readonly string? _password;
@@ -29,8 +30,9 @@ internal sealed class RtspSession : IAsyncDisposable
   public bool TransportEnded => _readLoop is { IsCompleted: true };
 
   public RtspSession(
-    string uri, string? username, string? password, IEventBus? eventBus, ILogger logger)
+    Guid cameraId, string uri, string? username, string? password, IEventBus? eventBus, ILogger logger)
   {
+    _cameraId = cameraId;
     _uri = uri;
     _username = username;
     _password = password;
@@ -55,9 +57,10 @@ internal sealed class RtspSession : IAsyncDisposable
       await client.DisposeAsync();
 
       if (_eventBus != null)
-        await _eventBus.PublishAsync(new PipelineConfigMismatch
+        await _eventBus.PublishAsync(new CameraReprobeRequested
         {
-          Uri = _uri,
+          CameraId = _cameraId,
+          Initiator = "rtsp-sdp-change",
           Timestamp = DateTimeOffset.UtcNow.ToUnixMicroseconds()
         }, ct);
 
