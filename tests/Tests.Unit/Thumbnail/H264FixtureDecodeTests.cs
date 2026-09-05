@@ -303,7 +303,7 @@ public class H264FixtureDecodeTests
     var slice = nals.Last(IsSlice);
 
     var header = H264SliceHeader.Parse(
-      Shared.Models.Formats.BitstreamHelpers.ExtractRbsp(slice),
+      Utils.BitstreamHelpers.ExtractRbsp(slice),
       NalType(slice), RefIdc(slice), sps, pps);
 
     Assert.That(header, Is.Not.Null, $"{name} slice header did not parse");

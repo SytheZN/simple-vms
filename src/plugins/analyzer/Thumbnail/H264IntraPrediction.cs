@@ -32,23 +32,15 @@
 //     ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 //     POSSIBILITY OF SUCH DAMAGE.
 
-using Shared.Models.Formats;
-
 namespace Analyzer.Thumbnail;
 
 internal static class H264IntraPrediction
 {
   private const int Neutral = 128;
 
-  /// <summary>
-  /// Turns a mode's list into the only three things anything downstream reads: the row a later
-  /// block predicts from, the column it predicts from, and the block's average. The block itself is
-  /// never formed - each of its sixteen samples is one entry of the list, so the average is a
-  /// weighted sum over the list and the two edges are windows into it.
-  /// </summary>
   private static void Window(in H264Workspace work, ReadOnlySpan<byte> list, int mode)
   {
-    var rows = H264ResidualTables.Intra4x4Windows[mode];
+    var rows = H264.ResidualTables.Intra4x4Windows[mode];
     var bottom = work.Bottom;
     var right = work.Right;
     var total = 0;
@@ -79,13 +71,6 @@ internal static class H264IntraPrediction
       work.Means[i] = value;
   }
 
-  /// <summary>
-  /// The nine 4x4 modes, producing only the two edges and the block average.
-  ///
-  /// Losing the above-right neighbour needs no separate mode here. The gather repeats the row's
-  /// last sample into it, and every formula that reads it then collapses to exactly the variant
-  /// upstream spells out by hand - so DDL covers DDLTop and VL covers VLTop.
-  /// </summary>
   public static void Predict4x4(in H264Workspace work, int mode, H264Neighbours found)
   {
     var observer = work.Observer;
@@ -266,16 +251,6 @@ internal static class H264IntraPrediction
     }
   }
 
-  /// <summary>
-  /// The nine 8x8 modes, numbered as the 4x4 ones are. Two things separate them: the reference
-  /// samples are smoothed before anything reads them, and a block covers four output samples
-  /// rather than one.
-  ///
-  /// That second point is why this forms the block instead of windowing a list the way the 4x4
-  /// modes do. A 4x4 average collapses to a single coefficient and the samples never need to
-  /// exist; a quarter of an 8x8 keeps every basis function that does not change sign inside it, so
-  /// the samples are wanted either way and the window buys nothing.
-  /// </summary>
   public static void Predict8x8(in H264Workspace work, int mode, H264Neighbours found)
   {
     var observer = work.Observer;
@@ -303,11 +278,6 @@ internal static class H264IntraPrediction
     observer?.End(ReconstructionPhase.Predict);
   }
 
-  /// <summary>
-  /// The mode is constant across the block, so the branch inside the walk costs a prediction the
-  /// hardware gets right sixty-three times out of sixty-four. Handing each mode in as a delegate
-  /// would read better and cost an indirect call per sample instead.
-  /// </summary>
   private static void Directional8x8(
     Span<byte> block, ReadOnlySpan<byte> top, ReadOnlySpan<byte> left, byte corner, int mode)
   {
@@ -326,12 +296,6 @@ internal static class H264IntraPrediction
         });
   }
 
-  /// <summary>
-  /// Both ends of each run are smoothed against whatever lies past them, so where nothing does the
-  /// end sample stands in for its own neighbour. A missing above-right run is not smoothed at all:
-  /// the samples repeated into it carry no detail for smoothing to preserve, and the run before it
-  /// then ends early against its own last sample.
-  /// </summary>
   private static void Smooth8x8(
     ReadOnlySpan<byte> references, Span<byte> top, Span<byte> left, H264Neighbours found)
   {
@@ -496,10 +460,6 @@ internal static class H264IntraPrediction
       }
   }
 
-  /// <summary>
-  /// The four whole-macroblock luma modes. Prediction covers all sixteen rows at once and the 4x4
-  /// residuals land underneath it, so unlike the 4x4 modes there is no chain inside the block.
-  /// </summary>
   public static void Predict16x16(in H264Workspace work, int mode, H264Neighbours found)
   {
     var observer = work.Observer;
@@ -516,10 +476,6 @@ internal static class H264IntraPrediction
     observer?.End(ReconstructionPhase.Predict);
   }
 
-  /// <summary>
-  /// The four chroma modes, numbered differently from luma: DC is nought here, not two. Both
-  /// planes take the same mode, so the caller runs this once per plane over its own references.
-  /// </summary>
   public static void PredictChroma(in H264Workspace work, int mode, H264Neighbours found)
   {
     var observer = work.Observer;
@@ -603,11 +559,6 @@ internal static class H264IntraPrediction
     return Neutral;
   }
 
-  /// <summary>
-  /// Chroma DC is the one mode that varies across the block: each 4x4 quadrant takes its own mean,
-  /// from whichever of its own edges exist. At this reduction a quadrant is exactly one output
-  /// sample, so the four means are the four cells and nothing has to be averaged again.
-  /// </summary>
   private static void ChromaDc(in H264Workspace work, H264Neighbours found)
   {
     var references = work.References;
@@ -628,8 +579,6 @@ internal static class H264IntraPrediction
       {
         int mean;
         if (hasTop && hasLeft)
-          // The two quadrants on the diagonal see both edges equally and average them. The other
-          // two sit against one edge and take that one alone.
           mean = cx == cy ? (top[cx] + left[cy] + 4) >> 3
             : cx > cy ? (top[cx] + 2) >> 2
             : (left[cy] + 2) >> 2;
@@ -652,20 +601,12 @@ internal static class H264IntraPrediction
     }
   }
 
-  /// <summary>
-  /// A linear ramp fitted to the two edges. Its average over a cell is its value at that cell's
-  /// centre, so the cells are read off the same expression the edges are, at doubled coordinates to
-  /// carry the half-sample the centre of an even-sized cell falls on.
-  /// </summary>
   private static void Plane(
     in H264Workspace work, int size, int cells, int span, int weight, int shift, int centre)
   {
     var references = work.References;
     var last = size - 1;
 
-    // The gradient pairs each sample with its mirror about the block's midpoint, and the last pair
-    // reaches one back past the start of both edges - which is the corner. Reading that as index
-    // -1 of either edge lands somewhere else entirely.
     var corner = references[H264Workspace.Corner];
     var horizontal = 0;
     var vertical = 0;
@@ -707,12 +648,6 @@ internal static class H264IntraPrediction
   private static byte Clip(int value, int shift) =>
     (byte)Math.Clamp(value >> shift, 0, 255);
 
-  /// <summary>
-  /// Fills the reference array from the band for the neighbours <paramref name="found"/> says are
-  /// there. Above-right is the one gap that gets filled rather than reported: when it is missing but
-  /// the row above is not, it repeats that row's last sample, which is what the modes reading it
-  /// expect to find.
-  /// </summary>
   public static void Reference(
     in H264Neighbourhood view, in H264Workspace work, int x0, int y0, int size,
     H264Neighbours found)
@@ -725,7 +660,6 @@ internal static class H264IntraPrediction
     observer?.End(ReconstructionPhase.Gather);
   }
 
-  /// <summary>The same for the chroma pair, which shares a geometry and so asks its questions once.</summary>
   public static void ReferencePair(
     in H264Neighbourhood view, in H264Workspace work, int x0, int y0, int size,
     H264Neighbours found, byte[] secondBand, Span<byte> second)
@@ -778,14 +712,6 @@ internal static class H264IntraPrediction
     }
   }
 
-  /// <summary>
-  /// The same walk for two planes that share a geometry, so the samples that come back differ but
-  /// nothing about where they are does.
-  ///
-  /// Spelled out rather than folded into <see cref="Gather"/> with a flag. Luma never pairs and
-  /// walks most of the blocks in the picture, so a test per run it can never take costs it more
-  /// than the call this saves.
-  /// </summary>
   private static void GatherPair(
     in H264Neighbourhood view, Span<byte> references, byte[] secondBand, Span<byte> second,
     int x0, int y0, int size, H264Neighbours found)

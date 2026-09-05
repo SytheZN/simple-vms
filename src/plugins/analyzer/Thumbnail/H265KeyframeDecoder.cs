@@ -1,13 +1,9 @@
+using H265;
 using Microsoft.Extensions.Logging;
-using Shared.Models.Formats;
+using Utils;
 
 namespace Analyzer.Thumbnail;
 
-/// <summary>
-/// Reconstructs an HEVC keyframe at full resolution: intra prediction, dequantisation and the
-/// inverse transform, in the coded picture size. Deblocking and SAO are not applied, so the result
-/// carries block edges that a conforming decoder would smooth away.
-/// </summary>
 internal sealed class H265KeyframeDecoder
 {
   private const int CtxSplitCu = 2;
@@ -23,7 +19,7 @@ internal sealed class H265KeyframeDecoder
   private const int CtxCuQpDeltaAbs = 150;
 
   private readonly ILogger _logger;
-  private IReconstructionObserver? _observer;
+  private IObserverHarness<ReconstructionPhase>? _observer;
   private readonly Dictionary<uint, H265Sps> _spsById = [];
   private readonly Dictionary<uint, H265Pps> _ppsById = [];
   private string? _lastRejection;
@@ -31,16 +27,11 @@ internal sealed class H265KeyframeDecoder
   private H265Sps _sps = null!;
   private H265Pps _pps = null!;
   private readonly CabacEngine _cabac = new();
-  private readonly H265ResidualReader _reader = new();
+  private readonly ResidualReader _reader = new();
   private byte[] _rbsp = [];
   private int _rbspLength;
   private bool _configured;
   private int _configuredBound;
-  /// <summary>
-  /// One component's working state. Prediction reads the band, which holds the picture at full
-  /// resolution over the coding tree row being decoded; the output holds it reduced. Only block
-  /// edges are ever written to the band, since nothing reads a block's interior back.
-  /// </summary>
   private sealed class Plane
   {
     public byte[] Band = [];
@@ -92,11 +83,6 @@ internal sealed class H265KeyframeDecoder
   private int _qpPrev;
   private int _modeStride;
 
-  /// <summary>
-  /// Parameter set values the walk reads on every node. They are fixed for the stream, but reaching
-  /// them through the set costs two dependent loads, and nothing lets the compiler hoist that out
-  /// of a recursion.
-  /// </summary>
   private int _log2CtbSize;
   private int _log2MinCbSize;
   private int _log2MinTbSize;
@@ -122,10 +108,6 @@ internal sealed class H265KeyframeDecoder
 
   private H265IntraPrediction.Workspace _workspace;
 
-  /// <summary>
-  /// Cr's, which differs from the shared one only in which reference array it predicts from - the
-  /// chroma pair is gathered in one walk, and everything after that is one plane at a time.
-  /// </summary>
   private H265IntraPrediction.Workspace _crWorkspace;
 
   private H265InverseTransform.Workspace _transformWork;
@@ -170,7 +152,7 @@ internal sealed class H265KeyframeDecoder
     BuildWorkspaces();
   }
 
-  internal void Observe(IReconstructionObserver observer)
+  internal void Observe(IObserverHarness<ReconstructionPhase> observer)
   {
     _observer = observer;
     _reader.Observe(observer);
@@ -198,16 +180,8 @@ internal sealed class H265KeyframeDecoder
     _configured = false;
   }
 
-  /// <summary>
-  /// The smallest transform block is 4x4, so past a quarter of each edge a block stops covering a
-  /// whole output sample and several of them would have to share one.
-  /// </summary>
   private const int MaxShift = 2;
 
-  /// <summary>
-  /// The band carries one coding tree row plus the last row of the one above it, which is as far
-  /// back as prediction ever reaches.
-  /// </summary>
   private static void Setup(Plane plane, int width, int height, int ctbSize, int shift, int decodedShift)
   {
     plane.Width = width;
@@ -223,11 +197,6 @@ internal sealed class H265KeyframeDecoder
     plane.Output = new byte[plane.OutputWidth * (height >> shift)];
   }
 
-  /// <summary>
-  /// Carries the last row of the finished coding tree row to the top of the next, which is the only
-  /// part of it any later block reads. The band's origin is the last thing prediction needs that
-  /// moves, so the view every block predicts through is rebuilt here and nowhere else.
-  /// </summary>
   private void AdvanceBand(Plane plane, int top)
   {
     Array.Copy(plane.Band, (plane.BandHeight - 1) * plane.BandWidth, plane.Band, 0, plane.BandWidth);
@@ -270,12 +239,6 @@ internal sealed class H265KeyframeDecoder
     return DecodeSlice(header);
   }
 
-  /// <summary>
-  /// Everything that follows from the parameter sets rather than the picture: which PPS resolves,
-  /// the geometry, the scale, and every buffer sized from them. A camera sends these once and then
-  /// keyframes forever, so this settles on the first one and is redone only if the sets change or
-  /// the configured size moves the scale.
-  /// </summary>
   private bool Configure(int boundingSize, out string reason)
   {
     if (_configured && boundingSize == _configuredBound)
@@ -298,7 +261,6 @@ internal sealed class H265KeyframeDecoder
         continue;
       }
 
-      // pcm_flag would have to be parsed per CU, and its samples are byte-aligned raw data.
       if (sps.PcmEnabled)
       {
         reason = "PCM coding is enabled on this stream";
@@ -324,9 +286,6 @@ internal sealed class H265KeyframeDecoder
       var shift = ChooseShift(sps.Width, sps.Height, boundingSize);
       var ctbSize = 1 << sps.Log2CtbSize;
 
-      // Chroma takes the same reduction as luma, which leaves it half of luma's output on each edge
-      // - the subsampling the encoder wants anyway. Reducing it less only builds detail the encoder
-      // averages away, and the smallest chroma block still covers a whole output sample.
       Setup(_lumaPlane, _codedWidth, _codedHeight, ctbSize, shift, 2);
       Setup(_cbPlane, _codedWidth / 2, _codedHeight / 2, ctbSize / 2, shift, 1);
       Setup(_crPlane, _codedWidth / 2, _codedHeight / 2, ctbSize / 2, shift, 1);
@@ -347,10 +306,6 @@ internal sealed class H265KeyframeDecoder
     return false;
   }
 
-  /// <summary>
-  /// Rejection is usually a property of the stream rather than the frame, so an unchanged reason is
-  /// logged once instead of at the camera's GOP rate.
-  /// </summary>
   private DecodedFrame? Reject(string reason)
   {
     if (reason == _lastRejection) return null;
@@ -359,10 +314,6 @@ internal sealed class H265KeyframeDecoder
     return null;
   }
 
-  /// <summary>
-  /// The band and the output are written before they are read, so only the maps that record what
-  /// has been decoded have to be reset between pictures.
-  /// </summary>
   private DecodedFrame? DecodeSlice(H265SliceHeader header)
   {
     var ctbSize = 1 << _sps.Log2CtbSize;
@@ -373,7 +324,7 @@ internal sealed class H265KeyframeDecoder
     Array.Fill(_qpMap, (byte)header.SliceQp);
 
 
-    _cabac.ResetForH265(_rbsp, _rbspLength, header.BitOffset, header.SliceQp);
+    _cabac.Initialize(_rbsp, _rbspLength, header.BitOffset, header.SliceQp, H264.CabacInitType.I);
     _qp = header.SliceQp;
     _qpPrev = _qp;
     _minQp = _qp;
@@ -409,16 +360,10 @@ internal sealed class H265KeyframeDecoder
       }
     }
 
-    // The final CTB has to signal end_of_slice_segment_flag; reaching here means it did not, so
-    // the arithmetic decoder is somewhere other than where the stream says it should be.
     return Reject(
       $"Slice ran past its last CTB, {_cabac.BytesRead} of {_cabac.BytesTotal} bytes consumed");
   }
 
-  /// <summary>
-  /// The quadtree is defined over the coded picture, which is padded up to a whole number of
-  /// minimum coding blocks; the conformance window says how much of it is actually the picture.
-  /// </summary>
   private DecodedFrame Finish()
   {
     var width = _sps.Width >> _lumaPlane.Shift;
@@ -439,10 +384,6 @@ internal sealed class H265KeyframeDecoder
       width, height, chromaWidth, chromaHeight);
   }
 
-  /// <summary>
-  /// Held rather than allocated per picture, which is what the uncropped path above already hands
-  /// back. A conformance window that trims the coded picture does so on every frame of the stream.
-  /// </summary>
   private byte[] _croppedLuma = [];
   private byte[] _croppedCb = [];
   private byte[] _croppedCr = [];
@@ -459,10 +400,6 @@ internal sealed class H265KeyframeDecoder
     return cropped;
   }
 
-  /// <summary>
-  /// SAO parameters shape detail that a quarter-scale reconstruction discards, so they are parsed
-  /// purely to stay in step.
-  /// </summary>
   private void ReadSao(int x, int y, H265SliceHeader header)
   {
     if (x > 0 && _cabac.DecodeDecision(CtxSaoMergeFlag) == 1) return;
@@ -522,9 +459,6 @@ internal sealed class H265KeyframeDecoder
     if (split && x + (1 << log2CbSize) <= _codedWidth && y + (1 << log2CbSize) <= _codedHeight)
       split = _cabac.DecodeDecision(CtxSplitCu + SplitContext(x, y, depth)) == 1;
 
-    // A quantization group starts where the quadtree reaches the group size, or at a coding unit
-    // that is larger than one. Starting one at every enclosing node would overwrite the previous
-    // group's closing QP, which is what an unavailable neighbour predicts from.
     if (_cuQpDeltaEnabled
         && (log2CbSize == _qpGroupLog2 || (!split && log2CbSize > _qpGroupLog2)))
       StartQuantizationGroup(x, y);
@@ -555,10 +489,6 @@ internal sealed class H265KeyframeDecoder
 
   private int DepthAt(int x, int y) => _ctDepth[MapIndex(x, y)];
 
-  /// <summary>
-  /// The group's QP is predicted from the samples left of and above it, and a neighbour outside
-  /// the current CTB is replaced by the QP the previous group ended on.
-  /// </summary>
   private void StartQuantizationGroup(int x, int y)
   {
     _cuQpDeltaCoded = false;
@@ -573,17 +503,12 @@ internal sealed class H265KeyframeDecoder
 
   private int QpAt(int x, int y) => _qpMap[MapIndex(x, y)];
 
-  /// <summary>
-  /// The maps hold one entry per four samples, so a block's entries are consecutive along each of
-  /// its rows and the row is a fill rather than a walk.
-  /// </summary>
   private void Store(byte[] map, int x, int y, int size, byte value)
   {
     var entries = size >> 2;
     var column = x >> 2;
     var first = MapIndex(column << 2, y);
 
-    // The smallest block is one entry, which is most of them, and a fill of one is all overhead.
     if (entries == 1)
     {
       if (first < map.Length) map[first] = value;
@@ -611,8 +536,6 @@ internal sealed class H265KeyframeDecoder
     if (log2CbSize == _log2MinCbSize && log2CbSize > 2)
       partNxN = _cabac.DecodeDecision(CtxPartMode) == 0;
 
-    // Four parts only ever happen at the smallest coding block, so nearly every unit has one - and
-    // one part through three loops is three loop set-ups and two buffers to carry a single value.
     if (!partNxN)
     {
       var only = _cabac.DecodeDecision(CtxPrevIntraLumaPred) == 1;
@@ -629,8 +552,6 @@ internal sealed class H265KeyframeDecoder
       return;
     }
 
-    // A coding unit splits into one part or four, so the part a prediction unit sits in is a bit of
-    // its index rather than a quotient of it.
     const int partShift = 1;
     const int parts = 1 << partShift;
     var partSize = 1 << (log2CbSize - partShift);
@@ -669,10 +590,6 @@ internal sealed class H265KeyframeDecoder
 
   private static readonly int[] ChromaModeCandidates = [0, 26, 10, 1];
 
-  /// <summary>
-  /// The mode is never used to predict, but a 4x4 chroma transform block takes its scan order from
-  /// it, so it has to be derived exactly.
-  /// </summary>
   private int ReadChromaMode(int lumaMode)
   {
     if (_cabac.DecodeDecision(CtxIntraChromaPredMode) == 0)
@@ -713,8 +630,6 @@ internal sealed class H265KeyframeDecoder
     if (prevFlag)
       return idx == 0 ? first : idx == 1 ? second : third;
 
-    // The candidates are mode numbers, so which way any of these comparisons falls is as good as
-    // random - a sorting network of conditional moves costs less than three coin-flip branches.
     var low = Math.Min(first, second);
     var high = Math.Max(first, second);
     first = Math.Min(low, third);
@@ -765,8 +680,6 @@ internal sealed class H265KeyframeDecoder
 
     if (split)
     {
-      // Closed before descending: the recursion would otherwise open a second interval on a phase
-      // that only holds one, and the level above would be charged from the level below's start.
       _observer?.End(ReconstructionPhase.Header);
 
       var half = 1 << (log2TrSize - 1);
@@ -788,8 +701,6 @@ internal sealed class H265KeyframeDecoder
     int x, int y, int xBase, int yBase, int log2TrSize, int blkIdx,
     bool cbfLuma, bool cbfCb, bool cbfCr)
   {
-    // The chroma cbf of a 4x4 block is its parent's, so it gates entry at every blkIdx even though
-    // the residual itself is only coded at the fourth.
     var chromaHere = log2TrSize > 2 || blkIdx == 3;
 
     if ((cbfLuma || cbfCb || cbfCr) && _cuQpDeltaEnabled && !_cuQpDeltaCoded)
@@ -801,8 +712,6 @@ internal sealed class H265KeyframeDecoder
       if (_failed) return;
     }
 
-    // The observer counts a block before anything is charged to it, and gathering is now the first
-    // thing that happens rather than something inside reconstruction.
     _observer?.Block(cbfLuma);
 
     H265IntraPrediction.Reference(
@@ -815,13 +724,10 @@ internal sealed class H265KeyframeDecoder
 
     if (!chromaHere) return;
 
-    // A 4x4 luma tree codes its chroma once, at the fourth block, over the parent's area.
     var chromaLog2 = log2TrSize > 2 ? log2TrSize - 1 : log2TrSize;
     var cx = (log2TrSize > 2 ? x : xBase) / 2;
     var cy = (log2TrSize > 2 ? y : yBase) / 2;
 
-    // The two chroma planes sit on one geometry and one decoded map, so the walk that answers where
-    // their references are and whether they exist yet is the same walk - only what it copies differs.
     _observer?.Block(cbfCb);
 
     H265IntraPrediction.Reference(
@@ -834,11 +740,6 @@ internal sealed class H265KeyframeDecoder
     Reconstruct(_crPlane, in _crWorkspace, cx, cy, chromaLog2, 2, _chromaMode, cbfCr);
   }
 
-  /// <summary>
-  /// Predicts one transform block at full resolution and adds the residual, keeping the two edges a
-  /// later block will read and the block's average over each output sample. Returns false once the
-  /// bitstream has stopped making sense.
-  /// </summary>
   private bool Reconstruct(
     Plane plane, in H265IntraPrediction.Workspace work, int x, int y, int log2TrSize, int cIdx,
     int mode, bool coded)
@@ -866,7 +767,6 @@ internal sealed class H265KeyframeDecoder
         return false;
       }
 
-      // Bypass skips scaling and transformation entirely, so the levels are already the residual.
       if (_transquantBypass)
       {
         _observer?.Begin(ReconstructionPhase.Samples);
@@ -897,10 +797,6 @@ internal sealed class H265KeyframeDecoder
     return true;
   }
 
-  /// <summary>
-  /// The last row and column are the only samples a later block predicts from, so they are all the
-  /// band has to carry.
-  /// </summary>
   private void WriteEdges(Plane plane, int x, int y, int size, bool residual)
   {
     var band = plane.Band;
@@ -909,10 +805,6 @@ internal sealed class H265KeyframeDecoder
     var bottom = (y + last - plane.BandTop) * width + x;
     var right = (y - plane.BandTop) * width + x + last;
 
-    // Without a residual the block is its prediction, so the edges are a copy rather than a sum -
-    // and that is most of them, since a block only carries a residual when the encoder sent one.
-    // A block edge is between four and thirty-two samples, which a span copy reaches through a call
-    // it cannot size at compile time - long enough to be worth a loop instead.
     if (!residual)
     {
       for (var i = 0; i < size; i++)
@@ -931,18 +823,12 @@ internal sealed class H265KeyframeDecoder
       band[right] = Combine(_predictedRight[i], _rightColumn[i]);
   }
 
-  /// <summary>
-  /// The block's average over each output sample. Prediction is averaged from the samples it just
-  /// produced; the residual arrives already averaged, since its average is a property of the
-  /// low-frequency coefficients alone.
-  /// </summary>
   private void WriteCells(Plane plane, int x, int y, int cells, bool residual)
   {
     var output = plane.Output;
     var width = plane.OutputWidth;
     var at = (y >> plane.Shift) * width + (x >> plane.Shift);
 
-    // The smallest block covers a single output sample, which is most of them.
     if (cells == 1)
     {
       output[at] = residual ? Combine(_predictedCells[0], _cells[0]) : _predictedCells[0];
@@ -970,11 +856,6 @@ internal sealed class H265KeyframeDecoder
 
   private void MarkDecoded(int x, int y, int size) => Store(_decoded, x, y, size, 1);
 
-  /// <summary>
-  /// The luma-to-chroma QP mapping flattens above 30 so chroma is quantised more finely than luma
-  /// at the same nominal QP. Dequantising chroma with QpY instead over-scales every chroma
-  /// coefficient.
-  /// </summary>
   private static readonly int[] ChromaQpFrom30 = [29, 30, 31, 32, 33, 33, 34, 34, 35, 35, 36, 36, 37];
 
   private int ChromaQp(int offset)
@@ -995,7 +876,6 @@ internal sealed class H265KeyframeDecoder
 
     if (magnitude == 0) return;
 
-    // The delta is bounded to -26..25, so anything larger is proof the bitstream has drifted.
     if (magnitude > 26)
     {
       Fail($"cu_qp_delta_abs {magnitude} exceeds the legal range");
@@ -1004,30 +884,24 @@ internal sealed class H265KeyframeDecoder
 
     var delta = _cabac.DecodeBypass() == 1 ? -magnitude : magnitude;
 
-    // The QP update wraps rather than clamps, so a group may legally step across either end of the
-    // range.
     _qp = ((_qp + delta) % 52 + 52) % 52;
     _minQp = Math.Min(_minQp, _qp);
     _maxQp = Math.Max(_maxQp, _qp);
   }
 
-  /// <summary>
-  /// The prefix is bounded because a longer one describes a value no syntax element here can hold;
-  /// reaching the bound means CABAC has lost sync, which the caller's range check then reports.
-  /// </summary>
   private uint ReadExpGolombBypass()
   {
     var k = _cabac.DecodeBypassUnary(31);
     return k == 0 ? 0 : _cabac.DecodeBypassBits(k) + (1u << k) - 1;
   }
 
-  private static H265ScanIdx ScanFor(int mode, int log2TrSize, int cIdx)
+  private static ScanIdx ScanFor(int mode, int log2TrSize, int cIdx)
   {
     if (log2TrSize != 2 && !(log2TrSize == 3 && cIdx == 0))
-      return H265ScanIdx.Diagonal;
-    if (mode is >= 6 and <= 14) return H265ScanIdx.Vertical;
-    if (mode is >= 22 and <= 30) return H265ScanIdx.Horizontal;
-    return H265ScanIdx.Diagonal;
+      return ScanIdx.Diagonal;
+    if (mode is >= 6 and <= 14) return ScanIdx.Vertical;
+    if (mode is >= 22 and <= 30) return ScanIdx.Horizontal;
+    return ScanIdx.Diagonal;
   }
 
 }

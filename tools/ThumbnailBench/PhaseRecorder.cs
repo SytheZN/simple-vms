@@ -1,25 +1,13 @@
 using System.Diagnostics;
-using Analyzer.Thumbnail;
+using Utils;
 
 namespace ThumbnailBench;
 
-/// <summary>
-/// Accumulates phase time across a whole run. A clock read costs about as much as the smaller
-/// phases it measures, so one block in <see cref="Interval"/> is timed and the totals are scaled
-/// back up; a run covers millions of blocks, so the sample is far larger than the split needs to
-/// settle.
-///
-/// What a reading costs is measured the same way everything else is - by timing an interval that
-/// contains nothing, on the same blocks, between the same neighbours. A loop of back-to-back reads
-/// would measure how fast they retire when the processor can overlap them, which is not what an
-/// interval bracketing real work pays.
-/// </summary>
-internal sealed class PhaseRecorder : IReconstructionObserver
+internal sealed class PhaseRecorder : IObserverHarness<ReconstructionPhase>
 {
-  /// <summary>Prime, so the sample cannot phase-lock onto a position in the quadtree.</summary>
   private const int Interval = 17;
 
-  private const int Phases = 13;
+  private const int Phases = 14;
   private static readonly int Baseline = (int)ReconstructionPhase.Baseline;
 
   private readonly long[] _elapsed = new long[Phases];
@@ -65,7 +53,6 @@ internal sealed class PhaseRecorder : IReconstructionObserver
     _intervals[(int)phase]++;
   }
 
-  /// <summary>Ticks an interval costs to take, which each phase is charged once per interval.</summary>
   private double Overhead =>
     _intervals[Baseline] == 0 ? 0 : (double)_elapsed[Baseline] / _intervals[Baseline];
 

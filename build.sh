@@ -35,6 +35,7 @@ test() {
   rm -rf "$test_plugins_dir"
   mkdir -p "$test_plugins_dir"
   for proj in "$SOLUTION_DIR"/src/plugins/*/*/*.csproj; do
+    case "$proj" in */src/plugins/shared/*) continue ;; esac
     local name
     name="$(basename "$(dirname "$proj")")"
     dotnet publish "$proj" -c Release --no-build \

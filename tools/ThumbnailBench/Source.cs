@@ -1,13 +1,11 @@
 using Analyzer.Thumbnail;
 using Microsoft.Extensions.Logging;
+using Utils;
 
 namespace ThumbnailBench;
 
-/// <summary>
-/// One prepared keyframe bound to the decoder that reads it.
-/// </summary>
 internal sealed record Source(
-  Func<DecodedFrame?> Decode, Action<IReconstructionObserver>? Observe, int Bytes)
+  Func<DecodedFrame?> Decode, Action<IObserverHarness<ReconstructionPhase>>? Observe, int Bytes)
 {
   public static Source? Open(Options options, ILogger logger)
   {

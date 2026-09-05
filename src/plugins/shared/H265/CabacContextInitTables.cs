@@ -32,9 +32,9 @@
 
 // Source: https://vcgit.hhi.fraunhofer.de/jvet/HM/-/raw/master/source/Lib/TLibCommon/ContextTables.h
 
-namespace Shared.Models.Formats;
+namespace H265;
 
-public static class H265CabacContextInitTables
+public static class CabacContextInitTables
 {
   public const int CtxCount = 256;
   public const int InitTypeCount = 3;

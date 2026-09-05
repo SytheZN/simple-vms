@@ -15,6 +15,10 @@ public sealed partial class ThumbnailPlugin : IPlugin
   private ILogger _perfLogger = null!;
   private readonly ConcurrentDictionary<(Guid CameraId, string ParentProfile), ThumbnailWorker> _workers = new();
 
+  private volatile int _cachedSize;
+  private volatile int _cachedQuality;
+  private volatile int _cachedInterval;
+
   public PluginMetadata Metadata { get; } = new()
   {
     Id = AnalyzerIdValue,
@@ -32,6 +36,7 @@ public sealed partial class ThumbnailPlugin : IPlugin
       ?? throw new InvalidOperationException("ThumbnailPlugin requires ICameraRegistry");
     _logger = context.LoggerFactory.CreateLogger(AnalyzerIdValue);
     _perfLogger = context.LoggerFactory.CreateLogger("perf");
+    RefreshCachedSettings();
     return new Success();
   }
 

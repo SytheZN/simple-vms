@@ -32,9 +32,9 @@
 
 // Source: https://vcgit.hhi.fraunhofer.de/jvet/HM/-/raw/master/source/Lib/TLibCommon/TComRom.cpp
 
-namespace Shared.Models.Formats;
+namespace H265;
 
-public static class H265ResidualTables
+public static class ResidualTables
 {
   /// <summary>HM ctxIndMap4x4.</summary>
   public static readonly byte[] SigCtxMap4x4 =

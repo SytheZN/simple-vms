@@ -4,18 +4,30 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Update="@(ProjectReference)" Private="false" ExcludeAssets="runtime" />
-  </ItemGroup>
-  <ItemGroup>
     <PackageReference Update="OneOf" IncludeAssets="compile" PrivateAssets="all" />
     <PackageReference Update="OneOf.Chaining" IncludeAssets="compile" PrivateAssets="all" />
   </ItemGroup>
 
-  <Target Name="PublishPluginDebug" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug'">
+  <Target Name="ClassifyPluginReferences" BeforeTargets="AssignProjectConfiguration"
+          Condition="'$(PluginSharedLibrary)' != 'true'">
+    <ItemGroup>
+      <ProjectReference Condition="!$([System.String]::Copy('%(ProjectReference.FullPath)').Contains('/plugins/shared/'))">
+        <Private>false</Private>
+        <ExcludeAssets>runtime</ExcludeAssets>
+      </ProjectReference>
+      <ProjectReference Condition="$([System.String]::Copy('%(ProjectReference.FullPath)').Contains('/plugins/shared/'))">
+        <Private>true</Private>
+      </ProjectReference>
+    </ItemGroup>
+  </Target>
+
+  <Target Name="PublishPluginDebug" AfterTargets="Build"
+          Condition="'$(Configuration)' == 'Debug' and '$(PluginSharedLibrary)' != 'true'">
     <Exec Command="dotnet publish &quot;$(MSBuildProjectFullPath)&quot; --no-build -c Debug -o &quot;$(PluginDebugDir)&quot;" />
   </Target>
 
-  <Target Name="CleanPluginDebug" AfterTargets="Clean">
+  <Target Name="CleanPluginDebug" AfterTargets="Clean"
+          Condition="'$(PluginSharedLibrary)' != 'true'">
     <RemoveDir Directories="$(PluginDebugDir)" />
   </Target>
 

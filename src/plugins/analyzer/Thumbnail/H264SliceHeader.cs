@@ -1,5 +1,4 @@
-using Shared.Models.Formats;
-using static Shared.Models.Formats.BitstreamHelpers;
+using static Utils.BitstreamHelpers;
 
 namespace Analyzer.Thumbnail;
 
@@ -11,10 +10,6 @@ internal sealed record H264SliceHeader
   public required bool DeblockingFilterDisabled { get; init; }
   public required int BitOffset { get; init; }
 
-  /// <summary>
-  /// Only I and SI slice types are accepted; anything else means the caller handed us a
-  /// non-keyframe NAL and reconstruction would need reference pictures we do not have.
-  /// </summary>
   public static H264SliceHeader? Parse(
     ReadOnlySpan<byte> rbsp, byte nalUnitType, byte nalRefIdc, H264Sps sps, H264Pps pps)
   {
@@ -57,8 +52,6 @@ internal sealed record H264SliceHeader
     if (pps.RedundantPicCntPresent)
       ReadExpGolomb(data, ref at);
 
-    // ref_pic_list_modification carries no bits for I and SI slices, and pred_weight_table is
-    // absent for them too, so slice_type gates both out entirely.
 
     if (nalRefIdc != 0)
     {

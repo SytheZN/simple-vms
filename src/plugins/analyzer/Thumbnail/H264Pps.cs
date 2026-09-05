@@ -1,5 +1,4 @@
-using Shared.Models.Formats;
-using static Shared.Models.Formats.BitstreamHelpers;
+using static Utils.BitstreamHelpers;
 
 namespace Analyzer.Thumbnail;
 
@@ -17,7 +16,6 @@ internal sealed record H264Pps
   public required bool DeblockingFilterControlPresent { get; init; }
   public required bool RedundantPicCntPresent { get; init; }
 
-  /// <summary>Null when the picture signals no matrix and the sequence's stands unchanged.</summary>
   public required H264ScalingMatrix? ScalingMatrix { get; init; }
 
   public static H264Pps Parse(ReadOnlySpan<byte> rawNal)
@@ -54,9 +52,6 @@ internal sealed record H264Pps
     if (HasMoreRbspData(data, at))
     {
       transform8x8 = ReadBit(data, ref at);
-      // List count is 6 + (chroma_format_idc != 3 ? 2 : 6) * transform_8x8_mode_flag, but the SPS
-      // is not resolved here. Assumes non-4:4:4, which only misreads the trailing chroma QP offset
-      // on a 4:4:4 stream.
       if (ReadBit(data, ref at))
         scalingMatrix = H264ScalingMatrix.Read(data, ref at, 6 + (transform8x8 ? 2 : 0));
       secondChromaQpIndexOffset = ReadSignedExpGolomb(data, ref at);
@@ -110,10 +105,6 @@ internal sealed record H264Pps
     }
   }
 
-  /// <summary>
-  /// The optional PPS tail is only present when bits remain before the rbsp_stop_one_bit and its
-  /// trailing zeros, so its presence is detected by position rather than signalled.
-  /// </summary>
   private static bool HasMoreRbspData(ReadOnlySpan<byte> data, int at)
   {
     var lastBit = (data.Length << 3) - 1;

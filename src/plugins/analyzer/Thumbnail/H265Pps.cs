@@ -1,5 +1,4 @@
-using Shared.Models.Formats;
-using static Shared.Models.Formats.BitstreamHelpers;
+using static Utils.BitstreamHelpers;
 
 namespace Analyzer.Thumbnail;
 

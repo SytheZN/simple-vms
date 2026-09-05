@@ -7,10 +7,6 @@ public sealed partial class ThumbnailPlugin : IDataStreamAnalyzer
 {
   private const string SourceProfileKey = "sourceProfile";
 
-  /// <summary>
-  /// Clients locate the gallery preview by this suffix on a metadata stream, so it is part of the
-  /// contract with them rather than a naming convenience.
-  /// </summary>
   public const string ProfileSuffix = "-thumbnail";
 
   public string AnalyzerId => AnalyzerIdValue;
@@ -61,10 +57,6 @@ public sealed partial class ThumbnailPlugin : IDataStreamAnalyzer
   internal IReadOnlyList<StreamProfile> SupportedStreams(CameraInfo camera) =>
     camera.Streams.Where(IsSupported).ToList();
 
-  /// <summary>
-  /// A stored profile naming a stream the camera no longer exposes is treated as unset, so a
-  /// refresh that drops and later restores a profile honours the original choice again.
-  /// </summary>
   internal StreamProfile? ResolveSource(CameraInfo camera)
   {
     var supported = SupportedStreams(camera);

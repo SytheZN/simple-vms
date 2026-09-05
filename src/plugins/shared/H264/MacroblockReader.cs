@@ -1,52 +1,118 @@
-namespace Analyzer.Thumbnail;
+namespace H264;
 
-internal enum H264MbKind { Intra4x4, Intra8x8, Intra16x16, Pcm }
+public enum MbKind { Intra4x4, Intra8x8, Intra16x16, Pcm }
 
-internal struct H264Macroblock
+public struct Macroblock
 {
-  public H264MbKind Kind;
+  public MbKind Kind;
   public int CbpLuma;
   public int CbpChroma;
   public int Predicted16x16Mode;
   public int ChromaPredMode;
   public bool Transform8x8;
 
-  public readonly bool IsNxN => Kind is H264MbKind.Intra4x4 or H264MbKind.Intra8x8;
+  public readonly bool IsNxN => Kind is MbKind.Intra4x4 or MbKind.Intra8x8;
 }
 
-/// <summary>
-/// Neighbour state for context derivation. Contexts must match the encoder exactly - unlike
-/// reconstruction, nothing here can be approximated without producing wrong bin values.
-/// </summary>
-internal struct H264Neighbour
+public struct Neighbour
 {
-  public bool Available;
-  public bool IsNxN;
-  public int CbpLuma;
-  public int CbpChroma;
-  public bool ChromaPredModeNonZero;
-  public bool Transform8x8;
+  private const byte AvailableBit = 1 << 0;
+  private const byte IsNxNBit = 1 << 1;
+  private const byte SkippedBit = 1 << 2;
+  private const byte DirectBit = 1 << 3;
+  private const byte ChromaPredModeNonZeroBit = 1 << 4;
+  private const byte Transform8x8Bit = 1 << 5;
+  private const byte PcmBit = 1 << 6;
+  private const byte DcCbfBit = 1 << 7;
 
-  /// <summary>
-  /// Raw samples carry no coded state, so every context that asks a neighbour what it holds gets
-  /// a fixed answer here rather than a real one - and not the same fixed answer each time.
-  /// </summary>
-  public bool Pcm;
+  private const byte CbDcCbfBit = 1 << 0;
+  private const byte CrDcCbfBit = 1 << 1;
+  private const int CbpChromaShift = 2;
+  private const byte CbpChromaMask = 0x3 << CbpChromaShift;
+  private const int CbpLumaShift = 4;
 
-  /// <summary>
-  /// The direct-term block and the alternating blocks take their contexts from different places,
-  /// so a neighbour has to remember them apart rather than as one "has coefficients".
-  /// </summary>
-  public bool DcCbf;
-  public bool CbDcCbf;
-  public bool CrDcCbf;
-
+  private byte _flags;
+  private byte _flags2;
   public ushort LumaCbf;
   public byte CbCbf;
   public byte CrCbf;
+
+  public bool Available
+  {
+    readonly get => (_flags & AvailableBit) != 0;
+    set => _flags = value ? (byte)(_flags | AvailableBit) : (byte)(_flags & ~AvailableBit);
+  }
+
+  public bool IsNxN
+  {
+    readonly get => (_flags & IsNxNBit) != 0;
+    set => _flags = value ? (byte)(_flags | IsNxNBit) : (byte)(_flags & ~IsNxNBit);
+  }
+
+  public bool Skipped
+  {
+    readonly get => (_flags & SkippedBit) != 0;
+    set => _flags = value ? (byte)(_flags | SkippedBit) : (byte)(_flags & ~SkippedBit);
+  }
+
+  public bool Direct
+  {
+    readonly get => (_flags & DirectBit) != 0;
+    set => _flags = value ? (byte)(_flags | DirectBit) : (byte)(_flags & ~DirectBit);
+  }
+
+  public bool ChromaPredModeNonZero
+  {
+    readonly get => (_flags & ChromaPredModeNonZeroBit) != 0;
+    set => _flags = value
+      ? (byte)(_flags | ChromaPredModeNonZeroBit)
+      : (byte)(_flags & ~ChromaPredModeNonZeroBit);
+  }
+
+  public bool Transform8x8
+  {
+    readonly get => (_flags & Transform8x8Bit) != 0;
+    set => _flags = value ? (byte)(_flags | Transform8x8Bit) : (byte)(_flags & ~Transform8x8Bit);
+  }
+
+  public bool Pcm
+  {
+    readonly get => (_flags & PcmBit) != 0;
+    set => _flags = value ? (byte)(_flags | PcmBit) : (byte)(_flags & ~PcmBit);
+  }
+
+  public bool DcCbf
+  {
+    readonly get => (_flags & DcCbfBit) != 0;
+    set => _flags = value ? (byte)(_flags | DcCbfBit) : (byte)(_flags & ~DcCbfBit);
+  }
+
+  public bool CbDcCbf
+  {
+    readonly get => (_flags2 & CbDcCbfBit) != 0;
+    set => _flags2 = value ? (byte)(_flags2 | CbDcCbfBit) : (byte)(_flags2 & ~CbDcCbfBit);
+  }
+
+  public bool CrDcCbf
+  {
+    readonly get => (_flags2 & CrDcCbfBit) != 0;
+    set => _flags2 = value ? (byte)(_flags2 | CrDcCbfBit) : (byte)(_flags2 & ~CrDcCbfBit);
+  }
+
+  public int CbpChroma
+  {
+    readonly get => (_flags2 & CbpChromaMask) >> CbpChromaShift;
+    set => _flags2 = (byte)((_flags2 & ~CbpChromaMask) | (value << CbpChromaShift));
+  }
+
+  public int CbpLuma
+  {
+    readonly get => _flags2 >> CbpLumaShift;
+    set => _flags2 = (byte)((_flags2 & ~(0xF << CbpLumaShift)) | (value << CbpLumaShift));
+  }
 }
 
-internal static class H264MacroblockReader
+public static class MacroblockReader
 {
   private const int CtxMbTypeI = 3;
   private const int CtxIntraChromaPredMode = 64;
@@ -57,12 +123,11 @@ internal static class H264MacroblockReader
   private const int CtxMbQpDelta = 60;
   private const int CtxTransform8x8 = 399;
 
-  /// <summary>Eight modes remain once the predicted one is taken out, so three bins name them.</summary>
   private const int RemIntraPredModeBits = 3;
 
-  public static H264Macroblock ReadHeader(
+  public static Macroblock ReadHeader(
     CabacEngine cabac, bool transform8x8Allowed,
-    in H264Neighbour left, in H264Neighbour above,
+    in Neighbour left, in Neighbour above,
     Span<sbyte> modes, ReadOnlySpan<sbyte> leftModes, ReadOnlySpan<sbyte> aboveModes)
   {
     var ctxInc = (left.Available && !left.IsNxN ? 1 : 0)
@@ -72,7 +137,7 @@ internal static class H264MacroblockReader
       return ReadNxN(cabac, transform8x8Allowed, left, above, modes, leftModes, aboveModes);
 
     if (cabac.DecodeTerminate() == 1)
-      return new H264Macroblock { Kind = H264MbKind.Pcm };
+      return new Macroblock { Kind = MbKind.Pcm };
 
     var cbpLuma = cabac.DecodeDecision(CtxMbTypeI + 3) == 1 ? 15 : 0;
 
@@ -80,15 +145,12 @@ internal static class H264MacroblockReader
     if (cabac.DecodeDecision(CtxMbTypeI + 4) == 1)
       cbpChroma = cabac.DecodeDecision(CtxMbTypeI + 5) == 1 ? 2 : 1;
 
-    // The bin saying whether chroma carries AC shifts every later bin along by one, and the
-    // context increment those bins take shifts with it - so both spellings land on the same pair
-    // of contexts and neither branch has to know which happened.
     var mode = (cabac.DecodeDecision(CtxMbTypeI + 6) << 1)
              | cabac.DecodeDecision(CtxMbTypeI + 7);
 
-    return new H264Macroblock
+    return new Macroblock
     {
-      Kind = H264MbKind.Intra16x16,
+      Kind = MbKind.Intra16x16,
       CbpLuma = cbpLuma,
       CbpChroma = cbpChroma,
       Predicted16x16Mode = mode,
@@ -96,9 +158,9 @@ internal static class H264MacroblockReader
     };
   }
 
-  private static H264Macroblock ReadNxN(
+  private static Macroblock ReadNxN(
     CabacEngine cabac, bool transform8x8Allowed,
-    in H264Neighbour left, in H264Neighbour above,
+    in Neighbour left, in Neighbour above,
     Span<sbyte> modes, ReadOnlySpan<sbyte> leftModes, ReadOnlySpan<sbyte> aboveModes)
   {
     var transform8x8 = false;
@@ -110,8 +172,6 @@ internal static class H264MacroblockReader
       transform8x8 = cabac.DecodeDecision(CtxTransform8x8 + neighbours) == 1;
     }
 
-    // One mode per transform block either way, so the 8x8 macroblock reads a quarter as many and
-    // gives each to all four of the 4x4 slots a later neighbour looks it up through.
     ReadPredModes(
       cabac, modes, leftModes, aboveModes, left.Available, above.Available,
       transform8x8 ? 4 : 1);
@@ -119,9 +179,9 @@ internal static class H264MacroblockReader
     var chromaMode = ReadChromaPredMode(cabac, left, above);
     var (cbpLuma, cbpChroma) = ReadCodedBlockPattern(cabac, left, above);
 
-    return new H264Macroblock
+    return new Macroblock
     {
-      Kind = transform8x8 ? H264MbKind.Intra8x8 : H264MbKind.Intra4x4,
+      Kind = transform8x8 ? MbKind.Intra8x8 : MbKind.Intra4x4,
       CbpLuma = cbpLuma,
       CbpChroma = cbpChroma,
       ChromaPredMode = chromaMode,
@@ -129,18 +189,6 @@ internal static class H264MacroblockReader
     };
   }
 
-  /// <summary>
-  /// Each block's mode is coded against a prediction from the blocks left of and above it. Why a
-  /// neighbour is missing decides which of two rules produces that prediction: a macroblock
-  /// outside the picture forces it to DC outright, while a macroblock that is merely coded
-  /// without per-block modes contributes DC and still takes the smaller of the two. Collapsing
-  /// the first rule into the second leaves every block down the left edge and along the top
-  /// predicting from a mode the encoder never used - which the parse survives, since both
-  /// spellings read the same bins, and the picture does not.
-  ///
-  /// The three remainder bins are context coded and share one context. Reading them as bypass
-  /// costs nothing on the first block that takes them and desynchronises everything after it.
-  /// </summary>
   private static void ReadPredModes(
     CabacEngine cabac, Span<sbyte> modes,
     ReadOnlySpan<sbyte> leftModes, ReadOnlySpan<sbyte> aboveModes,
@@ -162,29 +210,25 @@ internal static class H264MacroblockReader
     }
   }
 
-  /// <summary>
-  /// Shared with the CAVLC reader, which codes the same prediction differently but derives it
-  /// identically.
-  /// </summary>
-  internal static sbyte PredictedMode(
+  public static sbyte PredictedMode(
     int block, ReadOnlySpan<sbyte> modes,
     ReadOnlySpan<sbyte> leftModes, ReadOnlySpan<sbyte> aboveModes,
     bool leftAvailable, bool aboveAvailable)
   {
-    var l = H264BlockOrder.NeighbourLeft[block];
-    var t = H264BlockOrder.NeighbourAbove[block];
+    var l = BlockOrder.NeighbourLeft[block];
+    var t = BlockOrder.NeighbourAbove[block];
 
-    if ((l >= H264BlockOrder.Outside && !leftAvailable)
-        || (t >= H264BlockOrder.Outside && !aboveAvailable))
+    if ((l >= BlockOrder.Outside && !leftAvailable)
+        || (t >= BlockOrder.Outside && !aboveAvailable))
       return 2;
 
-    var left = l < H264BlockOrder.Outside ? modes[l] : leftModes[l - H264BlockOrder.Outside];
-    var above = t < H264BlockOrder.Outside ? modes[t] : aboveModes[t - H264BlockOrder.Outside];
+    var left = l < BlockOrder.Outside ? modes[l] : leftModes[l - BlockOrder.Outside];
+    var above = t < BlockOrder.Outside ? modes[t] : aboveModes[t - BlockOrder.Outside];
     return Math.Min(left, above);
   }
 
-  private static int ReadChromaPredMode(
-    CabacEngine cabac, in H264Neighbour left, in H264Neighbour above)
+  public static int ReadChromaPredMode(
+    CabacEngine cabac, in Neighbour left, in Neighbour above)
   {
     var ctxInc = (left.Available && left.ChromaPredModeNonZero && !left.Pcm ? 1 : 0)
                + (above.Available && above.ChromaPredModeNonZero && !above.Pcm ? 1 : 0);
@@ -198,8 +242,8 @@ internal static class H264MacroblockReader
     return cabac.DecodeDecision(CtxIntraChromaPredMode + 3) == 0 ? 2 : 3;
   }
 
-  private static (int Luma, int Chroma) ReadCodedBlockPattern(
-    CabacEngine cabac, in H264Neighbour left, in H264Neighbour above)
+  public static (int Luma, int Chroma) ReadCodedBlockPattern(
+    CabacEngine cabac, in Neighbour left, in Neighbour above)
   {
     var luma = 0;
     for (var i = 0; i < 4; i++)
@@ -224,14 +268,9 @@ internal static class H264MacroblockReader
     return (luma, chroma);
   }
 
-  /// <summary>
-  /// The 8x8 block to the left of (or above) block i is inside this macroblock for the right and
-  /// bottom halves, so partially decoded bits of the current pattern feed their own contexts. The
-  /// term is set when the neighbour holds no coefficients, not when it holds them.
-  /// </summary>
   private static int LumaCondTerm(
     int block, int direction, int currentLuma,
-    in H264Neighbour left, in H264Neighbour above)
+    in Neighbour left, in Neighbour above)
   {
     var isLeft = direction == 0;
     var inside = isLeft ? (block & 1) == 1 : block >= 2;
@@ -249,12 +288,6 @@ internal static class H264MacroblockReader
     return ((mb.CbpLuma >> mirrored) & 1) != 0 ? 0 : 1;
   }
 
-  /// <summary>
-  /// The first continuation bin takes its own context and every bin after it shares a third. One
-  /// context for all of them decodes the same until a delta reaches two, then diverges silently.
-  /// The context the leading bin takes turns on whether the previous macroblock's delta was
-  /// non-zero, not on whether it was present.
-  /// </summary>
   public static int ReadQpDelta(CabacEngine cabac, int previousDelta)
   {
     if (cabac.DecodeDecision(CtxMbQpDelta + (previousDelta != 0 ? 1 : 0)) == 0)
@@ -272,11 +305,7 @@ internal static class H264MacroblockReader
   }
 }
 
-/// <summary>
-/// luma4x4BlkIdx is Morton order: 8x8 quadrants in raster order, 4x4 blocks in raster order within
-/// each. Both directions are wanted - coding order to walk the blocks, raster to find a neighbour.
-/// </summary>
-internal static class H264BlockOrder
+public static class BlockOrder
 {
   public static readonly (byte X, byte Y)[] Position = BuildPositions();
 
@@ -307,19 +336,11 @@ internal static class H264BlockOrder
     return map;
   }
 
-  /// <summary>
-  /// Where each block's two neighbours are. Under <see cref="Outside"/> the neighbour belongs to
-  /// this macroblock and the value is its coding index; at or above, it is in the macroblock to the
-  /// left or above and the remainder indexes the edge run kept from it.
-  /// </summary>
   public const int Outside = 16;
 
   public static readonly byte[] NeighbourLeft = Neighbour(left: true, morton: false);
   public static readonly byte[] NeighbourAbove = Neighbour(left: false, morton: false);
 
-  /// <summary>
-  /// The same for coded block flags, which a neighbour keeps in coding order rather than by edge.
-  /// </summary>
   public static readonly byte[] CbfLeft = Neighbour(left: true, morton: true);
   public static readonly byte[] CbfAbove = Neighbour(left: false, morton: true);
 

@@ -1,26 +1,20 @@
 using System.Numerics;
-using Shared.Models.Formats;
 
-namespace Analyzer.Thumbnail;
+namespace H264;
 
-/// <summary>
-/// Arithmetic decoder shared by H.264 and H.265, which use the same
-/// state machine and the same transition tables. Only context initialisation differs: H.264 reads
-/// an m/n pair per context, H.265 derives them from a single packed byte.
-///
-/// The offset and the bits waiting to enter it are one register rather than two. Holding the offset
-/// already scaled by the bits behind it means renormalisation only has to say how many of them the
-/// range has caught up with, so no bin moves bits from a buffer into an offset, and the stream is
-/// touched once every few dozen bins instead of once per bin.
-/// </summary>
-internal sealed class CabacEngine
+public class CabacEngine
 {
-  /// <summary>
-  /// The upstream table is two-dimensional and a state's four quarters are one word wide, so each
-  /// state's row is held whole. Which quarter a bin wants is the one thing that depends on the
-  /// range, and the range is what every bin waits on - fetching the row by state alone keeps the
-  /// load off that chain and leaves a shift to pick the byte out once the range is known.
-  /// </summary>
+  private const int SliceQpMax = 51;
+  private const int PreCtxStateMin = 1;
+  private const int PreCtxStateMax = 126;
+  private const int PreCtxStateMpsThreshold = 63;
+  private const int PreCtxStateMpsShift = 64;
+
+  private const int InitialRange = 510;
+  private const int OffsetPrimingBits = 9;
+  private const int OffsetPrimingFillBits = 32;
+  private const int BitsPerByte = 8;
+
   private static readonly uint[] RangeLpsRows = PackRangeLps();
 
   private static uint[] PackRangeLps()
@@ -30,26 +24,15 @@ internal sealed class CabacEngine
     {
       uint row = 0;
       for (var quarter = 0; quarter < 4; quarter++)
-        row |= (uint)H264CabacArithmeticTables.RangeTabLps[state, quarter] << (quarter << 3);
+        row |= (uint)CabacArithmeticTables.RangeTabLps[state, quarter] << (quarter << 3);
       rows[state] = row;
     }
     return rows;
   }
 
-  /// <summary>
-  /// A context's state decides which four range values it can take, and the range decides which one
-  /// of them this bin gets. Only the second of those is known late, so a context carries its whole
-  /// row with it: bits 0 to 31 are the four values, bits 32 to 38 the state and MPS it came from.
-  /// A decision then reaches the range with one load where it used to need two, one to learn the
-  /// state and another to look up what that state permits.
-  /// </summary>
   private static ulong Pack(byte context) =>
     RangeLpsRows[context >> 1] | ((ulong)context << 32);
 
-  /// <summary>
-  /// Both outcomes of every context, pre-packed and indexed by the outcome's own bit, so a decision
-  /// stores one value without branching on which outcome it was.
-  /// </summary>
   private static readonly ulong[] Transition = PackTransitions();
 
   private static ulong[] PackTransitions()
@@ -62,9 +45,9 @@ internal sealed class CabacEngine
       var mps = context & 1;
 
       packed[context << 1] =
-        Pack((byte)((H264CabacArithmeticTables.TransIdxMps[state] << 1) | mps));
+        Pack((byte)((CabacArithmeticTables.TransIdxMps[state] << 1) | mps));
       packed[(context << 1) | 1] =
-        Pack((byte)((H264CabacArithmeticTables.TransIdxLps[state] << 1)
+        Pack((byte)((CabacArithmeticTables.TransIdxLps[state] << 1)
           | (state == 0 ? 1 - mps : mps)));
     }
 
@@ -72,87 +55,58 @@ internal sealed class CabacEngine
   }
 
   private byte[] _data = [];
-  private ulong[] _contexts = [];
+  private readonly ulong[] _contexts;
   private int _length;
 
-  /// <summary>The offset, scaled up by the <see cref="_bits"/> stream bits held behind it.</summary>
   private long _low;
   private int _bits;
   private int _bytePos;
   private int _range;
 
-  public int BytesRead => Math.Min(_length, (_bytePos * 8 - _bits) >> 3);
+  public int BytesRead => Math.Min(_length, (_bytePos * BitsPerByte - _bits) / BitsPerByte);
   public int BytesTotal => _length;
 
-  /// <summary>
-  /// One engine is reset per picture rather than constructed, so the context arrays outlive the
-  /// slice. <paramref name="length"/> says how much of <paramref name="rbsp"/> is this picture,
-  /// which lets the caller keep a buffer larger than the current one.
-  /// </summary>
-  private void Prepare(byte[] rbsp, int length, int bitOffset, int contextCount)
+  public CabacEngine() : this(CabacContextInitTables.CtxCount) { }
+
+  protected CabacEngine(int contextCount) => _contexts = new ulong[contextCount];
+
+  public void Initialize(
+    byte[] rbsp, int length, int bitOffset, int sliceQp, CabacInitType initType)
   {
     _data = rbsp;
     _length = length;
-    if (_contexts.Length != contextCount)
-      _contexts = new ulong[contextCount];
-    _bytePos = (bitOffset + 7) >> 3;
+    _bytePos = (bitOffset + BitsPerByte - 1) / BitsPerByte;
     _low = 0;
     _bits = 0;
-  }
 
-  public void ResetForH264(byte[] rbsp, int length, int bitOffset, int sliceQp)
-  {
-    Prepare(rbsp, length, bitOffset, H264CabacContextInitTables.CtxCount);
-    var m = H264CabacContextInitTables.InitM[0];
-    var n = H264CabacContextInitTables.InitN[0];
-    var qp = Math.Clamp(sliceQp, 0, 51);
-
-    for (var i = 0; i < _contexts.Length; i++)
-      SetContext(i, m[i], n[i], qp);
-
+    InitContexts(Math.Clamp(sliceQp, 0, SliceQpMax), initType);
     Start();
   }
 
-  public void ResetForH265(byte[] rbsp, int length, int bitOffset, int sliceQp)
+  protected virtual void InitContexts(int sliceQp, CabacInitType initType)
   {
-    Prepare(rbsp, length, bitOffset, H265CabacContextInitTables.CtxCount);
-    var init = H265CabacContextInitTables.InitValue[0];
-    var qp = Math.Clamp(sliceQp, 0, 51);
+    var m = CabacContextInitTables.InitM[(int)initType];
+    var n = CabacContextInitTables.InitN[(int)initType];
 
     for (var i = 0; i < _contexts.Length; i++)
-    {
-      var m = (init[i] >> 4) * 5 - 45;
-      var n = ((init[i] & 15) << 3) - 16;
-      SetContext(i, m, n, qp);
-    }
-
-    Start();
+      SetContext(i, m[i], n[i], sliceQp);
   }
 
-  /// <summary>The quantiser arrives already clamped; every context would otherwise reclamp it.</summary>
-  private void SetContext(int index, int m, int n, int sliceQp)
+  protected void SetContext(int index, int m, int n, int sliceQp)
   {
-    var preCtxState = Math.Clamp(((m * sliceQp) >> 4) + n, 1, 126);
-    _contexts[index] = Pack(preCtxState <= 63
-      ? (byte)((63 - preCtxState) << 1)
-      : (byte)(((preCtxState - 64) << 1) | 1));
+    var preCtxState = Math.Clamp(((m * sliceQp) >> 4) + n, PreCtxStateMin, PreCtxStateMax);
+    _contexts[index] = Pack(preCtxState <= PreCtxStateMpsThreshold
+      ? (byte)((PreCtxStateMpsThreshold - preCtxState) << 1)
+      : (byte)(((preCtxState - PreCtxStateMpsShift) << 1) | 1));
   }
 
-  /// <summary>
-  /// The first nine bits are the offset, and in this form taking them is only a matter of saying so:
-  /// they are already the top of the register, and the rest stay behind them as lookahead.
-  /// </summary>
   private void Start()
   {
-    _range = 510;
-    Fill(32);
-    _bits -= 9;
+    _range = InitialRange;
+    Fill(OffsetPrimingFillBits);
+    _bits -= OffsetPrimingBits;
   }
 
-  /// <summary>
-  /// Which subinterval the offset falls in is what arithmetic coding makes unpredictable - a branch
-  /// here mispredicts by design, so both outcomes are computed and selected with a mask instead.
-  /// </summary>
   public int DecodeDecision(int ctxIdx)
   {
     var packed = _contexts[ctxIdx];
@@ -160,7 +114,6 @@ internal sealed class CabacEngine
     var rangeMps = _range - rangeLps;
     var scaled = (long)rangeMps << _bits;
 
-    // All ones while the offset stays inside the most probable subinterval.
     var mps = (_low - scaled) >> 63;
     var lps = (int)(~mps & 1);
 
@@ -174,19 +127,6 @@ internal sealed class CabacEngine
     return (context & 1) ^ lps;
   }
 
-  /// <summary>
-  /// Decodes a run of decisions whose context offsets are all settled before the run starts, and
-  /// records the position of every bin that comes back one. A significance walk is the case: which
-  /// context a flag uses depends on where the coefficient sits, never on what an earlier flag
-  /// decoded, so the whole run can be walked without stopping. <paramref name="offsets"/> is read
-  /// by scan position, so nothing here waits on a table to say where in the block that is.
-  ///
-  /// The arithmetic is <see cref="DecodeDecision"/>'s, spelled out again rather than called: the
-  /// point of the run is that the range, the offset and the bit count stay in registers across all
-  /// of it. Through the single-bin entry point they go back to fields between every bin, and the
-  /// offset's store and reload land on the dependency chain that already decides how fast a bin can
-  /// be decoded at all.
-  /// </summary>
   public int DecodeDecisionRun(
     int ctxBase, ReadOnlySpan<byte> offsets, int from, Span<byte> positions, int count)
   {
@@ -219,12 +159,24 @@ internal sealed class CabacEngine
       count += (context & 1) ^ lps;
 
       if (bits < 8)
-        while (bits < 32)
+      {
+        if (bytePos + 4 <= length)
         {
-          low = (low << 8) | (bytePos < length ? data[bytePos] : (byte)0);
-          bytePos++;
-          bits += 8;
+          low = (low << 32) | System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(
+            data.AsSpan(bytePos));
+          bytePos += 4;
+          bits += 32;
         }
+        else
+        {
+          while (bits < 32)
+          {
+            low = (low << 8) | (bytePos < length ? data[bytePos] : (byte)0);
+            bytePos++;
+            bits += 8;
+          }
+        }
+      }
 
       var shift = BitOperations.LeadingZeroCount((uint)range) - 23;
       range <<= shift;
@@ -238,11 +190,6 @@ internal sealed class CabacEngine
     return count;
   }
 
-  /// <summary>
-  /// H.264's significance walk, terminator interleaved. Returns how many positions were written, or
-  /// -1 when <paramref name="cbfCtx"/> said the block carries none; the caller owes the final
-  /// position to a run that ends without <paramref name="ended"/>.
-  /// </summary>
   public int DecodeSignificanceRun(
     int cbfCtx, int sigBase, int lastBase, ReadOnlySpan<byte> sigOffsets,
     ReadOnlySpan<byte> lastOffsets, int last, Span<byte> positions, out bool ended)
@@ -276,12 +223,24 @@ internal sealed class CabacEngine
       contexts[cbfCtx] = Transition[(context << 1) | lps];
 
       if (bits < 8)
-        while (bits < 32)
+      {
+        if (bytePos + 4 <= length)
         {
-          low = (low << 8) | (bytePos < length ? data[bytePos] : (byte)0);
-          bytePos++;
-          bits += 8;
+          low = (low << 32) | System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(
+            data.AsSpan(bytePos));
+          bytePos += 4;
+          bits += 32;
         }
+        else
+        {
+          while (bits < 32)
+          {
+            low = (low << 8) | (bytePos < length ? data[bytePos] : (byte)0);
+            bytePos++;
+            bits += 8;
+          }
+        }
+      }
 
       var shift = BitOperations.LeadingZeroCount((uint)range) - 23;
       range <<= shift;
@@ -315,12 +274,24 @@ internal sealed class CabacEngine
       contexts[ctxIdx] = Transition[(context << 1) | lps];
 
       if (bits < 8)
-        while (bits < 32)
+      {
+        if (bytePos + 4 <= length)
         {
-          low = (low << 8) | (bytePos < length ? data[bytePos] : (byte)0);
-          bytePos++;
-          bits += 8;
+          low = (low << 32) | System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(
+            data.AsSpan(bytePos));
+          bytePos += 4;
+          bits += 32;
         }
+        else
+        {
+          while (bits < 32)
+          {
+            low = (low << 8) | (bytePos < length ? data[bytePos] : (byte)0);
+            bytePos++;
+            bits += 8;
+          }
+        }
+      }
 
       var shift = BitOperations.LeadingZeroCount((uint)range) - 23;
       range <<= shift;
@@ -346,12 +317,24 @@ internal sealed class CabacEngine
       contexts[ctxIdx] = Transition[(context << 1) | lps];
 
       if (bits < 8)
-        while (bits < 32)
+      {
+        if (bytePos + 4 <= length)
         {
-          low = (low << 8) | (bytePos < length ? data[bytePos] : (byte)0);
-          bytePos++;
-          bits += 8;
+          low = (low << 32) | System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(
+            data.AsSpan(bytePos));
+          bytePos += 4;
+          bits += 32;
         }
+        else
+        {
+          while (bits < 32)
+          {
+            low = (low << 8) | (bytePos < length ? data[bytePos] : (byte)0);
+            bytePos++;
+            bits += 8;
+          }
+        }
+      }
 
       shift = BitOperations.LeadingZeroCount((uint)range) - 23;
       range <<= shift;
@@ -371,12 +354,7 @@ internal sealed class CabacEngine
     return count;
   }
 
-  /// <summary>
-  /// Every coefficient's magnitude and sign for one block, decoded backwards along the scan. The
-  /// escape spills to the fields rather than staying in registers: only levels past fifteen reach
-  /// it, and it is a whole coding tree of its own.
-  /// </summary>
-  public void DecodeLevelRun(
+  public int DecodeLevelRun(
     int oneBase, int absBase, int cap, int prefixLimit, int escapeLimit,
     Span<int> levels, int count)
   {
@@ -389,6 +367,8 @@ internal sealed class CabacEngine
 
     var contexts = _contexts;
 
+    var emit = !levels.IsEmpty;
+    var sum = 0;
     var beyond = 0;
     var exactly = 0;
 
@@ -411,12 +391,24 @@ internal sealed class CabacEngine
       contexts[oneCtx] = Transition[(context << 1) | lps];
 
       if (bits < 8)
-        while (bits < 32)
+      {
+        if (bytePos + 4 <= length)
         {
-          low = (low << 8) | (bytePos < length ? data[bytePos] : (byte)0);
-          bytePos++;
-          bits += 8;
+          low = (low << 32) | System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(
+            data.AsSpan(bytePos));
+          bytePos += 4;
+          bits += 32;
         }
+        else
+        {
+          while (bits < 32)
+          {
+            low = (low << 8) | (bytePos < length ? data[bytePos] : (byte)0);
+            bytePos++;
+            bits += 8;
+          }
+        }
+      }
 
       var shift = BitOperations.LeadingZeroCount((uint)range) - 23;
       range <<= shift;
@@ -446,12 +438,24 @@ internal sealed class CabacEngine
           held = Transition[(context << 1) | lps];
 
           if (bits < 8)
-            while (bits < 32)
+          {
+            if (bytePos + 4 <= length)
             {
-              low = (low << 8) | (bytePos < length ? data[bytePos] : (byte)0);
-              bytePos++;
-              bits += 8;
+              low = (low << 32) | System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(
+                data.AsSpan(bytePos));
+              bytePos += 4;
+              bits += 32;
             }
+            else
+            {
+              while (bits < 32)
+              {
+                low = (low << 8) | (bytePos < length ? data[bytePos] : (byte)0);
+                bytePos++;
+                bits += 8;
+              }
+            }
+          }
 
           shift = BitOperations.LeadingZeroCount((uint)range) - 23;
           range <<= shift;
@@ -487,31 +491,41 @@ internal sealed class CabacEngine
       }
 
       if (bits < 1)
-        while (bits < 32)
+      {
+        if (bytePos + 4 <= length)
         {
-          low = (low << 8) | (bytePos < length ? data[bytePos] : (byte)0);
-          bytePos++;
-          bits += 8;
+          low = (low << 32) | System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(
+            data.AsSpan(bytePos));
+          bytePos += 4;
+          bits += 32;
         }
+        else
+        {
+          while (bits < 32)
+          {
+            low = (low << 8) | (bytePos < length ? data[bytePos] : (byte)0);
+            bytePos++;
+            bits += 8;
+          }
+        }
+      }
 
       bits--;
       scaled = (long)range << bits;
       var below = (low - scaled) >> 63;
       low -= scaled & ~below;
 
-      levels[n] = below < 0 ? level : -level;
+      sum += level;
+      if (emit) levels[n] = below < 0 ? level : -level;
     }
 
     _low = low;
     _bits = bits;
     _range = range;
     _bytePos = bytePos;
+    return sum;
   }
 
-  /// <summary>
-  /// A flag on one context and, when it is clear, a fixed-width field on a second, lowest bin first.
-  /// Returns -1 when the flag is set and the field is therefore absent.
-  /// </summary>
   public int DecodeFlagOrField(int flagCtx, int fieldCtx, int width)
   {
     var low = _low;
@@ -524,7 +538,6 @@ internal sealed class CabacEngine
 
     var field = 0;
 
-    // Negative while the flag itself is being read, and the field's bit position after that.
     var at = -1;
     var held = contexts[flagCtx];
 
@@ -544,12 +557,24 @@ internal sealed class CabacEngine
       held = Transition[(context << 1) | lps];
 
       if (bits < 8)
-        while (bits < 32)
+      {
+        if (bytePos + 4 <= length)
         {
-          low = (low << 8) | (bytePos < length ? data[bytePos] : (byte)0);
-          bytePos++;
-          bits += 8;
+          low = (low << 32) | System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(
+            data.AsSpan(bytePos));
+          bytePos += 4;
+          bits += 32;
         }
+        else
+        {
+          while (bits < 32)
+          {
+            low = (low << 8) | (bytePos < length ? data[bytePos] : (byte)0);
+            bytePos++;
+            bits += 8;
+          }
+        }
+      }
 
       var shift = BitOperations.LeadingZeroCount((uint)range) - 23;
       range <<= shift;
@@ -587,11 +612,6 @@ internal sealed class CabacEngine
     return field;
   }
 
-  /// <summary>
-  /// What a level past its unary prefix carries: a run of ones widening the field that follows, then
-  /// the field itself. Both halves are bypass, so the run is walked on a copy of the register and the
-  /// field comes out in one batch rather than a bin at a time.
-  /// </summary>
   public int DecodeBypassExpGolomb(int limit)
   {
     var width = DecodeBypassUnary(limit);
@@ -607,18 +627,11 @@ internal sealed class CabacEngine
 
     var scaled = (long)_range << _bits;
 
-    // All ones while the offset stays below the range, which is the zero bin.
     var below = (_low - scaled) >> 63;
     _low -= scaled & ~below;
     return (int)(~below & 1);
   }
 
-  /// <summary>
-  /// Counts leading one bins, stopping at the first zero or at <paramref name="limit"/>. A unary
-  /// prefix cannot be batched the way a fixed-width field can, because reading past its terminator
-  /// would consume bins the next element owns. But the bins are a function of the register, so the
-  /// walk runs on a copy of it and only the bins actually spent are taken.
-  /// </summary>
   public int DecodeBypassUnary(int limit)
   {
     if (_bits < limit) Fill(limit + 8);
@@ -641,14 +654,6 @@ internal sealed class CabacEngine
     return count;
   }
 
-  /// <summary>
-  /// A Golomb-Rice code: a unary prefix, then a fixed field whose width the prefix decides. Both
-  /// halves are bypass and both come out of the same register, so taking them together spares an
-  /// entry into the engine and the state that would go back to fields between them - which is worth
-  /// having on a code every coefficient past its threshold pays.
-  ///
-  /// Returns -1 when the prefix runs past <paramref name="limit"/>, meaning CABAC has lost sync.
-  /// </summary>
   public int DecodeBypassRice(int rice, int limit)
   {
     if (_bits < limit) Fill(limit + 8);
@@ -671,8 +676,6 @@ internal sealed class CabacEngine
 
     if (prefix >= limit) return -1;
 
-    // Past the third prefix the code switches from one value per step to a doubling range, which is
-    // what the suffix widens to carry.
     var suffix = prefix <= 3 ? rice : prefix - 3 + rice;
     var value = prefix <= 3 ? prefix << rice : ((1 << (prefix - 3)) + 2) << rice;
 
@@ -691,17 +694,10 @@ internal sealed class CabacEngine
     return (value << count) | DecodeBypassBatch(count);
   }
 
-  /// <summary>Bounded so the shifted range stays well inside a long.</summary>
   private const int MaxBypassBatch = 16;
 
   private const int ReciprocalShift = 40;
 
-  /// <summary>
-  /// A reciprocal of every range the decoder can hold, so the long division a bypass batch is takes
-  /// a multiply instead. The range is nine bits and a batch at most sixteen, so the quotient and the
-  /// range multiply out to thirty-four - well inside what this reciprocal is exact over, which is
-  /// what lets it stand in for the division rather than approximate it.
-  /// </summary>
   private static readonly ulong[] RangeReciprocal = BuildReciprocals();
 
   private static ulong[] BuildReciprocals()
@@ -712,15 +708,6 @@ internal sealed class CabacEngine
     return table;
   }
 
-  /// <summary>
-  /// Doubling a remainder, comparing it against a fixed divisor and subtracting when it fits is
-  /// long division, and the range is fixed across a bypass run - so the bins are the quotient of
-  /// the offset by the range at the scale the run ends on, and the offset keeps the remainder.
-  ///
-  /// Dividing by the scaled range is dividing by the range and then by a power of two, and the
-  /// power of two is a shift - which leaves a nine-bit divisor, small enough to have its reciprocal
-  /// waiting in a table.
-  /// </summary>
   private uint DecodeBypassBatch(int count)
   {
     if (count == 0) return 0;
@@ -733,19 +720,8 @@ internal sealed class CabacEngine
     return bins;
   }
 
-  /// <summary>
-  /// Where raw samples begin, for the one macroblock kind that carries them uncoded. The engine
-  /// reads ahead, so the stream has only really been consumed as far as the whole bytes still
-  /// sitting behind the offset allow - and the bits past that byte are the alignment padding,
-  /// which is discarded rather than examined.
-  /// </summary>
   public int Suspend() => _bytePos - (_bits >> 3);
 
-  /// <summary>
-  /// Picks the stream back up at a byte boundary. Only the arithmetic decoder restarts: the
-  /// context states carry across, since raw samples teach them nothing but do not unlearn what
-  /// the macroblocks before them did.
-  /// </summary>
   public void Resume(int bytePos)
   {
     _bytePos = bytePos;
@@ -764,11 +740,6 @@ internal sealed class CabacEngine
     return 0;
   }
 
-  /// <summary>
-  /// The range is at most nine bits, so the leading zero count says directly how far it is from the
-  /// 256 the decoder renormalises up to - and scaling the range up by that much is the same as
-  /// saying the offset holds that many fewer bits behind it.
-  /// </summary>
   private void Renormalize()
   {
     if (_bits < 8) Fill(32);
@@ -778,12 +749,16 @@ internal sealed class CabacEngine
     _bits -= shift;
   }
 
-  /// <summary>
-  /// Reads past the end of the slice as zeros. A truncated NAL then decodes as garbage rather
-  /// than throwing, which suits a preview: a partial image beats no image.
-  /// </summary>
   private void Fill(int need)
   {
+    if (_bits <= 16 && _bytePos + 4 <= _length)
+    {
+      _low = (_low << 32) | System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(
+        _data.AsSpan(_bytePos));
+      _bytePos += 4;
+      _bits += 32;
+    }
+
     while (_bits < need)
     {
       var next = _bytePos < _length ? _data[_bytePos] : (byte)0;

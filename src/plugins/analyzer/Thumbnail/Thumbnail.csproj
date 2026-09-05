@@ -5,6 +5,9 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../../Shared.Models/Shared.Models.csproj" />
+    <ProjectReference Include="../../shared/Utils/Utils.csproj" />
+    <ProjectReference Include="../../shared/H264/H264.csproj" />
+    <ProjectReference Include="../../shared/H265/H265.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="BitMiracle.LibJpeg.NET" />

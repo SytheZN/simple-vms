@@ -46,9 +46,9 @@
 // table. Row k is coefficient k's contribution to each output sample, scaled by
 // BasisScale to clear the halves the shifts introduce.
 
-namespace Shared.Models.Formats;
+namespace H264;
 
-public static class H264ResidualTables
+public static class ResidualTables
 {
   public static readonly byte[][] Intra4x4Windows =
   [

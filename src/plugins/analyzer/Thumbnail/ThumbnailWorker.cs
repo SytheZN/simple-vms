@@ -6,10 +6,6 @@ using Shared.Models.Formats;
 
 namespace Analyzer.Thumbnail;
 
-/// <summary>
-/// Decoding starts on first read rather than on construction, because the host probes
-/// StartStreamAsync at construct time and cancels it immediately.
-/// </summary>
 internal sealed class ThumbnailWorker : IDataStream<JpegUnit>, IAsyncDisposable
 {
   private readonly Guid _cameraId;
@@ -51,11 +47,6 @@ internal sealed class ThumbnailWorker : IDataStream<JpegUnit>, IAsyncDisposable
     SeedParameterSets(input.Info.FormatParameters);
   }
 
-  /// <summary>
-  /// The fan-out clears its GOP cache on the sync point, so a subscriber's first unit is the
-  /// keyframe with any preceding in-band parameter sets already dropped. The SDP copy is the only
-  /// one guaranteed to be there before the first decode.
-  /// </summary>
   private void SeedParameterSets(object? formatParameters)
   {
     switch (formatParameters)

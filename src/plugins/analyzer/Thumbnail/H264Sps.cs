@@ -1,5 +1,4 @@
-using Shared.Models.Formats;
-using static Shared.Models.Formats.BitstreamHelpers;
+using static Utils.BitstreamHelpers;
 
 namespace Analyzer.Thumbnail;
 
@@ -17,7 +16,6 @@ internal sealed record H264Sps
   public required bool DeltaPicOrderAlwaysZero { get; init; }
   public required bool FrameMbsOnly { get; init; }
 
-  /// <summary>Null when the sequence signals no matrix, which is not the same as a flat one.</summary>
   public required H264ScalingMatrix? ScalingMatrix { get; init; }
 
   private static readonly byte[] ExtendedProfiles =

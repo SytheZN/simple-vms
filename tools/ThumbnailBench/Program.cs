@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using Analyzer.Thumbnail;
 using ThumbnailBench;
+using Utils;
 
 CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
 

@@ -29,9 +29,9 @@
 
 // Source: https://raw.githubusercontent.com/cisco/openh264/master/codec/common/src/common_tables.cpp
 
-namespace Shared.Models.Formats;
+namespace H264;
 
-public static class H264CabacContextInitTables
+public static class CabacContextInitTables
 {
   public const int CtxCount = 460;
 

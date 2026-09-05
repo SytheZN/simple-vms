@@ -1,22 +1,13 @@
-using Shared.Models.Formats;
-using static Shared.Models.Formats.BitstreamHelpers;
+using static Utils.BitstreamHelpers;
 
 namespace Analyzer.Thumbnail;
 
-/// <summary>
-/// Parsed as far as strong_intra_smoothing_enabled_flag. Everything between it and the PCM
-/// parameters is about inter prediction, but it has to be walked to reach the flag.
-/// </summary>
 internal sealed record H265Sps
 {
   public required uint Id { get; init; }
   public required int Width { get; init; }
   public required int Height { get; init; }
 
-  /// <summary>
-  /// Uncropped picture size. The conformance window shapes what is displayed; the coding quadtree
-  /// and CTB raster are defined over the coded size, so boundary decisions must use these.
-  /// </summary>
   public required int CodedWidth { get; init; }
   public required int CodedHeight { get; init; }
   public required byte ChromaFormatIdc { get; init; }
@@ -149,11 +140,6 @@ internal sealed record H265Sps
     };
   }
 
-  /// <summary>
-  /// Returns NumDeltaPocs for this set, which the next set needs if it predicts from this
-  /// one. Inside the SPS a set only ever predicts from its immediate predecessor, so
-  /// delta_idx_minus1 is absent.
-  /// </summary>
   private static int SkipShortTermRefPicSet(
     ReadOnlySpan<byte> data, ref int at, int index, ReadOnlySpan<int> deltaPocs)
   {

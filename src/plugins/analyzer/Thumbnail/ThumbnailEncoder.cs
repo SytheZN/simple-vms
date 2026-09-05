@@ -4,12 +4,6 @@ namespace Analyzer.Thumbnail;
 
 internal sealed record EncodedThumbnail(byte[] Data, ushort Width, ushort Height);
 
-/// <summary>
-/// Feeds libjpeg YCbCr directly, so no colour matrix is applied on the way in - the decoder's
-/// planes are already in the space JPEG stores.
-///
-/// One encoder serves one stream and is not safe to share between them.
-/// </summary>
 internal sealed class ThumbnailEncoder
 {
   private readonly MemoryStream _buffer = new();
@@ -37,7 +31,6 @@ internal sealed class ThumbnailEncoder
 
     _buffer.SetLength(0);
 
-    // libjpeg compresses many images through one object, with the destination re-pointed per image.
     _compressor.jpeg_stdio_dest(_buffer);
     _compressor.jpeg_start_compress(true);
     _compressor.jpeg_write_scanlines(_scanlines, height);
@@ -46,9 +39,6 @@ internal sealed class ThumbnailEncoder
     return new EncodedThumbnail(_buffer.ToArray(), (ushort)width, (ushort)height);
   }
 
-  /// <summary>
-  /// Quantisation and Huffman tables outlive the image they were built for.
-  /// </summary>
   private void Configure(int width, int height, int quality)
   {
     if (width == _compressor.Image_width && height == _compressor.Image_height
@@ -64,11 +54,6 @@ internal sealed class ThumbnailEncoder
     _compressor.jpeg_set_quality(quality, true);
   }
 
-  /// <summary>
-  /// Scales so the longest edge meets the bound, preserving aspect. Sources already inside the
-  /// bound are left alone rather than upscaled - the tile can stretch a small image itself
-  /// without paying for the pixels on the wire.
-  /// </summary>
   internal static (int Width, int Height) FitWithin(int width, int height, int bound)
   {
     var longest = Math.Max(width, height);
@@ -79,7 +64,6 @@ internal sealed class ThumbnailEncoder
             Math.Max(1, (int)Math.Round(height * scale)));
   }
 
-  /// <summary>Which source columns each output column averages, given the two sizes.</summary>
   private void Resize(DecodedFrame frame, int width, int height)
   {
     if (width == _width && height == _height
@@ -113,12 +97,6 @@ internal sealed class ThumbnailEncoder
     _reciprocal = new int[_widestColumn + 1];
   }
 
-  /// <summary>
-  /// Box-averages the luma plane into the target size while replicating chroma. The chroma ratio is
-  /// taken from the planes rather than assumed to be 2, since a decoder that reduces luma harder
-  /// than chroma hands over planes that are already the same size. Nearest-neighbour on chroma is
-  /// invisible once the image is this small.
-  /// </summary>
   private const int ReciprocalShift = 30;
 
   private void BuildScanlines(DecodedFrame frame, int width, int height)

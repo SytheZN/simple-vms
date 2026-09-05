@@ -1,5 +1,4 @@
-using Shared.Models.Formats;
-using static Shared.Models.Formats.BitstreamHelpers;
+using static Utils.BitstreamHelpers;
 
 namespace Analyzer.Thumbnail;
 
@@ -11,10 +10,6 @@ internal sealed record H265SliceHeader
   public required bool SaoChroma { get; init; }
   public required int BitOffset { get; init; }
 
-  /// <summary>
-  /// Only independent I slices are accepted. Dependent slice segments inherit state from a
-  /// preceding segment we would have to have decoded, and non-I slices need reference pictures.
-  /// </summary>
   public static H265SliceHeader? Parse(
     ReadOnlySpan<byte> rbsp, byte nalUnitType, H265Sps sps, H265Pps pps)
   {
@@ -25,7 +20,6 @@ internal sealed record H265SliceHeader
     if (!firstSliceInPic)
       return null;
 
-    // BLA_W_LP through CRA_NUT carry no_output_of_prior_pics_flag.
     if (nalUnitType is >= 16 and <= 23)
       Skip(ref at, 1);
 
@@ -46,7 +40,6 @@ internal sealed record H265SliceHeader
     if (!isIdr)
     {
       Skip(ref at, sps.Log2MaxPicOrderCntLsb);
-      // Any non-IDR IRAP still signals a short-term reference set we cannot parse cheaply.
       return null;
     }
 
@@ -91,9 +84,6 @@ internal sealed record H265SliceHeader
       }
     }
 
-    // byte_alignment(): one bit set to 1, then zeros to the byte boundary. Consuming the bit here
-    // lets the engine's own round-up land on the right byte even when this position was already
-    // aligned.
     at++;
 
     return new H265SliceHeader

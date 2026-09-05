@@ -1,4 +1,4 @@
-using static Shared.Models.Formats.BitstreamHelpers;
+using static Utils.BitstreamHelpers;
 
 namespace Tests.Unit.Formats;
 

@@ -7,13 +7,13 @@ Run from the project root:
 
 Downloads its sources from cisco/openh264 master into the script's own directory
 (gitignored), parses every numeric table, and writes four C# files into
-Shared.Models.Formats:
+src/plugins/shared/H264:
 
-  H264CavlcTables.cs                CAVLC lookup tables (H.264-only)
-  H264CabacArithmeticTables.cs      RangeTabLps / TransIdxLps / TransIdxMps
+  CavlcTables.cs                    CAVLC lookup tables
+  CabacArithmeticTables.cs          RangeTabLps / TransIdxLps / TransIdxMps
                                     (HEVC reuses this set verbatim)
-  H264CabacContextInitTables.cs     InitM / InitN per-context init slope/offset
-  H264ResidualTables.cs             zig-zag scans, 8x8 significance context maps,
+  CabacContextInitTables.cs         InitM / InitN per-context init slope/offset
+  ResidualTables.cs                 zig-zag scans, 8x8 significance context maps,
                                     block-category context offsets, dequant
                                     coefficients, default scaling lists, and the
                                     inverse transform basis
@@ -66,7 +66,7 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent.parent
-SHARED_FORMATS = REPO_ROOT / "src/Shared.Models/Formats"
+SHARED_FORMATS = REPO_ROOT / "src/plugins/shared/H264"
 
 CAVLC_SRC = SCRIPT_DIR / "decoder_data_tables.cpp"
 CABAC_SRC = SCRIPT_DIR / "common_tables.cpp"
@@ -74,10 +74,10 @@ BASIS_SRC = SCRIPT_DIR / "wels_common_basis.h"
 SYNTAX_SRC = SCRIPT_DIR / "parse_mb_syn_cabac.cpp"
 IDCT_SRC = SCRIPT_DIR / "decode_mb_aux.cpp"
 PRED_SRC = SCRIPT_DIR / "get_intra_predictor.cpp"
-OUT_CAVLC = SHARED_FORMATS / "H264CavlcTables.cs"
-OUT_ARITH = SHARED_FORMATS / "H264CabacArithmeticTables.cs"
-OUT_CINIT = SHARED_FORMATS / "H264CabacContextInitTables.cs"
-OUT_RESID = SHARED_FORMATS / "H264ResidualTables.cs"
+OUT_CAVLC = SHARED_FORMATS / "CavlcTables.cs"
+OUT_ARITH = SHARED_FORMATS / "CabacArithmeticTables.cs"
+OUT_CINIT = SHARED_FORMATS / "CabacContextInitTables.cs"
+OUT_RESID = SHARED_FORMATS / "ResidualTables.cs"
 
 UPSTREAM = "https://raw.githubusercontent.com/cisco/openh264/master/codec/"
 CAVLC_URL = UPSTREAM + "decoder/core/src/decoder_data_tables.cpp"
@@ -395,9 +395,11 @@ def main():
     "rb": [extract(cavlc_src, f"g_kuiZeroLeftTable{i}") for i in range(7)],
     "rbbw_full": extract(cavlc_src, "g_kuiZeroLeftBitNumMap"),
     "cbpintra": extract(cavlc_src, "g_kuiIntra4x4CbpTable"),
+    "cbpinter": extract(cavlc_src, "g_kuiInterCbpTable"),
   }
 
   assert len(cv["cbpintra"]) == 48, "intra coded block pattern mapping"
+  assert len(cv["cbpinter"]) == 48, "inter coded block pattern mapping"
 
   range_lps = extract(cabac_src, "g_kuiCabacRangeLps")
   state_trans = extract(cabac_src, "g_kuiStateTransTable")
@@ -567,9 +569,9 @@ def main():
     "// table. Row k is coefficient k's contribution to each output sample, scaled by",
     "// BasisScale to clear the halves the shifts introduce.",
     "",
-    "namespace Shared.Models.Formats;",
+    "namespace H264;",
     "",
-    "public static class H264ResidualTables",
+    "public static class ResidualTables",
     "{",
     fmt_jagged("Intra4x4Windows", "byte", rs["windows"], 4, "  "),
     "",
@@ -630,9 +632,9 @@ def main():
     "",
     f"// Source: {CAVLC_URL}",
     "",
-    "namespace Shared.Models.Formats;",
+    "namespace H264;",
     "",
-    "public static class H264CavlcTables",
+    "public static class CavlcTables",
     "{",
     fmt_pairs_flat("CoeffTokenChromaDc", "Symbol", "Length", cv["chroma"], 16, "  "),
     "",
@@ -674,6 +676,8 @@ def main():
     fmt_byte_array("RunBeforeBitWidths", [1, 2, 2, 3, 3, 3, 3], 7, "  "),
     "",
     fmt_byte_array("Intra4x4CbpTable", cv["cbpintra"], 16, "  "),
+    "",
+    fmt_byte_array("Inter4x4CbpTable", cv["cbpinter"], 16, "  "),
     "}",
     "",
   ]
@@ -700,9 +704,9 @@ def main():
     "",
     f"// Source: {CABAC_URL}",
     "",
-    "namespace Shared.Models.Formats;",
+    "namespace H264;",
     "",
-    "public static class H264CabacArithmeticTables",
+    "public static class CabacArithmeticTables",
     "{",
     fmt_byte_2d("RangeTabLps", range_lps, "  "),
     "",
@@ -721,9 +725,9 @@ def main():
     "",
     f"// Source: {CABAC_URL}",
     "",
-    "namespace Shared.Models.Formats;",
+    "namespace H264;",
     "",
-    "public static class H264CabacContextInitTables",
+    "public static class CabacContextInitTables",
     "{",
     "  public const int CtxCount = 460;",
     "",

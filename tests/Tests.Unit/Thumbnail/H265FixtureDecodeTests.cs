@@ -257,7 +257,7 @@ public class H265FixtureDecodeTests
     var pps = H265Pps.Parse(nals.First(n => NalType(n) == 34));
     var slice = nals.Last(n => !IsParameterSet(n));
     var header = H265SliceHeader.Parse(
-      Shared.Models.Formats.BitstreamHelpers.ExtractRbsp(slice), NalType(slice), sps, pps);
+      Utils.BitstreamHelpers.ExtractRbsp(slice), NalType(slice), sps, pps);
 
     Assert.Multiple(() =>
     {

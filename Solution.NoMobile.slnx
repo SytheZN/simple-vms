@@ -9,6 +9,11 @@
   <Project Path="src/Server.Recording/Server.Recording.csproj" />
   <Project Path="src/Server.Tunnel/Server.Tunnel.csproj" />
   <Project Path="src/Server.Plugins/Server.Plugins.csproj" />
+  <Folder Name="/plugins/shared/">
+    <Project Path="src/plugins/shared/Utils/Utils.csproj" />
+    <Project Path="src/plugins/shared/H264/H264.csproj" />
+    <Project Path="src/plugins/shared/H265/H265.csproj" />
+  </Folder>
   <Folder Name="/plugins/capture/">
     <Project Path="src/plugins/capture/Rtsp/Rtsp.csproj" />
   </Folder>

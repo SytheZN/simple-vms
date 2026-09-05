@@ -15,9 +15,9 @@ public sealed partial class ThumbnailPlugin : IPluginSettings
   private const int MinSize = 16;
   private const int MaxSize = 1920;
 
-  internal int Size => ReadInt(SizeKey, DefaultSize);
-  internal int Quality => ReadInt(QualityKey, DefaultQuality);
-  internal ulong IntervalMicros => (ulong)ReadInt(IntervalKey, DefaultInterval) * 1_000_000UL;
+  internal int Size => _cachedSize;
+  internal int Quality => _cachedQuality;
+  internal ulong IntervalMicros => (ulong)_cachedInterval * 1_000_000UL;
 
   public IReadOnlyList<SettingGroup> GetSchema() =>
   [
@@ -90,7 +90,16 @@ public sealed partial class ThumbnailPlugin : IPluginSettings
       if (key is SizeKey or QualityKey or IntervalKey)
         _config.Set(key, value);
 
+    RefreshCachedSettings();
+
     return new Success();
+  }
+
+  private void RefreshCachedSettings()
+  {
+    _cachedSize = ReadInt(SizeKey, DefaultSize);
+    _cachedQuality = ReadInt(QualityKey, DefaultQuality);
+    _cachedInterval = ReadInt(IntervalKey, DefaultInterval);
   }
 
   private static OneOf<Success, Error> ValidateRange(string key, string value, int min, int max) =>

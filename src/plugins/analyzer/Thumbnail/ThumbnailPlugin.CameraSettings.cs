@@ -43,10 +43,6 @@ public sealed partial class ThumbnailPlugin : IPluginCameraSettings
     ];
   }
 
-  /// <summary>
-  /// Reports the effective source rather than the stored one, so a value naming a stream the
-  /// camera no longer exposes does not surface as a selection the schema has no option for.
-  /// </summary>
   public IReadOnlyDictionary<string, string> GetValues(Guid cameraId)
   {
     var camera = LoadCamera(cameraId);

@@ -8,9 +8,9 @@ Run from the project root:
 Downloads HM ContextTables.h into the script's own directory (gitignored),
 parses every per-syntax-element INIT_* array, and writes one C# file:
 
-  src/Shared.Models/Formats/H265CabacContextInitTables.cs
+  src/plugins/shared/H265/CabacContextInitTables.cs
 
-HEVC reuses H264CabacArithmeticTables.cs for the state-machine tables
+HEVC reuses the H264 project's CabacArithmeticTables.cs for the state-machine tables
 (RangeTabLps / TransIdxLps / TransIdxMps); only the per-context init
 values differ from H.264.
 
@@ -34,8 +34,8 @@ ROM_SRC = SCRIPT_DIR / "TComRom.cpp"
 PRED_SRC = SCRIPT_DIR / "TComPrediction.cpp"
 TRQUANT_SRC = SCRIPT_DIR / "TComTrQuant.cpp"
 ROM_HDR = SCRIPT_DIR / "TComRom.h"
-OUT_CINIT = REPO_ROOT / "src/Shared.Models/Formats/H265CabacContextInitTables.cs"
-OUT_ROM = REPO_ROOT / "src/Shared.Models/Formats/H265ResidualTables.cs"
+OUT_CINIT = REPO_ROOT / "src/plugins/shared/H265/CabacContextInitTables.cs"
+OUT_ROM = REPO_ROOT / "src/plugins/shared/H265/ResidualTables.cs"
 
 # Tables the residual parser needs to select contexts and reconstruct the last-significant
 # position. Reconstruction-only constants (chroma QP mapping) are approximated instead.
@@ -278,9 +278,9 @@ def main():
     "",
     f"// Source: {HM_URL}",
     "",
-    "namespace Shared.Models.Formats;",
+    "namespace H265;",
     "",
-    "public static class H265CabacContextInitTables",
+    "public static class CabacContextInitTables",
     "{",
     "  public const int CtxCount = 256;",
     "  public const int InitTypeCount = 3;",
@@ -387,9 +387,9 @@ def write_rom_tables():
     "",
     f"// Source: {ROM_URL}",
     "",
-    "namespace Shared.Models.Formats;",
+    "namespace H265;",
     "",
-    "public static class H265ResidualTables",
+    "public static class ResidualTables",
     "{",
     "\n\n".join(members),
     "}",

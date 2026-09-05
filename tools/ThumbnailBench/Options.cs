@@ -11,7 +11,6 @@ internal sealed record Options(
 {
   private const string DefaultVariant = "h265";
 
-  /// <summary>Each names both a decoder and the fixture extension that feeds it.</summary>
   private static readonly string[] Variants = ["h265", "h264b", "h264m", "h264h"];
 
   public static Options? Parse(string[] args)
@@ -40,7 +39,7 @@ internal sealed record Options(
       }
     }
 
-    var fallback = $"debug/data/keyframe-bench.{variant}";
+    var fallback = $"debug/keyframe-bench.{variant}";
     frame ??= Locate(fallback);
     if (frame == null)
     {
@@ -74,7 +73,7 @@ internal sealed record Options(
     Console.Error.WriteLine(
       $"  --codec <variant> one of {string.Join('|', Variants)} (default: {DefaultVariant})");
     Console.Error.WriteLine(
-      "  --frame <path>    annex-b keyframe (default: debug/data/keyframe-bench.<variant>)");
+      "  --frame <path>    annex-b keyframe (default: ../../debug/keyframe-bench.<variant>)");
     Console.Error.WriteLine("  --bound <px>      thumbnail bounding size (default: 240)");
     Console.Error.WriteLine("  --quality <1-100> jpeg quality (default: 70)");
     Console.Error.WriteLine("  --iterations <n>  measured iterations (default: 50)");

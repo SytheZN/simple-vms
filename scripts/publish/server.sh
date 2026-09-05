@@ -18,6 +18,7 @@ rm -rf "$OUT_DIR/server"
 dotnet publish "$SOLUTION_DIR/src/Server/Server.csproj" -c Release -o "$OUT_DIR/server" "${RID_ARGS[@]}" "${VERSION_ARGS[@]}"
 
 for proj in "$SOLUTION_DIR"/src/plugins/*/*/*.csproj; do
+  case "$proj" in */src/plugins/shared/*) continue ;; esac
   name="$(basename "$(dirname "$proj")")"
   dotnet publish "$proj" -c Release -o "$OUT_DIR/server/plugins/$name" "${VERSION_ARGS[@]}"
 done

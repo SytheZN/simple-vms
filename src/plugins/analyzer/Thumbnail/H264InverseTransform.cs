@@ -32,75 +32,35 @@
 //     ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 //     POSSIBILITY OF SUCH DAMAGE.
 
-using Shared.Models.Formats;
-
 namespace Analyzer.Thumbnail;
 
 internal static class H264InverseTransform
 {
-  /// <summary>
-  /// What the transform hands back: the two edges a later block predicts from, at coded
-  /// resolution, and the block's average over each output sample.
-  /// </summary>
   internal readonly struct Workspace
   {
     public required int[] Bottom { get; init; }
     public required int[] Right { get; init; }
     public required int[] Cells { get; init; }
 
-    /// <summary>Null in production. The passes are too short to separate from outside.</summary>
-    public IReconstructionObserver? Observer { get; init; }
+    public IObserverHarness<ReconstructionPhase>? Observer { get; init; }
   }
 
-  /// <summary>
-  /// Each dimension's basis is scaled by two to clear the halves the butterfly's shifts stand for,
-  /// so a two-dimensional result carries four times the scale and the residual's own rounding
-  /// shift absorbs it.
-  /// </summary>
   private const int Shift = 8;
   private const int Rounding = 1 << (Shift - 1);
 
-  /// <summary>The shift the residual alone takes, which is all a cell needs.</summary>
   private const int CellShift = 6;
   private const int CellRounding = 1 << (CellShift - 1);
 
-  /// <summary>
-  /// Undoes what a flat scaling list contributes to <see cref="H264Dequant"/>, which carries every
-  /// matrix in the same scaled form so that only one of these exists.
-  /// </summary>
   private const int ScaleRounding = 1 << (H264Dequant.Shift - 1);
 
-  /// <summary>
-  /// The two-by-two chroma transform has no shift of its own, so its only one is the scale's - and
-  /// the halving that pairs with a transform this small.
-  /// </summary>
   private const int ChromaDirectShift = H264Dequant.Shift + 1;
 
-  /// <summary>
-  /// The 8x8 basis is scaled by eight rather than two, so a two-dimensional result carries
-  /// sixty-four times the scale over the residual's own shift.
-  /// </summary>
   private const int Shift8 = 12;
   private const int Rounding8 = 1 << (Shift8 - 1);
 
-  /// <summary>
-  /// A cell spans four samples along each edge of the block, which is four bits more again.
-  /// </summary>
   private const int CellShift8 = 16;
   private const int CellRounding8 = 1 << (CellShift8 - 1);
 
-  /// <summary>
-  /// Turns decoded levels into the block's last row and last column at full resolution, and its
-  /// average over the single output sample a 4x4 covers.
-  ///
-  /// Neither edge needs the block formed. Projecting the coefficients onto the last row once
-  /// leaves a four-entry stage that a second pass turns into the row itself, and the last column is
-  /// the same walk transposed - which is what makes the cost follow how many coefficients there
-  /// are rather than how big the block is.
-  ///
-  /// The average needs even less. Every basis function but the first sums to zero over the block,
-  /// so all of them cancel and the average is the direct coefficient alone.
-  /// </summary>
   public static void Apply4x4(
     in Workspace work, ReadOnlySpan<ushort> occupied, ReadOnlySpan<int> levels,
     int direct, ReadOnlySpan<int> dequant)
@@ -108,12 +68,10 @@ internal static class H264InverseTransform
     var observer = work.Observer;
     observer?.Begin(ReconstructionPhase.Samples);
 
-    var basis = H264ResidualTables.Basis4;
+    var basis = H264.ResidualTables.Basis4;
     Span<int> alongRow = stackalloc int[4];
     Span<int> downColumn = stackalloc int[4];
 
-    // Every position a coefficient landed on, folded together. Each stage is indexed by a half of
-    // it, so its highest occupied entry follows without comparing anything per coefficient.
     var reach = 0;
 
     if (direct != 0)
@@ -159,11 +117,6 @@ internal static class H264InverseTransform
     observer?.End(ReconstructionPhase.Samples);
   }
 
-  /// <summary>
-  /// The 4x4 transform where the block covers the whole prediction, which is every Intra_4x4 block.
-  /// Each edge sample is folded into the prediction as it is formed, so the residual never reaches
-  /// the staging buffers the other kinds need to place theirs from.
-  /// </summary>
   public static void Combine4x4(
     in H264Workspace work, ReadOnlySpan<ushort> occupied, ReadOnlySpan<int> levels,
     ReadOnlySpan<int> dequant)
@@ -171,7 +124,7 @@ internal static class H264InverseTransform
     var observer = work.Observer;
     observer?.Begin(ReconstructionPhase.Samples);
 
-    var basis = H264ResidualTables.Basis4;
+    var basis = H264.ResidualTables.Basis4;
     Span<int> alongRow = stackalloc int[4];
     Span<int> downColumn = stackalloc int[4];
 
@@ -215,15 +168,6 @@ internal static class H264InverseTransform
     observer?.End(ReconstructionPhase.Samples);
   }
 
-  /// <summary>
-  /// The 8x8 transform, producing the same three things the 4x4 one does. Two differences follow
-  /// from the size: an 8x8 spans four output samples rather than one, and its average over one of
-  /// them is no longer the direct coefficient alone - a basis function that changes sign inside
-  /// the block still averages to nothing over the whole of it, but not over a quarter of it.
-  ///
-  /// The scale also carries the octave of the quantiser rather than having it folded into the
-  /// table, which is how the 8x8 scales are stated upstream.
-  /// </summary>
   public static void Apply8x8(
     in Workspace work, ReadOnlySpan<ushort> occupied, ReadOnlySpan<int> levels,
     int qp, ReadOnlySpan<int> dequant)
@@ -231,7 +175,7 @@ internal static class H264InverseTransform
     var observer = work.Observer;
     observer?.Begin(ReconstructionPhase.Edge);
 
-    var basis = H264ResidualTables.Basis8;
+    var basis = H264.ResidualTables.Basis8;
     var octave = qp / 6;
     var raise = qp >= 36;
     var shift = raise ? octave - 6 : 6 - octave;
@@ -257,8 +201,6 @@ internal static class H264InverseTransform
       downColumn[vertical] += value * basis[horizontal][7];
       reach |= at;
 
-      // Which half of the block a frequency lands in differs only by the sign the odd ones take,
-      // so keeping the two parities apart settles both halves from one accumulation.
       if ((vertical & 1) == 0)
         cellEven[horizontal] += value * Half[vertical];
       else
@@ -306,11 +248,6 @@ internal static class H264InverseTransform
     observer?.End(ReconstructionPhase.Cells);
   }
 
-  /// <summary>
-  /// What each frequency contributes to the mean over half the block, which is the span of one
-  /// output sample. Derived from the basis rather than stated, since three of the eight change
-  /// sign twice within a half and so contribute nothing to it at all.
-  /// </summary>
   private static readonly int[] Half = BuildHalf();
 
   private static int[] BuildHalf()
@@ -318,15 +255,11 @@ internal static class H264InverseTransform
     var half = new int[8];
     for (var k = 0; k < 8; k++)
       for (var n = 0; n < 4; n++)
-        half[k] += H264ResidualTables.Basis8[k][n];
+        half[k] += H264.ResidualTables.Basis8[k][n];
 
     return half;
   }
 
-  /// <summary>
-  /// The separate transform an Intra_16x16 macroblock's sixteen direct terms are coded through,
-  /// leaving each 4x4 block the one coefficient it does not carry itself.
-  /// </summary>
   public static void LumaDirect(Span<int> block, int scale)
   {
     Span<int> staged = stackalloc int[16];
@@ -359,7 +292,6 @@ internal static class H264InverseTransform
     }
   }
 
-  /// <summary>The same for a chroma component's four direct terms.</summary>
   public static void ChromaDirect(Span<int> block, int scale)
   {
     var sum = block[0] + block[1];
