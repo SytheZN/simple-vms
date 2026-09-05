@@ -20,6 +20,8 @@
     <ProjectReference Include="../../src/Server.Streaming/Server.Streaming.csproj" />
     <ProjectReference Include="../../src/plugins/format/Fmp4/Fmp4.csproj" />
     <ProjectReference Include="../../src/plugins/format/Mjpeg/Mjpeg.csproj" />
+    <ProjectReference Include="../../src/plugins/format/MotionGrid/MotionGrid.csproj" />
+    <ProjectReference Include="../../src/plugins/analyzer/MotionGridH26x/MotionGridH26x.csproj" />
     <ProjectReference Include="../../src/plugins/storage/Filesystem/Filesystem.csproj" />
     <ProjectReference Include="../../src/Server.Recording/Server.Recording.csproj" />
     <ProjectReference Include="../../src/Server.Api/Server.Api.csproj" />

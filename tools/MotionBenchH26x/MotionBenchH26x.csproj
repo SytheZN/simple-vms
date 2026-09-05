@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>MotionBenchH26x</RootNamespace>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/plugins/analyzer/MotionGridH26x/MotionGridH26x.csproj" />
+    <ProjectReference Include="../../src/plugins/format/Fmp4/Fmp4.csproj" />
+    <ProjectReference Include="../../src/Shared.Models/Shared.Models.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+</Project>
