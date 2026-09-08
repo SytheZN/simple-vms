@@ -15,11 +15,14 @@ First release of SimpleVMS (sVMS)!
 - Continuous recording with per-camera retention policies
 - Live and playback video with a scrubbable timeline
 - Camera events surfaced alongside the timeline
+- System events for configuration changes, enrollment, and recording state, shown alongside camera events
 - Per-stream storage breakdown showing size, duration, and rate
 - Web client with camera gallery, live and playback viewing, events, timeline, and settings
+- Gallery thumbnails decoded from camera keyframes
 - Native desktop apps for Windows, macOS, and Linux with system tray, gallery, camera view, and settings
 - Native Android app with background tunnel, encrypted credential storage, and QR enrollment
 - Hardware-accelerated video playback on every native platform
+- Motion detection shown as a live overlay on every client
 - Light and dark themes shared across web and native clients
 - Encrypted credential storage using each platform's secure store
 - Encrypted client-server connections with certificate pinning

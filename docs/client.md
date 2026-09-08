@@ -70,7 +70,7 @@ Reusable Avalonia controls shared across all platform layouts.
 | Control | Description |
 |---------|-------------|
 | `CameraGrid` | Configurable grid of camera thumbnails with drag-to-reorder |
-| `VideoPlayer` | Video surface backed by LibVLCSharp, handles live and playback |
+| `VideoPlayer` | Video surface backed by the FFmpeg decode pipeline, handles live and playback |
 | `Timeline` | Horizontal timeline bar with scrubbing, zoom, recording spans, event markers |
 | `QrScanner` | Viewfinder with QR detection (delegates to platform `IQrScannerService`) |
 | `StreamQualitySelector` | Dropdown/toggle for available stream profiles |
@@ -158,20 +158,21 @@ Tab bar navigation following iOS conventions.
 
 ## Video Playback
 
-Video playback uses LibVLCSharp with the Avalonia integration.
+Video playback uses an in-process FFmpeg decode pipeline under `Client.Core/Decoding`, rendering frames to the Avalonia surface via SkiaSharp.
 
 ### Live View
 
 1. `ILiveStreamService` opens a tunnel live subscribe stream (`0x0300`)
 2. Server sends init segment (`ftyp` + `moov`) followed by continuous fMP4 fragments
-3. Fragments are fed to LibVLC via a custom `MediaInput` stream
-4. LibVLC handles hardware-accelerated decode on the client device
+3. `Fmp4Demuxer` parses the init segment for codec parameters and splits fragments into samples
+4. FFmpeg decodes each sample, preferring a hardware device (Vulkan, VAAPI, D3D11, DXVA2, VideoToolbox, MediaCodec) and falling back to software decode
+5. `SkiaFrameRenderer` draws decoded frames onto the `VideoSurface`
 
 ### Playback
 
 1. `IPlaybackService` opens a tunnel playback stream (`0x0301`) with a target timestamp
 2. Server seeks to nearest keyframe, streams fMP4 from there
-3. Same LibVLC pipeline as live view
+3. Same decode pipeline as live view
 4. Seeking: close current stream, open new one with new timestamp (cheap - no additional handshake for new logical streams)
 
 ### Quality Selection

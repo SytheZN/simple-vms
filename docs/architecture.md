@@ -21,7 +21,7 @@ A network video management system designed for home and power users. It supports
 | Database | Pluggable via `IDataProvider` | Metadata, indexes, config |
 | Web UI | Vue.js 3 + Vite | Embedded SPA served by Kestrel |
 | Client framework | Avalonia UI | Shared core + per-platform shells |
-| Client video | LibVLCSharp | Hardware-accelerated decode on client devices |
+| Client video | FFmpeg + SkiaSharp | Hardware-accelerated decode with software fallback; frames rendered via Skia |
 | Secure transport | TCP + TLS 1.3 (SslStream) | Mutual TLS, multiplexed, single TCP port |
 
 ## System Topology

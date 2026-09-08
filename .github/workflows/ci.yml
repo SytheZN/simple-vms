@@ -498,6 +498,18 @@ jobs:
           path: out/android/
           merge-multiple: true
 
+      - name: Append version to asset names
+        run: |
+          version="${{ needs.build.outputs.version }}"
+          version="${version%%+*}"
+          for asset in out/simple-vms-*.tar.gz out/desktop/simple-vms-desktop-* out/android/simple-vms-android-*; do
+            [ -f "$asset" ] || continue
+            name="$(basename "$asset")"
+            ext="${name#*.}"
+            mv "$asset" "$(dirname "$asset")/${name%.$ext}-${version}.${ext}"
+          done
+          ls -R out
+
       - name: Create tagged release
         if: needs.build.outputs.is_tagged == 'true'
         run: |
@@ -519,10 +531,8 @@ jobs:
             --title "${version}"
             --notes-file release-notes.md
           )
-          if [ -f out/simple-vms-linux-x64.tar.gz ]; then
-            args+=(out/simple-vms-linux-x64.tar.gz)
-          fi
           for asset in \
+            out/simple-vms-linux-x64-*.tar.gz \
             out/desktop/simple-vms-desktop-*.dmg \
             out/desktop/simple-vms-desktop-*.AppImage \
             out/desktop/simple-vms-desktop-*.exe \
@@ -550,10 +560,8 @@ jobs:
             --notes "Prerelease build from main ($(git rev-parse --short=7 HEAD))"
             --prerelease
           )
-          if [ -f out/simple-vms-linux-x64.tar.gz ]; then
-            args+=(out/simple-vms-linux-x64.tar.gz)
-          fi
           for asset in \
+            out/simple-vms-linux-x64-*.tar.gz \
             out/desktop/simple-vms-desktop-*.dmg \
             out/desktop/simple-vms-desktop-*.AppImage \
             out/desktop/simple-vms-desktop-*.exe \
