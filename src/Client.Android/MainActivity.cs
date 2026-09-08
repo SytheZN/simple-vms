@@ -8,13 +8,14 @@ using AndroidX.Activity;
 using AndroidX.Core.View;
 using Avalonia.Android;
 using Client.Android.ViewModels;
+using Client.Core;
 using Microsoft.Extensions.DependencyInjection;
 using System.ComponentModel;
 
 namespace Client.Android;
 
 [Activity(
-  Label = "SimpleVMS",
+  Label = MainActivity.LauncherLabel,
   Icon = "@drawable/icon",
   Banner = "@drawable/banner",
   Theme = "@style/AppTheme",
@@ -33,8 +34,19 @@ namespace Client.Android;
 [IntentFilter(
   new[] { Intent.ActionMain },
   Categories = new[] { Intent.CategoryLeanbackLauncher })]
+[IntentFilter(
+  new[] { Intent.ActionView },
+  Categories = new[] { Intent.CategoryDefault, Intent.CategoryBrowsable },
+  DataScheme = EnrollmentLink.Scheme,
+  DataHost = EnrollmentLink.Host)]
 public sealed class MainActivity : AvaloniaMainActivity
 {
+#if DEBUG
+  private const string LauncherLabel = "SimpleVMS Debug";
+#else
+  private const string LauncherLabel = "SimpleVMS";
+#endif
+
   private MainShellViewModel? _shell;
 
   protected override void OnCreate(Bundle? savedInstanceState)
@@ -51,6 +63,20 @@ public sealed class MainActivity : AvaloniaMainActivity
       _shell.PropertyChanged += OnShellPropertyChanged;
       ApplyImmersive(_shell.IsFullscreen);
     }
+    HandleEnrollmentLink(Intent);
+  }
+
+  protected override void OnNewIntent(Intent? intent)
+  {
+    base.OnNewIntent(intent);
+    HandleEnrollmentLink(intent);
+  }
+
+  private void HandleEnrollmentLink(Intent? intent)
+  {
+    if (intent?.Action != Intent.ActionView) return;
+    var link = intent.DataString;
+    if (link != null) _shell?.OpenEnrollmentLink(link);
   }
 
   protected override void OnResume()

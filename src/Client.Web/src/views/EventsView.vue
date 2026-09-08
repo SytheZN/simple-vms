@@ -128,6 +128,9 @@ function onServerEvent(event: LiveEvent) {
     endTime: event.endTime,
     metadata: event.metadata,
   })
+
+  if (events.value.length > limit.value)
+    events.value.length = limit.value
 }
 
 const { start: startEvents, stop: stopEvents } = useServerEvents(onServerEvent)

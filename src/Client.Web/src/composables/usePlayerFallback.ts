@@ -349,22 +349,12 @@ export function usePlayerFallback(): Player {
     if (nextSlot) { destroySlot(nextSlot); nextSlot = null }
     gapEnd = 0
 
-    const oldSlot = slot
-    if (oldSlot) oldSlot.video.pause()
+    if (slot) destroySlot(slot)
 
     slot = createSlot()
+    slot.video.style.display = ''
     tsEpoch++
     slotAborted = false
-
-    if (oldSlot) {
-      const old = oldSlot
-      slot.video.addEventListener('playing', () => {
-        slot!.video.style.display = ''
-        destroySlot(old)
-      }, { once: true })
-    } else {
-      slot.video.style.display = ''
-    }
   }
 
   function enterStreaming() {

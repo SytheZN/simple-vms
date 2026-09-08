@@ -182,6 +182,7 @@ export function useOverlay<T extends OverlayPlayerView>(
     const candidate = candidates().find(c => !triedLive.has(c.profile)) ?? null
     sourceProfile.value = candidate?.profile ?? null
     fetcher.reset()
+    fetcher.handleLive()
     decoder.flush()
     if (!candidate) {
       if (debug) console.log('overlay: no live source accepted, turning off')
@@ -261,12 +262,14 @@ export function useOverlay<T extends OverlayPlayerView>(
 
   function onSeek(_ts: number) {
     if (!active.value) return
+    sourceProfile.value = null
     resetData()
   }
 
   function onGoLive() {
     if (!active.value) return
     resetData()
+    fetcher.handleLive()
     startForMode()
   }
 

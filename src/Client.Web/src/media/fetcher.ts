@@ -24,6 +24,8 @@ export class Fetcher {
     this.sendFetch = null
   }
 
+  private static readonly debug = typeof localStorage !== 'undefined' && localStorage.getItem('debug_player') !== null
+
   setTarget(fromUs: number, toUs: number) {
     const forward = toUs > fromUs
 
@@ -38,25 +40,40 @@ export class Fetcher {
       }
     }
 
-    if (this.fetchInFlight || !this.sendFetch || this.live) return
+    if (this.fetchInFlight || !this.sendFetch || this.live) {
+      if (Fetcher.debug) console.log('fetcher setTarget SKIP',
+        this.fetchInFlight ? 'inFlight' : this.live ? 'live' : 'noSendFetch',
+        'gops:', this.gops.length)
+      return
+    }
 
     if (forward) {
       const newest = this.newestTimestamp()
       if (newest === null || newest < toUs) {
         let from = newest !== null ? newest + 1 : fromUs
-        from = this.skipGapsForward(from)
-        if (this.isExhausted(from)) return
+        from = this.skipGaps(from, 1)
+        if (this.isExhausted(from)) {
+          if (Fetcher.debug) console.log('fetcher setTarget FWD exhausted at', from)
+          return
+        }
         this.beginFetch(from)
         this.sendFetch(from, from + 30_000_000)
+      } else if (Fetcher.debug) {
+        console.log('fetcher setTarget FWD sufficient newest:', newest, 'toUs:', toUs)
       }
     } else {
       const oldest = this.oldestTimestamp()
       if (oldest === null || oldest > toUs) {
         let from = oldest !== null ? oldest - 1 : fromUs
-        from = this.skipGapsReverse(from)
-        if (this.isExhausted(from)) return
+        from = this.skipGaps(from, -1)
+        if (this.isExhausted(from)) {
+          if (Fetcher.debug) console.log('fetcher setTarget REV exhausted at', from)
+          return
+        }
         this.beginFetch(from)
         this.sendFetch(from, from - 30_000_000)
+      } else if (Fetcher.debug) {
+        console.log('fetcher setTarget REV sufficient oldest:', oldest, 'toUs:', toUs)
       }
     }
   }
@@ -183,17 +200,11 @@ export class Fetcher {
     this.exhaustedFrom = null
   }
 
-  private skipGapsForward(ts: number): number {
+  skipGaps(ts: number, direction: 1 | -1): number {
     for (const gap of this.gaps) {
-      if (ts >= gap.from && ts < gap.to)
+      if (direction === 1 && ts >= gap.from && ts < gap.to)
         ts = gap.to
-    }
-    return ts
-  }
-
-  private skipGapsReverse(ts: number): number {
-    for (const gap of this.gaps) {
-      if (ts > gap.from && ts <= gap.to)
+      else if (direction === -1 && ts > gap.from && ts <= gap.to)
         ts = gap.from
     }
     return ts

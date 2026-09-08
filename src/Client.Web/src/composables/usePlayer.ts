@@ -124,6 +124,7 @@ export function usePlayer(): Player {
   }
 
   function renderAt(ts: number): boolean {
+    ts = fetcher.skipGaps(ts, direction.value)
     updatePipeline(ts)
     const frame = decoder.getFrame(ts)
     if (!frame) return false
@@ -323,10 +324,6 @@ export function usePlayer(): Player {
 
       case 'streaming':
         decoder.resetWallClock()
-        if (direction.value === 1 && timestampUs.value < to)
-          renderAt(to)
-        else if (direction.value === -1 && timestampUs.value > _from)
-          renderAt(_from)
         break
     }
   }

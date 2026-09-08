@@ -106,6 +106,15 @@ public sealed partial class EnrollmentViewModel : ViewModelBase
     EnrollCommand = new AsyncCommand(EnrollAsync, () => !IsBusy && ServerAddress.Length > 0 && IsValidToken(Token));
   }
 
+  public bool ApplyLink(string? link)
+  {
+    if (!EnrollmentLink.TryParse(link, out var address, out var token)) return false;
+    ClearError();
+    ServerAddress = address;
+    Token = token;
+    return true;
+  }
+
   private const string TokenChars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
   private static bool IsValidToken(string token) =>

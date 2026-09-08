@@ -169,8 +169,20 @@ async function loadCamera() {
   }
 }
 
+function stopStream() {
+  overlay.deactivate()
+  player.value?.stop()
+  player.value = null
+  if (playerContainerRef.value)
+    playerContainerRef.value.innerHTML = ''
+  syncState()
+}
+
 async function startStream() {
   if (!playerContainerRef.value) return
+
+  stopStream()
+  streamer.disconnect()
 
   const webcodecs = !forceMse && await supportsWebCodecsHevc()
   if (debug) console.log('player using', webcodecs ? 'webcodecs' : 'mse fallback')
@@ -202,6 +214,11 @@ watch(() => playerState.value.timestampUs, () => {
   }
 })
 
+watch(streamer.status, (status) => {
+  if (player.value && (status === 'idle' || status === 'error'))
+    stopStream()
+})
+
 function goLiveWithReset() {
   resetOnNextTimeUpdate = true
   player.value?.goLive()
@@ -218,9 +235,8 @@ onMounted(async () => {
 onUnmounted(() => {
   document.removeEventListener('fullscreenchange', onFullscreenChange)
   window.removeEventListener('keydown', onKeyDown)
+  stopStream()
   streamer.disconnect()
-  overlay.deactivate()
-  player.value?.stop()
 })
 </script>
 

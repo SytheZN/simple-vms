@@ -3,11 +3,14 @@ import { ref, onMounted, onUnmounted, watch } from 'vue'
 import QRCode from 'qrcode'
 import { api, ApiError } from '@/api/client'
 import { useServerEvents } from '@/composables/useServerEvents'
+import { enrollmentLink, isMobileBrowser } from '@/lib/enrollmentLink'
 import type { ClientListItem, LiveEvent } from '@/types/api'
 
+const mobile = isMobileBrowser()
 const clients = ref<ClientListItem[]>([])
 const token = ref('')
 const qrDataUrl = ref('')
+const appLink = ref('')
 const enrolling = ref(false)
 const tokenUsed = ref(false)
 const error = ref('')
@@ -47,6 +50,7 @@ async function startEnrollment() {
   error.value = ''
   token.value = ''
   qrDataUrl.value = ''
+  appLink.value = ''
   try {
     if (!internalEndpoint.value) await loadSettings()
     if (!internalEndpoint.value) {
@@ -57,6 +61,7 @@ async function startEnrollment() {
 
     const res = await api.enrollment.start()
     token.value = res.token
+    if (mobile) appLink.value = enrollmentLink(internalEndpoint.value, res.token)
     const qrPayload = JSON.stringify({
       v: 1,
       addresses: [internalEndpoint.value],
@@ -76,6 +81,7 @@ async function startEnrollment() {
       clearInterval(pollInterval)
       token.value = ''
       qrDataUrl.value = ''
+      appLink.value = ''
       tokenUsed.value = true
       loadClients()
     })
@@ -94,6 +100,7 @@ function cancelEnrollment() {
   tokenUsed.value = false
   token.value = ''
   qrDataUrl.value = ''
+  appLink.value = ''
 }
 
 async function startEdit(client: ClientListItem) {
@@ -234,7 +241,10 @@ onUnmounted(() => {
         <p class="text-sm text-text-muted">Scan the QR code with a mobile client, or enter the token manually on a desktop client.</p>
 
         <div v-if="qrDataUrl" class="flex justify-center">
-          <img :src="qrDataUrl" alt="Enrollment QR code" class="rounded-lg" />
+          <a v-if="appLink" :href="appLink">
+            <img :src="qrDataUrl" alt="Enrollment QR code" class="rounded-lg" />
+          </a>
+          <img v-else :src="qrDataUrl" alt="Enrollment QR code" class="rounded-lg" />
         </div>
 
         <div class="flex items-center justify-center gap-2 text-2xl font-bold font-mono text-text tracking-widest">

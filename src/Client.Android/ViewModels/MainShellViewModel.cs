@@ -25,6 +25,8 @@ public sealed class MainShellViewModel : ViewModelBase, IDisposable
   private bool _isWideLayout;
   private bool _isSidebarCollapsed;
   private bool _isFullscreen;
+  private bool _initialized;
+  private string? _pendingEnrollmentLink;
   private readonly EventHandler _themeVariantChangedHandler;
 
   public MainShellViewModel(
@@ -224,6 +226,18 @@ public sealed class MainShellViewModel : ViewModelBase, IDisposable
       NavigateTo(ViewKind.Gallery);
   }
 
+  public void OpenEnrollmentLink(string link)
+  {
+    if (!_initialized)
+    {
+      _pendingEnrollmentLink = link;
+      return;
+    }
+    NavigateTo(ViewKind.Enrollment);
+    if (Overlay is EnrollmentViewModel vm && !vm.ApplyLink(link))
+      _logger.LogWarning("Ignoring malformed enrollment link");
+  }
+
   private async Task InitAsync()
   {
     try
@@ -235,6 +249,13 @@ public sealed class MainShellViewModel : ViewModelBase, IDisposable
     {
       _logger.LogError(ex, "InitAsync failed");
       NavigateTo(ViewKind.Enrollment);
+    }
+    _initialized = true;
+    if (_pendingEnrollmentLink != null)
+    {
+      var link = _pendingEnrollmentLink;
+      _pendingEnrollmentLink = null;
+      OpenEnrollmentLink(link);
     }
   }
 

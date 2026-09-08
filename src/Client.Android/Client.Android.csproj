@@ -4,7 +4,8 @@
     <OutputType>Exe</OutputType>
     <SupportedOSPlatformVersion>26</SupportedOSPlatformVersion>
     <RuntimeIdentifiers>android-arm64;android-x64</RuntimeIdentifiers>
-    <ApplicationId>com.sythezn.simplevms</ApplicationId>
+    <ApplicationId Condition="'$(Configuration)' == 'Debug'">com.sythezn.simplevms.debug</ApplicationId>
+    <ApplicationId Condition="'$(Configuration)' != 'Debug'">com.sythezn.simplevms</ApplicationId>
     <ApplicationDisplayVersion Condition="'$(Version)' != ''">$(Version)</ApplicationDisplayVersion>
     <ApplicationVersion Condition="'$(AndroidVersionCode)' != ''">$(AndroidVersionCode)</ApplicationVersion>
     <ApplicationVersion Condition="'$(AndroidVersionCode)' == ''">1</ApplicationVersion>

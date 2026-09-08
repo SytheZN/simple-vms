@@ -287,6 +287,55 @@ public class EnrollmentViewModelTests
     Assert.That(vm.EnrollCommand.CanExecute(null), Is.False);
   }
 
+  /// <summary>
+  /// SCENARIO:
+  /// The app is opened from an svms:// enrollment link
+  ///
+  /// ACTION:
+  /// Call ApplyLink with a valid link while an error is displayed
+  ///
+  /// EXPECTED RESULT:
+  /// Returns true, fields are populated, the error is cleared and EnrollCommand can execute
+  /// </summary>
+  [Test]
+  public void ApplyLink_ValidLink_PopulatesFieldsAndClearsError()
+  {
+    var vm = NewVm();
+    vm.ErrorMessage = "stale";
+
+    var ok = vm.ApplyLink("svms://enroll?address=192.168.1.50:8080&token=x7k2m9p4");
+
+    Assert.That(ok, Is.True);
+    Assert.That(vm.ServerAddress, Is.EqualTo("192.168.1.50:8080"));
+    Assert.That(vm.Token, Is.EqualTo("X7K2-M9P4"));
+    Assert.That(vm.ErrorMessage, Is.Null);
+    Assert.That(vm.EnrollCommand.CanExecute(null), Is.True);
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// The app is opened from a malformed link
+  ///
+  /// ACTION:
+  /// Call ApplyLink with a link missing the token after fields were already filled
+  ///
+  /// EXPECTED RESULT:
+  /// Returns false and the existing fields are left untouched
+  /// </summary>
+  [Test]
+  public void ApplyLink_MalformedLink_LeavesFieldsUntouched()
+  {
+    var vm = NewVm();
+    vm.ServerAddress = "existing:1";
+    vm.Token = "ABCD-2345";
+
+    var ok = vm.ApplyLink("svms://enroll?address=192.168.1.50:8080");
+
+    Assert.That(ok, Is.False);
+    Assert.That(vm.ServerAddress, Is.EqualTo("existing:1"));
+    Assert.That(vm.Token, Is.EqualTo("ABCD-2345"));
+  }
+
   private static EnrollmentViewModel NewVm() =>
     new(new FakeEnrollmentClient(), new MockCredentialStore(), new FakeStreamTunnel(),
       NullLogger<EnrollmentViewModel>.Instance, EmptyServices());
