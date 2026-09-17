@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-17
+
 ### Fixed
 
 - Server memory and connection leaks during long-running recording
@@ -41,5 +43,6 @@ First release of SimpleVMS (sVMS)!
 - Platform-native installers: macOS DMG, Linux AppImage, Windows installer
 
 <!-- link references -->
-[Unreleased]: https://github.com/SytheZN/simple-vms/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/SytheZN/simple-vms/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/SytheZN/simple-vms/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/SytheZN/simple-vms/compare/v0.0.0...v0.1.0
