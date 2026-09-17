@@ -403,6 +403,7 @@ public sealed class EventManager : IAsyncDisposable
           await RecordSystemAsync(SystemEventFactory.CameraRemoved(
             evt.CameraId, evt.Name, evt.Timestamp), ct);
           await StopSubscriptionAsync(evt.CameraId);
+          ForgetCameraState(evt.CameraId);
         }
         catch (Exception ex)
         {
@@ -410,6 +411,14 @@ public sealed class EventManager : IAsyncDisposable
         }
       }
     }, ct);
+  }
+
+  private void ForgetCameraState(Guid cameraId)
+  {
+    foreach (var key in _disconnected.Keys.Where(k => k.CameraId == cameraId).ToList())
+      _disconnected.TryRemove(key, out _);
+    foreach (var key in _openEvents.Keys.Where(k => k.CameraId == cameraId).ToList())
+      _openEvents.TryRemove(key, out _);
   }
 
   private void WatchCameraConfigChanged(CancellationToken ct)

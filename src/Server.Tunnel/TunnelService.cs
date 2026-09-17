@@ -37,6 +37,8 @@ public sealed class TunnelService
   private CancellationTokenSource? _cts;
   private Task? _acceptLoop;
 
+  internal TimeSpan HandshakeTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
   public TunnelService(
     ICertificateService certs,
     ServerEndpoints endpoints,
@@ -122,13 +124,23 @@ public sealed class TunnelService
       var networkStream = client.GetStream();
       sslStream = new SslStream(networkStream, false, ValidateClientCert);
 
-      await sslStream.AuthenticateAsServerAsync(new SslServerAuthenticationOptions
+      using var handshakeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+      handshakeCts.CancelAfter(HandshakeTimeout);
+      try
       {
-        ServerCertificate = _certs.ServerCert,
-        ClientCertificateRequired = true,
-        CertificateRevocationCheckMode = X509RevocationMode.NoCheck,
-        EnabledSslProtocols = SslProtocols.Tls13
-      }, ct);
+        await sslStream.AuthenticateAsServerAsync(new SslServerAuthenticationOptions
+        {
+          ServerCertificate = _certs.ServerCert,
+          ClientCertificateRequired = true,
+          CertificateRevocationCheckMode = X509RevocationMode.NoCheck,
+          EnabledSslProtocols = SslProtocols.Tls13
+        }, handshakeCts.Token);
+      }
+      catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+      {
+        _logger.LogDebug("TLS handshake timed out for {Address}", client.Client.RemoteEndPoint);
+        return;
+      }
 
       var remoteCert = sslStream.RemoteCertificate;
       if (remoteCert == null)
@@ -350,6 +362,10 @@ public sealed class TunnelService
     catch (Exception ex)
     {
       _logger.LogError(ex, "Error handling stream {StreamId} type 0x{Type:X4}", streamId, streamType);
+    }
+    finally
+    {
+      muxer.CloseStream(streamId);
     }
   }
 

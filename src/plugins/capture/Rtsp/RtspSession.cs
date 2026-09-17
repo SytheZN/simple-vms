@@ -26,8 +26,9 @@ internal sealed class RtspSession : IAsyncDisposable
   private int _demandCount;
   private bool _disposed;
 
+  public Guid CameraId => _cameraId;
   public string Uri => _uri;
-  public bool TransportEnded => _readLoop is { IsCompleted: true };
+  private bool TransportRunning => _readLoop is { IsCompleted: false };
 
   public RtspSession(
     Guid cameraId, string uri, string? username, string? password, IEventBus? eventBus, ILogger logger)
@@ -42,7 +43,7 @@ internal sealed class RtspSession : IAsyncDisposable
 
   public async Task<TrackRegistration> EnsureTrackAsync(string mediaType, CancellationToken ct)
   {
-    var client = new RtspClient();
+    await using var client = new RtspClient();
     await client.ConnectAndDescribeAsync(_uri, _username, _password, ct);
     _lastSdp = client.LastSdp;
 
@@ -54,7 +55,6 @@ internal sealed class RtspSession : IAsyncDisposable
       _tracks.Clear();
       _channelHandlers.Clear();
       _descriptions = descriptions;
-      await client.DisposeAsync();
 
       if (_eventBus != null)
         await _eventBus.PublishAsync(new CameraReprobeRequested
@@ -71,10 +71,7 @@ internal sealed class RtspSession : IAsyncDisposable
 
     var existing = _tracks.FirstOrDefault(t => t.MediaType == mediaType);
     if (existing != null)
-    {
-      await client.DisposeAsync();
       return existing;
-    }
 
     var media = descriptions.FirstOrDefault(m => m.MediaType == mediaType)
       ?? throw new InvalidOperationException($"No {mediaType} track found in SDP");
@@ -94,7 +91,6 @@ internal sealed class RtspSession : IAsyncDisposable
       mediaType, rtpChannel, rtpChannel + 1, codecUpper, media.ControlUri);
 
     await client.TeardownAsync(ct);
-    await client.DisposeAsync();
 
     return track;
   }
@@ -127,9 +123,9 @@ internal sealed class RtspSession : IAsyncDisposable
     await _demandLock.WaitAsync(ct);
     try
     {
-      _demandCount++;
-      if (_demandCount == 1 || TransportEnded)
+      if (!TransportRunning)
         await ConnectAllAsync(ct);
+      _demandCount++;
     }
     finally
     {
@@ -158,6 +154,19 @@ internal sealed class RtspSession : IAsyncDisposable
   public Task Completed => _readLoop ?? Task.CompletedTask;
 
   private async Task ConnectAllAsync(CancellationToken ct)
+  {
+    try
+    {
+      await ConnectTracksAndPlayAsync(ct);
+    }
+    catch
+    {
+      await DisconnectAsync();
+      throw;
+    }
+  }
+
+  private async Task ConnectTracksAndPlayAsync(CancellationToken ct)
   {
     await DisconnectAsync();
 
@@ -249,12 +258,12 @@ internal sealed class RtspSession : IAsyncDisposable
   {
     if (codecUpper == "H264")
     {
-      var info = new StreamInfo { DataFormat = "h264", FormatParameters = RtspConnection.BuildH264Parameters(media) };
+      var info = new StreamInfo { DataFormat = "h264", FormatParameters = RtpParsing.BuildH264Parameters(media) };
       return (info, new DataStream<H264NalUnit>(info));
     }
     if (codecUpper == "H265")
     {
-      var info = new StreamInfo { DataFormat = "h265", FormatParameters = RtspConnection.BuildH265Parameters(media) };
+      var info = new StreamInfo { DataFormat = "h265", FormatParameters = RtpParsing.BuildH265Parameters(media) };
       return (info, new DataStream<H265NalUnit>(info));
     }
     throw new InvalidOperationException($"Unsupported codec: {codecUpper}");
@@ -270,8 +279,8 @@ internal sealed class RtspSession : IAsyncDisposable
       _channelHandlers[actualChannel] = payload =>
       {
         if (payload.Length < 12) return;
-        var rtpPayload = RtspConnection.ExtractRtpPayload(payload);
-        var mediaTimestamp = RtspConnection.ExtractRtpTimestamp(payload);
+        var rtpPayload = RtpParsing.ExtractRtpPayload(payload);
+        var mediaTimestamp = RtpParsing.ExtractRtpTimestamp(payload);
         var wallClockTimestamp = DateTimeOffset.UtcNow.ToUnixMicroseconds();
         var nalType = rtpPayload.Span[0] & 0x1F;
         if (nalType == 24)
@@ -293,8 +302,8 @@ internal sealed class RtspSession : IAsyncDisposable
       _channelHandlers[actualChannel] = payload =>
       {
         if (payload.Length < 12) return;
-        var rtpPayload = RtspConnection.ExtractRtpPayload(payload);
-        var mediaTimestamp = RtspConnection.ExtractRtpTimestamp(payload);
+        var rtpPayload = RtpParsing.ExtractRtpPayload(payload);
+        var mediaTimestamp = RtpParsing.ExtractRtpTimestamp(payload);
         var wallClockTimestamp = DateTimeOffset.UtcNow.ToUnixMicroseconds();
         var nalType = (rtpPayload.Span[0] >> 1) & 0x3F;
         if (nalType == 48)

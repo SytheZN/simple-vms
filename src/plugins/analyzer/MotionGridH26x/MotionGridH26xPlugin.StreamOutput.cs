@@ -40,7 +40,8 @@ public sealed partial class MotionGridH26xPlugin : IDataStreamAnalyzerStreamOutp
         return OneOf<IDataStream, Error>.FromT0(worker);
       }
       default:
-        return Error.Create(ModuleIds.PluginManagement, 0x0061, Result.Unavailable,
+        (tap.AsT0 as IDisposable)?.Dispose();
+        return Error.Create(ModuleIds.PluginMotionGridH26x, 0x0001, Result.Unavailable,
           $"Parent stream {cameraId}/{parentProfile} is not H.264 or H.265");
     }
   }

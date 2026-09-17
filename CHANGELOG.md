@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- Server memory and connection leaks during long-running recording
+- Cameras staying offline after a failed reconnect
+
 ## [0.1.0] - 2026-09-08
 
 First release of SimpleVMS (sVMS)!

@@ -51,7 +51,7 @@ public sealed class OnvifEventSubscription : IEventSubscription
       {
         try
         {
-          await _events.RenewAsync(_pullPointUri, _credentials, ct);
+          _terminationTime = await _events.RenewAsync(_pullPointUri, _credentials, ct);
           renewAt = ComputeRenewAt(_terminationTime);
         }
         catch (SoapFaultException ex) when (!ct.IsCancellationRequested)

@@ -437,6 +437,59 @@ public class EventManagerTests
 
   /// <summary>
   /// SCENARIO:
+  /// A camera with an open motion event and a recorded disconnect is removed, and a camera
+  /// with the same id later reports again
+  ///
+  /// ACTION:
+  /// Publish CameraRemoved, then send a motion-inactive report and an online status for that id
+  ///
+  /// EXPECTED RESULT:
+  /// The removed camera's state was forgotten: the inactive report closes nothing and the
+  /// online status records no connect
+  /// </summary>
+  [Test]
+  public async Task CameraRemoved_ForgetsOpenEventsAndDisconnectState()
+  {
+    var data = new FakeDataProvider();
+    var eventBus = new EventBus();
+    var cameraId = Guid.NewGuid();
+
+    await using var manager = await StartManagerAsync(data, eventBus);
+
+    await manager.ProcessEventAsync(new CameraEvent
+    {
+      Id = Guid.NewGuid(),
+      CameraId = cameraId,
+      Type = "motion",
+      StartTime = 6000,
+      Metadata = new Dictionary<string, string> { ["State"] = "true" }
+    }, CancellationToken.None);
+    await PublishStatusAsync(eventBus, cameraId, "offline", "disconnected");
+
+    await eventBus.PublishAsync(new CameraRemoved
+    {
+      CameraId = cameraId,
+      Name = "Porch",
+      Timestamp = 7000
+    }, CancellationToken.None);
+    await Task.Delay(100);
+
+    await manager.ProcessEventAsync(new CameraEvent
+    {
+      Id = Guid.NewGuid(),
+      CameraId = cameraId,
+      Type = "motion",
+      StartTime = 9000,
+      Metadata = new Dictionary<string, string> { ["State"] = "false" }
+    }, CancellationToken.None);
+    await PublishStatusAsync(eventBus, cameraId, "online", null);
+
+    Assert.That(((FakeEventRepo)data.Events).Updated, Is.Empty);
+    Assert.That(data.CreatedEvents.Select(e => e.Type), Has.None.EqualTo("camera-connect"));
+  }
+
+  /// <summary>
+  /// SCENARIO:
   /// A pipeline connects because a viewer arrived, with no preceding disconnect
   ///
   /// ACTION:

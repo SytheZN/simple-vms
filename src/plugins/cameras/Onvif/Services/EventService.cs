@@ -105,12 +105,16 @@ public sealed class EventService(ISoapClient soap)
     return notifications;
   }
 
-  public async Task RenewAsync(
+  public async Task<DateTimeOffset> RenewAsync(
     string subscriptionUri, Credentials credentials, CancellationToken ct)
   {
     var body = new XElement(XmlHelpers.NsWsnt + "Renew",
       new XElement(XmlHelpers.NsWsnt + "TerminationTime", "PT600S"));
-    await soap.SendAsync(subscriptionUri, body, credentials, ct);
+    var response = await soap.SendAsync(subscriptionUri, body, credentials, ct);
+
+    return ParseTerminationTime(response
+      .Element(XmlHelpers.NsWsnt + "RenewResponse")
+      ?.Element(XmlHelpers.NsWsnt + "TerminationTime")?.Value);
   }
 
   public async Task UnsubscribeAsync(

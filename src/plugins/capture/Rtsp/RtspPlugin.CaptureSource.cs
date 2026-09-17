@@ -47,6 +47,25 @@ public sealed partial class RtspPlugin : ICaptureSource
     }
   }
 
+  internal int SessionCount => _sessions.Count;
+
+  internal async Task ForgetSessionsAsync(Func<RtspSession, bool> shouldForget)
+  {
+    await _sessionLock.WaitAsync();
+    try
+    {
+      foreach (var (key, session) in _sessions.Where(entry => shouldForget(entry.Value)).ToList())
+      {
+        _sessions.TryRemove(key, out _);
+        await session.DisposeAsync();
+      }
+    }
+    finally
+    {
+      _sessionLock.Release();
+    }
+  }
+
   private static string BuildSessionKey(CameraConnectionInfo info)
   {
     if (!Uri.TryCreate(info.Uri, UriKind.Absolute, out var uri))

@@ -17,8 +17,11 @@ public sealed class StreamMuxer : IAsyncDisposable
   private readonly SemaphoreSlim _writeLock = new(1, 1);
   private readonly Dictionary<uint, StreamEntry> _streams = [];
   private readonly List<Task> _handlerTasks = [];
+  private readonly HashSet<uint> _recentlyClosed = [];
+  private readonly Queue<uint> _recentlyClosedOrder = new();
 
   public const int StreamWindowBytes = 1024 * 1024;
+  public const int RecentlyClosedCapacity = 1024;
 
   private sealed class StreamEntry
   {
@@ -99,11 +102,21 @@ public sealed class StreamMuxer : IAsyncDisposable
     lock (_lock)
     {
       if (!_streams.Remove(streamId, out entry)) return;
+      RememberClosed(streamId);
     }
     entry.Channel.Writer.TryComplete();
     try { entry.Cts.Cancel(); } catch (ObjectDisposedException) { }
     entry.Cts.Dispose();
     entry.CreditChanged.Release();
+  }
+
+  private void RememberClosed(uint streamId)
+  {
+    if (!_recentlyClosed.Add(streamId)) return;
+
+    _recentlyClosedOrder.Enqueue(streamId);
+    if (_recentlyClosedOrder.Count > RecentlyClosedCapacity)
+      _recentlyClosed.Remove(_recentlyClosedOrder.Dequeue());
   }
 
   public async Task RunReadLoopAsync(CancellationToken ct)
@@ -198,6 +211,9 @@ public sealed class StreamMuxer : IAsyncDisposable
         isNew = !_streams.ContainsKey(streamId);
         if (isNew)
         {
+          if (_recentlyClosed.Contains(streamId))
+            continue;
+
           if (OnNewStream == null)
           {
             _logger.LogDebug("StreamMuxer: dropping message for unknown stream {StreamId} (no handler)",

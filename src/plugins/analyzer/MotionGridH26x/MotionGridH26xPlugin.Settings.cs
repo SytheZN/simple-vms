@@ -161,20 +161,20 @@ public sealed partial class MotionGridH26xPlugin : IPluginSettings
   private static OneOf<Success, Error> ValidateDetectionAlgorithm(string value) =>
     DetectionAlgorithmOptions.Any(o => o.Value == value)
       ? new Success()
-      : Error.Create(ModuleIds.PluginManagement, 0x0066, Result.BadRequest,
+      : Error.Create(ModuleIds.PluginMotionGridH26x, 0x0003, Result.BadRequest,
         $"{DetectionAlgorithmKey} must be one of: " +
         string.Join(", ", DetectionAlgorithmOptions.Select(o => o.Value)));
 
   private static OneOf<Success, Error> ValidateBoolean(string key, string value) =>
     value is "true" or "false"
       ? new Success()
-      : Error.Create(ModuleIds.PluginManagement, 0x0067, Result.BadRequest,
+      : Error.Create(ModuleIds.PluginMotionGridH26x, 0x0004, Result.BadRequest,
         $"{key} must be 'true' or 'false'");
 
   private static OneOf<Success, Error> ValidateWindowFrames(string value) =>
     int.TryParse(value, out var parsed)
     && parsed is >= MinWindowFrames and <= MaxWindowFrames
       ? new Success()
-      : Error.Create(ModuleIds.PluginManagement, 0x0065, Result.BadRequest,
+      : Error.Create(ModuleIds.PluginMotionGridH26x, 0x0005, Result.BadRequest,
         $"Value must be an integer between {MinWindowFrames} and {MaxWindowFrames}");
 }

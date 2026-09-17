@@ -15,7 +15,7 @@ public sealed class CameraService : IHostedService
   private readonly CameraStatusTracker _status;
   private readonly IEventBus _eventBus;
   private readonly ILogger<CameraService> _logger;
-  private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _reprobeLocks = new();
+  private readonly ConcurrentDictionary<Guid, byte> _reprobesInFlight = new();
   private CancellationTokenSource? _eventCts;
 
   public CameraService(IPluginHost plugins, CameraStatusTracker status, IEventBus eventBus, ILogger<CameraService> logger)
@@ -52,8 +52,7 @@ public sealed class CameraService : IHostedService
 
   private async Task HandleReprobeAsync(CameraReprobeRequested evt, CancellationToken ct)
   {
-    var sem = _reprobeLocks.GetOrAdd(evt.CameraId, _ => new SemaphoreSlim(1, 1));
-    if (!await sem.WaitAsync(0, ct))
+    if (!_reprobesInFlight.TryAdd(evt.CameraId, 0))
     {
       _logger.LogDebug(
         "Reprobe already active for camera {CameraId}; dropping request from {Initiator}",
@@ -76,7 +75,7 @@ public sealed class CameraService : IHostedService
     }
     finally
     {
-      sem.Release();
+      _reprobesInFlight.TryRemove(evt.CameraId, out _);
     }
   }
 

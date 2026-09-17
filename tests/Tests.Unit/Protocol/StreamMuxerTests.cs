@@ -300,6 +300,72 @@ public class StreamMuxerTests
     await send;
   }
 
+  /// <summary>
+  /// SCENARIO:
+  /// The local side closes a stream as soon as its handler finishes, and the peer, which has
+  /// not seen the close yet, sends one more frame on it
+  ///
+  /// ACTION:
+  /// Close stream 5 from its handler, then deliver a late frame for stream 5 followed by the
+  /// opening frame of stream 7
+  ///
+  /// EXPECTED RESULT:
+  /// The late frame is dropped instead of being mistaken for a new stream: the handler runs
+  /// once for stream 5 and once for stream 7
+  /// </summary>
+  [Test]
+  public async Task ReadLoop_LateFrameForClosedStream_DoesNotStartNewHandler()
+  {
+    var pipe = new DuplexPipe();
+    await using var muxer = new StreamMuxer(pipe.ClientStream, NullLogger.Instance, 1);
+
+    var handledStreamIds = new List<uint>();
+    var stream5Closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    var stream7Opened = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    muxer.OnNewStream = (_, streamId, _, _) =>
+    {
+      lock (handledStreamIds)
+        handledStreamIds.Add(streamId);
+
+      if (streamId == 5)
+      {
+        muxer.CloseStream(5);
+        stream5Closed.TrySetResult();
+      }
+      else
+      {
+        stream7Opened.TrySetResult();
+      }
+      return Task.CompletedTask;
+    };
+
+    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+    var readTask = muxer.RunReadLoopAsync(cts.Token);
+
+    await pipe.ServerStream.WriteAsync(OpeningFrame(5));
+    await pipe.ServerStream.FlushAsync();
+    await stream5Closed.Task.WaitAsync(cts.Token);
+
+    await pipe.ServerStream.WriteAsync(OpeningFrame(5));
+    await pipe.ServerStream.WriteAsync(OpeningFrame(7));
+    await pipe.ServerStream.FlushAsync();
+    await stream7Opened.Task.WaitAsync(cts.Token);
+
+    pipe.ServerStream.Close();
+    await readTask;
+
+    Assert.That(handledStreamIds, Is.EqualTo(new uint[] { 5, 7 }));
+  }
+
+  private static byte[] OpeningFrame(uint streamId)
+  {
+    var frame = new byte[MessageEnvelope.MuxHeaderSize + MessageEnvelope.StreamTypeHeaderSize];
+    MessageEnvelope.WriteMuxHeader(frame, streamId, 0, MessageEnvelope.StreamTypeHeaderSize);
+    MessageEnvelope.WriteStreamType(
+      frame.AsSpan(MessageEnvelope.MuxHeaderSize), StreamTypes.ApiRequest);
+    return frame;
+  }
+
   private sealed class LoopbackStream : Stream
   {
     private readonly Channel<byte[]> _inbound = Channel.CreateUnbounded<byte[]>();

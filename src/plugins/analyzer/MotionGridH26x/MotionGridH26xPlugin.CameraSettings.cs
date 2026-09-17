@@ -7,6 +7,8 @@ public sealed partial class MotionGridH26xPlugin : IPluginCameraSettings
   internal string DetectionAlgorithmFor(Guid cameraId) =>
     ResolveAlgorithm(_config.Get(CameraKey(cameraId, DetectionAlgorithmKey), ""), PluginDetectionAlgorithm);
 
+  internal int CachedCameraSettingsCount => _cameraFilterSettings.Count;
+
   private CameraFilterSettings FilterSettingsFor(Guid cameraId) =>
     _cameraFilterSettings.GetOrAdd(cameraId, id => new CameraFilterSettings
     {
@@ -77,6 +79,7 @@ public sealed partial class MotionGridH26xPlugin : IPluginCameraSettings
 
   Task<OneOf<Success, Error>> IPluginCameraSettings.OnRemovedAsync(Guid cameraId, CancellationToken ct)
   {
+    _cameraFilterSettings.TryRemove(cameraId, out _);
     return Task.FromResult<OneOf<Success, Error>>(new Success());
   }
 

@@ -47,4 +47,5 @@ public static class ModuleIds
   public const ushort PluginFilesystemStorage = 0x1040;
   public const ushort PluginMjpeg = 0x1050;
   public const ushort PluginThumbnail = 0x1060;
+  public const ushort PluginMotionGridH26x = 0x1070;
 }

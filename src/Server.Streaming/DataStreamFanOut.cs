@@ -10,6 +10,9 @@ public sealed class DataStreamFanOut<T> : IDataStream<T>, IDataStreamFanOut wher
   private readonly List<T> _gopCache = [];
   private readonly Lock _lock = new();
   private Channel<T>[]? _snapshot;
+  private bool _cachingHeadersOnly;
+
+  public const int MaxCachedUnits = 256;
 
   public StreamInfo Info { get; }
   public Type FrameType => typeof(T);
@@ -34,13 +37,53 @@ public sealed class DataStreamFanOut<T> : IDataStream<T>, IDataStreamFanOut wher
     lock (_lock)
     {
       if (item.IsSyncPoint)
-        _gopCache.RemoveAll(i => !i.IsHeader);
-      _gopCache.Add(item);
+      {
+        TrimCacheToCurrentHeaders();
+        _cachingHeadersOnly = false;
+      }
+      Cache(item);
       snapshot = _snapshot ??= [.. _subscribers.Select(s => s.Channel)];
     }
 
     foreach (var channel in snapshot)
       channel.Writer.TryWrite(item);
+  }
+
+  private void Cache(T item)
+  {
+    if (_cachingHeadersOnly && !item.IsHeader)
+      return;
+
+    _gopCache.Add(item);
+    if (_gopCache.Count <= MaxCachedUnits)
+      return;
+
+    if (_cachingHeadersOnly)
+    {
+      _gopCache.RemoveAt(0);
+      return;
+    }
+
+    _gopCache.RemoveAll(cached => !cached.IsHeader);
+    _cachingHeadersOnly = true;
+  }
+
+  private void TrimCacheToCurrentHeaders()
+  {
+    var freshHeadersStart = _gopCache.Count;
+    while (freshHeadersStart > 0 && _gopCache[freshHeadersStart - 1].IsHeader)
+      freshHeadersStart--;
+
+    if (freshHeadersStart < _gopCache.Count)
+    {
+      _gopCache.RemoveRange(0, freshHeadersStart);
+      return;
+    }
+
+    var retainedHeadersEnd = 0;
+    while (retainedHeadersEnd < _gopCache.Count && _gopCache[retainedHeadersEnd].IsHeader)
+      retainedHeadersEnd++;
+    _gopCache.RemoveRange(retainedHeadersEnd, _gopCache.Count - retainedHeadersEnd);
   }
 
   public ChannelDataStream<T> Subscribe(int capacity = 256) =>
@@ -55,7 +98,8 @@ public sealed class DataStreamFanOut<T> : IDataStream<T>, IDataStreamFanOut wher
 
     lock (_lock)
     {
-      foreach (var cached in _gopCache)
+      var wholeGopFits = _gopCache.Count <= capacity;
+      foreach (var cached in _gopCache.Where(cached => wholeGopFits || cached.IsHeader))
         channel.Writer.TryWrite(cached);
       _subscribers.Add(new Entry(channel, demands));
       _snapshot = null;
@@ -80,7 +124,10 @@ public sealed class DataStreamFanOut<T> : IDataStream<T>, IDataStreamFanOut wher
       _subscribers.RemoveAll(s => s.Channel == channel);
       _snapshot = null;
       if (!_subscribers.Any(s => s.Demands))
+      {
         _gopCache.Clear();
+        _cachingHeadersOnly = true;
+      }
     }
     Changed?.Invoke();
   }

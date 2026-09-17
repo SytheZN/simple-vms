@@ -18,6 +18,16 @@ public class DataStreamFanOutTests
     NalType = sync ? H264NalType.Idr : H264NalType.Slice
   };
 
+  private static H264NalUnit MakeHeader(ulong ts, H264NalType nalType) => new()
+  {
+    Data = new byte[] { 0x00, 0x00, 0x00, 0x01, 0x67 },
+    Timestamp = ts,
+    MediaTimestamp = ts,
+    IsSyncPoint = false,
+    IsHeader = true,
+    NalType = nalType
+  };
+
   private static async Task<List<ulong>> Drain(ChannelDataStream<H264NalUnit> sub)
   {
     var received = new List<ulong>();
@@ -74,6 +84,160 @@ public class DataStreamFanOutTests
     using var second = fanOut.Subscribe();
 
     Assert.That(await Drain(second), Is.EqualTo(new ulong[] { 1, 2 }));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A camera resends its parameter sets in-band before every keyframe, for many GOPs,
+  /// while a demanding subscriber stays attached
+  ///
+  /// ACTION:
+  /// A second subscriber joins mid-GOP with enough capacity to hold everything cached
+  ///
+  /// EXPECTED RESULT:
+  /// The second subscriber receives only the latest parameter sets and the current GOP
+  /// </summary>
+  [Test]
+  public async Task RepeatedInBandHeaders_DoNotAccumulateInGopCache()
+  {
+    await using var fanOut = new DataStreamFanOut<H264NalUnit>(TestInfo);
+    using var first = fanOut.Subscribe();
+
+    const ulong gops = 1000;
+    for (ulong gop = 0; gop < gops; gop++)
+    {
+      var ts = gop * 10;
+      fanOut.Write(MakeHeader(ts + 1, H264NalType.Sps));
+      fanOut.Write(MakeHeader(ts + 2, H264NalType.Pps));
+      fanOut.Write(MakeUnit(ts + 3, sync: true));
+      fanOut.Write(MakeUnit(ts + 4));
+    }
+
+    using var second = fanOut.Subscribe(capacity: 10_000);
+
+    var lastGop = (gops - 1) * 10;
+    Assert.That(await Drain(second),
+      Is.EqualTo(new[] { lastGop + 1, lastGop + 2, lastGop + 3, lastGop + 4 }));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A camera sends its parameter sets once at stream start and never again
+  ///
+  /// ACTION:
+  /// A second subscriber joins after several later GOPs
+  ///
+  /// EXPECTED RESULT:
+  /// The second subscriber still receives the original parameter sets ahead of the current GOP
+  /// </summary>
+  [Test]
+  public async Task HeadersSentOnce_SurviveLaterSyncPoints()
+  {
+    await using var fanOut = new DataStreamFanOut<H264NalUnit>(TestInfo);
+    using var first = fanOut.Subscribe();
+
+    fanOut.Write(MakeHeader(1, H264NalType.Sps));
+    fanOut.Write(MakeHeader(2, H264NalType.Pps));
+    fanOut.Write(MakeUnit(3, sync: true));
+    fanOut.Write(MakeUnit(4));
+    fanOut.Write(MakeUnit(5, sync: true));
+    fanOut.Write(MakeUnit(6));
+    fanOut.Write(MakeUnit(7, sync: true));
+    fanOut.Write(MakeUnit(8));
+
+    using var second = fanOut.Subscribe();
+
+    Assert.That(await Drain(second), Is.EqualTo(new ulong[] { 1, 2, 7, 8 }));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A camera changes its parameter sets mid-stream, sending new ones before a keyframe
+  ///
+  /// ACTION:
+  /// A second subscriber joins after the change
+  ///
+  /// EXPECTED RESULT:
+  /// The second subscriber receives the new parameter sets, not the superseded ones
+  /// </summary>
+  [Test]
+  public async Task NewHeaders_ReplaceRetainedHeaders()
+  {
+    await using var fanOut = new DataStreamFanOut<H264NalUnit>(TestInfo);
+    using var first = fanOut.Subscribe();
+
+    fanOut.Write(MakeHeader(1, H264NalType.Sps));
+    fanOut.Write(MakeHeader(2, H264NalType.Pps));
+    fanOut.Write(MakeUnit(3, sync: true));
+    fanOut.Write(MakeUnit(4, sync: true));
+    fanOut.Write(MakeHeader(5, H264NalType.Sps));
+    fanOut.Write(MakeHeader(6, H264NalType.Pps));
+    fanOut.Write(MakeUnit(7, sync: true));
+
+    using var second = fanOut.Subscribe();
+
+    Assert.That(await Drain(second), Is.EqualTo(new ulong[] { 5, 6, 7 }));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A camera in a long-GOP mode sends far more units between keyframes than a subscriber's
+  /// channel can hold
+  ///
+  /// ACTION:
+  /// Subscribe mid-GOP, once with the default capacity and once with a very large one
+  ///
+  /// EXPECTED RESULT:
+  /// Neither subscriber is handed a replay with its keyframe missing: both receive only the
+  /// parameter sets, because the cache stopped holding the oversized GOP
+  /// </summary>
+  [Test]
+  public async Task OversizedGop_LateSubscribersReceiveOnlyHeaders()
+  {
+    await using var fanOut = new DataStreamFanOut<H264NalUnit>(TestInfo);
+    using var first = fanOut.Subscribe();
+
+    fanOut.Write(MakeHeader(1, H264NalType.Sps));
+    fanOut.Write(MakeHeader(2, H264NalType.Pps));
+    fanOut.Write(MakeUnit(3, sync: true));
+    for (ulong ts = 4; ts < 4 + 2 * (ulong)DataStreamFanOut<H264NalUnit>.MaxCachedUnits; ts++)
+      fanOut.Write(MakeUnit(ts));
+
+    using var defaultCapacity = fanOut.Subscribe();
+    using var largeCapacity = fanOut.Subscribe(capacity: 10_000);
+
+    Assert.That(await Drain(defaultCapacity), Is.EqualTo(new ulong[] { 1, 2 }));
+    Assert.That(await Drain(largeCapacity), Is.EqualTo(new ulong[] { 1, 2 }));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// An oversized GOP made the cache fall back to parameter sets only
+  ///
+  /// ACTION:
+  /// The next keyframe arrives with a normal-sized GOP, then a subscriber joins
+  ///
+  /// EXPECTED RESULT:
+  /// Caching resumes at the keyframe and the subscriber receives the whole current GOP
+  /// </summary>
+  [Test]
+  public async Task OversizedGop_CachingResumesAtNextKeyframe()
+  {
+    await using var fanOut = new DataStreamFanOut<H264NalUnit>(TestInfo);
+    using var first = fanOut.Subscribe();
+
+    fanOut.Write(MakeUnit(1, sync: true));
+    for (ulong ts = 2; ts < 2 + 2 * (ulong)DataStreamFanOut<H264NalUnit>.MaxCachedUnits; ts++)
+      fanOut.Write(MakeUnit(ts));
+
+    fanOut.Write(MakeHeader(9001, H264NalType.Sps));
+    fanOut.Write(MakeHeader(9002, H264NalType.Pps));
+    fanOut.Write(MakeUnit(9003, sync: true));
+    fanOut.Write(MakeUnit(9004));
+
+    using var second = fanOut.Subscribe();
+
+    Assert.That(await Drain(second), Is.EqualTo(new ulong[] { 9001, 9002, 9003, 9004 }));
   }
 
   /// <summary>

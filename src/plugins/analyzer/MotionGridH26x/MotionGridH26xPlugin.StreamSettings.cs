@@ -44,7 +44,7 @@ public sealed partial class MotionGridH26xPlugin : IPluginStreamSettings
   public OneOf<Success, Error> ValidateValue(Guid streamId, string key, string value)
   {
     if (key == StreamEnabledKey && value != "true" && value != "false")
-      return Error.Create(ModuleIds.PluginManagement, 0x0062, Result.BadRequest,
+      return Error.Create(ModuleIds.PluginMotionGridH26x, 0x0002, Result.BadRequest,
         $"{StreamEnabledKey} must be 'true' or 'false'");
     return new Success();
   }

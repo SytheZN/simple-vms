@@ -337,6 +337,8 @@ public sealed class RecordingManager : IRecordingController, IAsyncDisposable
         continue;
       }
 
+      using var muxSubscription = muxResult.AsT0 as IDisposable;
+
       if (!_writers.TryGetValue((cameraId, profile), out var entry))
         return;
 

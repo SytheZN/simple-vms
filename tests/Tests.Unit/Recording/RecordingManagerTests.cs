@@ -207,6 +207,52 @@ public class RecordingManagerTests
     await manager.DisposeAsync();
   }
 
+  /// <summary>
+  /// SCENARIO:
+  /// A writer is stopped while its run loop is still subscribing to the pipeline, so the
+  /// subscription comes back after the writer has already been removed
+  ///
+  /// ACTION:
+  /// Reconcile a recording-enabled stream whose pipeline stops the writer during the subscribe
+  ///
+  /// EXPECTED RESULT:
+  /// The run loop disposes the subscription it no longer needs rather than leaving it attached
+  /// to the pipeline
+  /// </summary>
+  [Test]
+  public async Task WriterRemovedDuringSubscribe_DisposesMuxSubscription()
+  {
+    var cameraId = Guid.NewGuid();
+    var data = new FakeDataProvider();
+    data.AddCamera(MakeCamera(cameraId));
+    data.AddStream(MakeStream(Guid.NewGuid(), cameraId, recordingEnabled: true));
+
+    RecordingManager manager = null!;
+    var subscription = new TrackedMuxStream();
+    var tapRegistry = new StreamTapRegistry();
+    tapRegistry.RegisterPipeline(new FakePipeline
+    {
+      CameraId = cameraId,
+      Profile = "main",
+      Recordable = true,
+      OnSubscribeMux = async () =>
+      {
+        await manager.StopWriterAsync(cameraId, "main");
+        return subscription;
+      }
+    });
+
+    var host = new FakePluginHost { DataProvider = data, StorageProviders = [new FakeStorage()] };
+    manager = new RecordingManager(host, tapRegistry, new FakeEventBus(), NullLogger.Instance);
+
+    await manager.ReconcileAsync(cameraId, CancellationToken.None);
+
+    await subscription.Disposed.WaitAsync(TimeSpan.FromSeconds(2));
+    Assert.That(manager.WriterCount, Is.EqualTo(0));
+
+    await manager.DisposeAsync();
+  }
+
   private static CameraStream MakeDerivedStream(Guid cameraId, Guid parentId) => new()
   {
     Id = Guid.NewGuid(),
@@ -239,10 +285,44 @@ public class RecordingManagerTests
     public Task<OneOf<IDataStream, Error>> SubscribeDataAsync(CancellationToken ct) =>
       throw new NotImplementedException();
 
-    public Task<OneOf<IMuxStream, Error>> SubscribeMuxAsync(CancellationToken ct) =>
-      throw new NotImplementedException();
+    public Func<Task<IMuxStream>>? OnSubscribeMux { get; init; }
+
+    public async Task<OneOf<IMuxStream, Error>> SubscribeMuxAsync(CancellationToken ct)
+    {
+      if (OnSubscribeMux == null)
+        throw new NotImplementedException();
+      return OneOf<IMuxStream, Error>.FromT0(await OnSubscribeMux());
+    }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+  }
+
+  private sealed class TrackedMuxStream : IMuxStream<Shared.Models.Formats.Fmp4Fragment>, IDisposable
+  {
+    private readonly TaskCompletionSource _disposed =
+      new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public Task Disposed => _disposed.Task;
+    public MuxStreamInfo Info { get; } = new()
+    {
+      DataFormat = "fmp4",
+      MimeType = "video/mp4",
+      FileExtension = "mp4",
+      Resolution = "640x360",
+      Fps = 30
+    };
+    public ReadOnlyMemory<byte> Header => ReadOnlyMemory<byte>.Empty;
+    public Type FrameType => typeof(Shared.Models.Formats.Fmp4Fragment);
+    public Action<MuxStreamStats>? OnStats { set { } }
+
+    public async IAsyncEnumerable<Shared.Models.Formats.Fmp4Fragment> ReadAsync(
+      [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+      await Task.Delay(Timeout.Infinite, ct).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+      yield break;
+    }
+
+    public void Dispose() => _disposed.TrySetResult();
   }
 
   private static Camera MakeCamera(Guid id) => new()

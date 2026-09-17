@@ -15,6 +15,8 @@ public sealed class MuxStreamFanOut<T> : IMuxStream<T>, IMuxStreamFanOut where T
   private bool _disposed;
   private List<T> _currentGop = [];
 
+  public const int MaxCachedFragments = 256;
+
   public MuxStreamInfo Info => _source.Info;
   public ReadOnlyMemory<byte> Header => _source.Header;
   public Type FrameType => typeof(T);
@@ -48,7 +50,8 @@ public sealed class MuxStreamFanOut<T> : IMuxStream<T>, IMuxStreamFanOut where T
     bool firstSubscriber;
     lock (_lock)
     {
-      if (_currentGop.Count > 0)
+      var cachedGopFits = _currentGop.Count > 0 && _currentGop.Count <= capacity;
+      if (cachedGopFits)
       {
         foreach (var frame in _currentGop)
           channel.Writer.TryWrite(frame);
@@ -72,6 +75,7 @@ public sealed class MuxStreamFanOut<T> : IMuxStream<T>, IMuxStreamFanOut where T
         _snapshot = null;
         lastSubscriber = _subscribers.Count == 0;
       }
+      channel.Writer.TryComplete();
       if (lastSubscriber)
         StopReadLoop();
       Changed?.Invoke();
@@ -108,10 +112,7 @@ public sealed class MuxStreamFanOut<T> : IMuxStream<T>, IMuxStreamFanOut where T
           Subscriber[] snapshot;
           lock (_lock)
           {
-            if (item.IsSyncPoint)
-              _currentGop = [item];
-            else
-              _currentGop.Add(item);
+            CacheForLateSubscribers(item);
 
             snapshot = _snapshot ??= [.. _subscribers];
           }
@@ -142,6 +143,23 @@ public sealed class MuxStreamFanOut<T> : IMuxStream<T>, IMuxStreamFanOut where T
           typeof(T).Name, count);
       }
     });
+  }
+
+  private void CacheForLateSubscribers(T item)
+  {
+    if (item.IsSyncPoint)
+    {
+      _currentGop = [item];
+      return;
+    }
+
+    var gopIsCached = _currentGop.Count > 0;
+    if (!gopIsCached)
+      return;
+
+    _currentGop.Add(item);
+    if (_currentGop.Count > MaxCachedFragments)
+      _currentGop = [];
   }
 
   private void StopReadLoop()
@@ -193,21 +211,22 @@ public sealed class MuxStreamFanOut<T> : IMuxStream<T>, IMuxStreamFanOut where T
   }
 }
 
-internal sealed class ChannelMuxStream<T> : IMuxStream<T> where T : IDataUnit
+internal sealed class ChannelMuxStream<T> : IMuxStream<T>, IDisposable, IAsyncDisposable where T : IDataUnit
 {
   private readonly ChannelReader<T> _reader;
-  private readonly Action _onDispose;
+  private readonly Action _onUnsubscribe;
+  private int _disposed;
 
   public MuxStreamInfo Info { get; }
   public ReadOnlyMemory<byte> Header => ReadOnlyMemory<byte>.Empty;
   public Type FrameType => typeof(T);
   public Action<MuxStreamStats>? OnStats { set { } }
 
-  public ChannelMuxStream(MuxStreamInfo info, ChannelReader<T> reader, Action onDispose)
+  public ChannelMuxStream(MuxStreamInfo info, ChannelReader<T> reader, Action onUnsubscribe)
   {
     Info = info;
     _reader = reader;
-    _onDispose = onDispose;
+    _onUnsubscribe = onUnsubscribe;
   }
 
   public async IAsyncEnumerable<T> ReadAsync(
@@ -227,7 +246,19 @@ internal sealed class ChannelMuxStream<T> : IMuxStream<T> where T : IDataUnit
     }
     finally
     {
-      _onDispose();
+      Dispose();
     }
+  }
+
+  public void Dispose()
+  {
+    if (Interlocked.Exchange(ref _disposed, 1) == 0)
+      _onUnsubscribe();
+  }
+
+  public ValueTask DisposeAsync()
+  {
+    Dispose();
+    return ValueTask.CompletedTask;
   }
 }
