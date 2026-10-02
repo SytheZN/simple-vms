@@ -54,10 +54,9 @@
                                      Height="{DynamicResource IconSm}" />
             </Button>
             <StackPanel Orientation="Horizontal" Spacing="8">
-              <controls:PhosphorIcon Kind="ShieldCheck"
-                                     Width="{DynamicResource IconMd}"
-                                     Height="{DynamicResource IconMd}"
-                                     Foreground="{DynamicResource PrimaryBrush}" />
+              <Image Source="avares://Client.Core/Assets/logo/64.png"
+                     Width="{DynamicResource IconMd}"
+                     Height="{DynamicResource IconMd}" />
               <TextBlock Text="sVMS" FontSize="{DynamicResource TextLg}"
                          FontFamily="{DynamicResource SansBoldFont}"
                          Foreground="{DynamicResource PrimaryBrush}"

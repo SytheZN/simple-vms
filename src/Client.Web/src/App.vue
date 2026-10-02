@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '@/api/client'
+import logoUrl from '@theme/logo/logo.svg'
 
 const route = useRoute()
 const router = useRouter()
@@ -58,8 +59,8 @@ onMounted(async () => {
   </div>
   <div v-else class="h-screen bg-surface font-sans flex">
     <nav class="nav-sidebar">
-      <div class="text-lg font-bold text-primary px-3 py-3 mb-2">
-        <i class="ph ph-shield-check icon-md"></i> sVMS
+      <div class="flex items-center gap-2 text-lg font-bold text-primary px-3 py-3 mb-2">
+        <img :src="logoUrl" alt="" class="size-5" /> sVMS
       </div>
       <router-link to="/gallery" class="nav-link" :class="{ 'nav-link-active': route.path.startsWith('/gallery') }">
         <i class="ph ph-squares-four icon-sm"></i> Gallery

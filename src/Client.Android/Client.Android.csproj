@@ -23,6 +23,20 @@
     <ProjectReference Include="../Client.Core/Client.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <LogoDrawable Include="../Client.Theme/logo/512.png" DrawableName="icon" />
+    <LogoDrawable Include="../Client.Theme/logo/256.png" DrawableName="banner" />
+    <LogoDrawable Include="../Client.Theme/logo/notification.png" DrawableName="ic_notification" />
+    <AndroidResource Include="@(LogoDrawable->'$(BaseIntermediateOutputPath)logo-drawables/%(DrawableName).png')"
+                     Link="Resources/drawable/%(DrawableName).png" />
+  </ItemGroup>
+  <Target Name="CopyLogoDrawables"
+          BeforeTargets="AndroidPrepareForBuild;_ComputeAndroidResourcePaths"
+          Inputs="@(LogoDrawable)"
+          Outputs="@(LogoDrawable->'$(BaseIntermediateOutputPath)logo-drawables/%(DrawableName).png')">
+    <Copy SourceFiles="@(LogoDrawable)"
+          DestinationFiles="@(LogoDrawable->'$(BaseIntermediateOutputPath)logo-drawables/%(DrawableName).png')" />
+  </Target>
+  <ItemGroup>
     <PackageReference Include="Avalonia.Android" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />

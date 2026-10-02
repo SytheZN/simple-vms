@@ -8,10 +8,14 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
+      '@theme': fileURLToPath(new URL('../Client.Theme', import.meta.url)),
     },
   },
   server: {
     cors: false,
+    fs: {
+      allow: ['.', '../Client.Theme'],
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:8080',

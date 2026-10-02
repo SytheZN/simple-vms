@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { api, ApiError } from '@/api/client'
 import type { PluginListItem, SettingGroup } from '@/types/api'
 import StorageUnavailableBanner from '@/components/setup/StorageUnavailableBanner.vue'
+import logoUrl from '@theme/logo/logo.svg'
 
 const router = useRouter()
 const step = ref<'provider' | 'configure' | 'confirm'>('provider')
@@ -133,7 +134,7 @@ onUnmounted(() => {
   <div class="min-h-screen bg-surface flex items-center justify-center p-8">
     <div class="card p-8 max-w-lg w-full space-y-6">
       <div class="flex items-center gap-3">
-        <i class="ph ph-shield-check icon-xl text-primary"></i>
+        <img :src="logoUrl" alt="" class="size-8" />
         <h1 class="text-2xl font-bold text-text">Server Setup</h1>
       </div>
 

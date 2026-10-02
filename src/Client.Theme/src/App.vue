@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
+import logoUrl from '../logo/logo.svg'
 
 const darkMode = ref(false)
 const sampleModalOpen = ref(false)
@@ -804,7 +805,7 @@ function toggleDark() {
         <p class="text-sm text-text-muted">Full page mockup showing sidebar + content area with gallery grid.</p>
         <div class="card flex overflow-hidden h-[480px]">
           <nav class="nav-sidebar">
-            <div class="text-lg font-bold text-primary px-3 py-3 mb-2"><i class="ph ph-shield-check icon-md"></i> sVMS</div>
+            <div class="flex items-center gap-2 text-lg font-bold text-primary px-3 py-3 mb-2"><img :src="logoUrl" alt="" class="size-5" /> sVMS</div>
             <a href="#" class="nav-link nav-link-active"><i class="ph ph-squares-four icon-sm"></i> Gallery</a>
             <a href="#" class="nav-link"><i class="ph ph-lightning icon-sm"></i> Events</a>
             <a href="#" class="nav-link"><i class="ph ph-devices icon-sm"></i> Clients</a>
