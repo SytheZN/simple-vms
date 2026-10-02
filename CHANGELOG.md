@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-02
+
 ### Changed
 
 - New sVMS logo
@@ -51,6 +53,7 @@ First release of SimpleVMS (sVMS)!
 - Platform-native installers: macOS DMG, Linux AppImage, Windows installer
 
 <!-- link references -->
-[Unreleased]: https://github.com/SytheZN/simple-vms/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/SytheZN/simple-vms/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/SytheZN/simple-vms/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/SytheZN/simple-vms/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/SytheZN/simple-vms/compare/v0.0.0...v0.1.0
