@@ -41,13 +41,64 @@ public class StreamingServiceTests
 
     var tapRegistry = new StreamTapRegistry();
     var service = new StreamingService(
-      pluginHost, tapRegistry, new FakeEventBus(),
+      pluginHost, tapRegistry, new FakeEventBus(), new FakeCameraPauseState(),
       Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance
         .CreateLogger<StreamingService>());
 
     await service.StartAsync(CancellationToken.None);
 
     Assert.That(tapRegistry.GetPipeline(cameraId, "main"), Is.Not.Null);
+
+    await service.DisposeAsync();
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Two cameras each have a stream with a matching capture source; one camera is paused
+  ///
+  /// ACTION:
+  /// Start the streaming service
+  ///
+  /// EXPECTED RESULT:
+  /// Only the camera that is not paused gets a pipeline
+  /// </summary>
+  [Test]
+  public async Task Start_PausedCamera_GetsNoPipelines()
+  {
+    var paused = new Camera
+    {
+      Id = Guid.NewGuid(), Name = "Lounge", Address = "192.168.1.10",
+      ProviderId = "onvif", Capabilities = []
+    };
+    var active = new Camera
+    {
+      Id = Guid.NewGuid(), Name = "Porch", Address = "192.168.1.11",
+      ProviderId = "onvif", Capabilities = []
+    };
+    CameraStream MainStream(Camera camera) => new()
+    {
+      Id = Guid.NewGuid(), CameraId = camera.Id, Profile = "main",
+      FormatId = "fmp4", Uri = $"rtsp://{camera.Address}/main"
+    };
+
+    var pluginHost = new FakePluginHost
+    {
+      DataProvider = new FakeDataProvider([paused, active], [MainStream(paused), MainStream(active)]),
+      CaptureSources = [new FakeCaptureSource()]
+    };
+    var pauses = new FakeCameraPauseState();
+    pauses.Paused.Add(paused.Id);
+
+    var tapRegistry = new StreamTapRegistry();
+    var service = new StreamingService(
+      pluginHost, tapRegistry, new FakeEventBus(), pauses,
+      Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance
+        .CreateLogger<StreamingService>());
+
+    await service.StartAsync(CancellationToken.None);
+
+    Assert.That(tapRegistry.GetPipeline(paused.Id, "main"), Is.Null);
+    Assert.That(tapRegistry.GetPipeline(active.Id, "main"), Is.Not.Null);
 
     await service.DisposeAsync();
   }
@@ -84,7 +135,7 @@ public class StreamingServiceTests
 
     var tapRegistry = new StreamTapRegistry();
     var service = new StreamingService(
-      pluginHost, tapRegistry, new FakeEventBus(),
+      pluginHost, tapRegistry, new FakeEventBus(), new FakeCameraPauseState(),
       Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance
         .CreateLogger<StreamingService>());
 
@@ -115,7 +166,7 @@ public class StreamingServiceTests
 
     var tapRegistry = new StreamTapRegistry();
     var service = new StreamingService(
-      pluginHost, tapRegistry, new FakeEventBus(),
+      pluginHost, tapRegistry, new FakeEventBus(), new FakeCameraPauseState(),
       Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance
         .CreateLogger<StreamingService>());
 
@@ -159,7 +210,7 @@ public class StreamingServiceTests
 
     var tapRegistry = new StreamTapRegistry();
     var service = new StreamingService(
-      pluginHost, tapRegistry, new FakeEventBus(),
+      pluginHost, tapRegistry, new FakeEventBus(), new FakeCameraPauseState(),
       Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance
         .CreateLogger<StreamingService>());
 

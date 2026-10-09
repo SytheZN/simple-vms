@@ -113,6 +113,15 @@ public static class ApiRoutes
       return ApiResult.Ok(result, new DebugTag(ModuleIds.CameraManagement, 0x0015));
     });
 
+    dispatcher.Add("POST", "/api/v1/cameras/{id:guid}/pause", async (req, ct) =>
+    {
+      var pauses = req.Resolve<CameraPauseService>();
+      var body = req.Body(ServerJsonContext.Default.PauseCameraRequest);
+      var result = await pauses.PauseAsync(req.RouteGuid("id"), body.DurationSeconds, ct);
+      return ApiResult.Ok(result, new DebugTag(ModuleIds.CameraManagement, 0x0018),
+        ServerJsonContext.Default.PauseCameraResponse);
+    });
+
     dispatcher.Add("OPTIONS", "/api/v1/cameras/{id:guid}/config", async (req, ct) =>
     {
       var config = req.Resolve<CameraConfigService>();

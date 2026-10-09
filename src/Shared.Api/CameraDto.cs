@@ -13,4 +13,5 @@ public sealed class CameraDto
   public int? SegmentDuration { get; init; }
   public string? RetentionMode { get; init; }
   public long? RetentionValue { get; init; }
+  public ulong? PausedUntil { get; init; }
 }

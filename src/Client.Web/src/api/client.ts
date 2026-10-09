@@ -5,6 +5,8 @@ import type {
   UpdateCameraRequest,
   ProbeRequest,
   ProbeResponse,
+  PauseCameraRequest,
+  PauseCameraResponse,
   ClientListItem,
   UpdateClientRequest,
   StartEnrollmentResponse,
@@ -149,6 +151,8 @@ export const api = {
     delete: (id: string) => del<void>(`/api/v1/cameras/${id}`),
     refresh: (id: string) => post<CameraListItem>(`/api/v1/cameras/${id}/refresh`),
     restart: (id: string) => post<void>(`/api/v1/cameras/${id}/restart`),
+    pause: (id: string, body: PauseCameraRequest) =>
+      post<PauseCameraResponse>(`/api/v1/cameras/${id}/pause`, body),
     snapshot: (id: string) => `/api/v1/cameras/${id}/snapshot`,
     configSchema: (id: string) => request<CameraConfigSchema>('OPTIONS', `/api/v1/cameras/${id}/config`),
     configValues: (id: string) => get<CameraConfigValues>(`/api/v1/cameras/${id}/config`),

@@ -200,8 +200,11 @@ public static class AppSetup
     WatchCameraStatus(eventBus, statusTracker, app.Lifetime.ApplicationStopping);
     WatchRecordingStatus(eventBus, statusTracker, app.Lifetime.ApplicationStopping);
 
+    var pauses = app.Services.GetRequiredService<CameraPauseService>();
+    await pauses.StartAsync(app.Lifetime.ApplicationStopping);
+
     _streamingService = new StreamingService(
-      pluginHost, tapRegistry, eventBus,
+      pluginHost, tapRegistry, eventBus, pauses,
       app.Services.GetRequiredService<ILoggerFactory>().CreateLogger<StreamingService>());
     await _streamingService.StartAsync(app.Lifetime.ApplicationStopping);
 
@@ -211,7 +214,7 @@ public static class AppSetup
     await _eventManager.StartAsync(app.Lifetime.ApplicationStopping);
 
     _recordingManager = new RecordingManager(
-      pluginHost, tapRegistry, eventBus,
+      pluginHost, tapRegistry, eventBus, pauses,
       app.Services.GetRequiredService<ILoggerFactory>().CreateLogger<RecordingManager>());
     await _recordingManager.StartAsync(app.Lifetime.ApplicationStopping);
 

@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api, ApiError } from '@/api/client'
+import { formatPauseEnd } from '@/lib/cameraStatus'
 import type {
   CameraListItem,
   CreateCameraRequest,
@@ -146,6 +147,43 @@ async function addCamera() {
   }
 }
 
+const pauseDurations = [
+  { label: '15 min', seconds: 15 * 60 },
+  { label: '30 min', seconds: 30 * 60 },
+  { label: '1 hour', seconds: 60 * 60 },
+  { label: '2 hours', seconds: 2 * 60 * 60 },
+  { label: '3 hours', seconds: 3 * 60 * 60 },
+  { label: '4 hours', seconds: 4 * 60 * 60 },
+]
+
+const pauseTarget = ref<CameraListItem | null>(null)
+const pausing = ref(false)
+const pauseError = ref('')
+
+function openPause(cam: CameraListItem) {
+  pauseTarget.value = cam
+  pauseError.value = ''
+}
+
+function closePause() {
+  pauseTarget.value = null
+}
+
+async function applyPause(durationSeconds: number) {
+  if (!pauseTarget.value) return
+  pausing.value = true
+  pauseError.value = ''
+  try {
+    await api.cameras.pause(pauseTarget.value.id, { durationSeconds })
+    closePause()
+    await loadCameras()
+  } catch (e) {
+    if (e instanceof ApiError) pauseError.value = e.message
+  } finally {
+    pausing.value = false
+  }
+}
+
 onMounted(async () => {
   await Promise.all([loadCameras(), loadSettings(), loadOnvifCreds()])
 })
@@ -279,6 +317,9 @@ onMounted(async () => {
               </td>
               <td class="text-xs text-text-muted">{{ cam.capabilities?.join(', ') ?? '--' }}</td>
               <td class="text-right whitespace-nowrap">
+                <button class="btn btn-ghost btn-sm" @click="openPause(cam)" title="Pause">
+                  <i class="ph ph-eye-slash icon-sm"></i>
+                </button>
                 <button class="btn btn-ghost btn-sm" @click="router.push(`/settings/cameras/${cam.id}`)" title="Edit">
                   <i class="ph ph-gear icon-sm"></i>
                 </button>
@@ -289,7 +330,49 @@ onMounted(async () => {
       </div>
     </section>
 
-    <!-- Add Camera Dialog -->
+    <div v-if="pauseTarget" class="modal-container" @click.self="closePause">
+      <div class="modal-backdrop"></div>
+      <div class="relative card p-6 max-w-sm w-full shadow-modal space-y-4">
+        <div class="flex items-center justify-between">
+          <h2 class="section-subheading">Pause {{ pauseTarget.name }}</h2>
+          <button class="btn btn-ghost btn-sm" @click="closePause">
+            <i class="ph ph-x icon-sm"></i>
+          </button>
+        </div>
+
+        <p v-if="pauseTarget.pausedUntil" class="text-sm text-text-muted">
+          Paused until {{ formatPauseEnd(pauseTarget.pausedUntil) }}
+        </p>
+        <p v-else class="text-sm text-text-muted">
+          Stops live view, recording, thumbnails, and motion detection for this camera.
+        </p>
+
+        <div class="grid grid-cols-3 gap-2">
+          <button
+            v-for="d in pauseDurations"
+            :key="d.seconds"
+            class="btn btn-secondary"
+            :disabled="pausing"
+            @click="applyPause(d.seconds)"
+          >
+            {{ d.label }}
+          </button>
+        </div>
+
+        <div v-if="pauseError" class="toast toast-danger text-sm">
+          <i class="ph ph-x-circle icon-sm"></i>
+          {{ pauseError }}
+        </div>
+
+        <div v-if="pauseTarget.pausedUntil" class="flex justify-end border-t border-border pt-4">
+          <button class="btn btn-primary" :disabled="pausing" @click="applyPause(0)">
+            <i class="ph ph-eye icon-sm"></i>
+            Resume now
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div v-if="dialogOpen" class="modal-container" @click.self="closeDialog">
       <div class="modal-backdrop"></div>
       <div class="relative card p-6 max-w-lg w-full shadow-modal space-y-4">

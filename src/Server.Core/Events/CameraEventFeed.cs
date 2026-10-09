@@ -60,6 +60,8 @@ public static class CameraEventFeed
         };
         return (Build(evt.CameraId, "__recording", evt.Timestamp, metadata), EventChannelFlags.Start);
       }),
+      Subscribe<CameraPauseChanged>(eventBus, queue.Writer, token, evt =>
+        (Build(evt.CameraId, "__pause", evt.Timestamp), EventChannelFlags.Start)),
       Subscribe<SystemEventRecorded>(eventBus, queue.Writer, token, evt =>
       {
         var metadata = evt.Metadata != null

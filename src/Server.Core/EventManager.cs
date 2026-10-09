@@ -52,6 +52,7 @@ public sealed class EventManager : IAsyncDisposable
     WatchCameraConfigChanged(_eventCts.Token);
     WatchCameraStatusChanged(_eventCts.Token);
     WatchCameraRecordingChanged(_eventCts.Token);
+    WatchCameraPauseChanged(_eventCts.Token);
     WatchClientEvents(_eventCts.Token);
 
     _logger.LogInformation("Event manager started: {Count} subscription(s)", _subscriptions.Count);
@@ -495,6 +496,28 @@ public sealed class EventManager : IAsyncDisposable
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
           _logger.LogError(ex, "Failed to record recording change for {CameraId}", evt.CameraId);
+        }
+      }
+    }, ct);
+  }
+
+  private void WatchCameraPauseChanged(CancellationToken ct)
+  {
+    _ = Task.Run(async () =>
+    {
+      await foreach (var evt in _eventBus.SubscribeAsync<CameraPauseChanged>(ct))
+      {
+        try
+        {
+          if (evt.PausedUntil is { } until)
+            await RecordAsync(evt.CameraId, "camera-paused", evt.Timestamp,
+              new Dictionary<string, string> { ["until"] = until.ToString() }, ct);
+          else
+            await RecordAsync(evt.CameraId, "camera-resumed", evt.Timestamp, null, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+          _logger.LogError(ex, "Failed to record pause change for {CameraId}", evt.CameraId);
         }
       }
     }, ct);

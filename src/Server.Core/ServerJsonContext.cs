@@ -15,6 +15,8 @@ namespace Server.Core;
 [JsonSerializable(typeof(IReadOnlyList<CameraDto>))]
 [JsonSerializable(typeof(List<CameraDto>))]
 [JsonSerializable(typeof(CreateCameraRequest))]
+[JsonSerializable(typeof(PauseCameraRequest))]
+[JsonSerializable(typeof(PauseCameraResponse))]
 [JsonSerializable(typeof(UpdateCameraRequest))]
 [JsonSerializable(typeof(ProbeRequest))]
 [JsonSerializable(typeof(ProbeResponse))]

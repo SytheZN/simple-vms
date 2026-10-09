@@ -11,7 +11,10 @@ public static class ApiExtensions
 {
   public static IServiceCollection AddApiServices(this IServiceCollection services)
   {
+    services.AddSingleton(TimeProvider.System);
     services.AddSingleton<CameraStatusTracker>();
+    services.AddSingleton<CameraPauseService>();
+    services.AddSingleton<ICameraPauseState>(sp => sp.GetRequiredService<CameraPauseService>());
     services.AddSingleton<ConnectionTracker>();
     services.AddSingleton<EnrollmentService>();
     services.AddSingleton<CameraService>();

@@ -7,9 +7,12 @@ public sealed class CameraStatusTracker
 {
   private readonly ConcurrentDictionary<(Guid CameraId, string Profile), string> _pipelines = new();
   private readonly ConcurrentDictionary<(Guid CameraId, string Profile), RecordingState> _writers = new();
+  private readonly ConcurrentDictionary<Guid, ulong> _pausedUntil = new();
 
   public string GetStatus(Guid cameraId)
   {
+    if (_pausedUntil.ContainsKey(cameraId)) return "paused";
+
     var anyOnline = false;
     foreach (var kvp in _pipelines)
     {
@@ -42,8 +45,20 @@ public sealed class CameraStatusTracker
       _writers[(cameraId, profile)] = state;
   }
 
+  public ulong? GetPausedUntil(Guid cameraId) =>
+    _pausedUntil.TryGetValue(cameraId, out var until) ? until : null;
+
+  public void SetPausedUntil(Guid cameraId, ulong? until)
+  {
+    if (until is { } value)
+      _pausedUntil[cameraId] = value;
+    else
+      _pausedUntil.TryRemove(cameraId, out _);
+  }
+
   public void Remove(Guid cameraId)
   {
+    _pausedUntil.TryRemove(cameraId, out _);
     foreach (var key in _pipelines.Keys)
     {
       if (key.CameraId == cameraId)

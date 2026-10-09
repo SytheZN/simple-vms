@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { api, ApiError } from '@/api/client'
 import { useGalleryThumbnails } from '@/composables/useGalleryThumbnails'
 import { useServerEvents } from '@/composables/useServerEvents'
+import { cameraStatusLabel } from '@/lib/cameraStatus'
 import type { CameraListItem, LiveEvent } from '@/types/api'
 
 const FLASH_DURATION_MS = 800
@@ -130,7 +131,7 @@ onUnmounted(() => {
           <div class="flex items-center justify-between">
             <span class="text-sm font-medium text-text">{{ cam.name }}</span>
             <span class="badge" :class="statusBadge(cam.status)">
-              <i :class="[statusBadgeIcon(cam.status), 'icon-sm']"></i> {{ cam.status }}
+              <i :class="[statusBadgeIcon(cam.status), 'icon-sm']"></i> {{ cameraStatusLabel(cam) }}
             </span>
           </div>
           <div class="flex gap-2 text-xs text-text-muted">

@@ -35,7 +35,7 @@ public class RecordingManagerTests
     var tapRegistry = new StreamTapRegistry();
     var host = new FakePluginHost { DataProvider = data, StorageProviders = [storage] };
 
-    var manager = new RecordingManager(host, tapRegistry, eventBus,
+    var manager = new RecordingManager(host, tapRegistry, eventBus, new FakeCameraPauseState(),
       NullLogger.Instance);
 
     await manager.ReconcileAsync(cameraId, CancellationToken.None);
@@ -71,7 +71,7 @@ public class RecordingManagerTests
     var tapRegistry = new StreamTapRegistry();
     var host = new FakePluginHost { DataProvider = data, StorageProviders = [storage] };
 
-    var manager = new RecordingManager(host, tapRegistry, eventBus,
+    var manager = new RecordingManager(host, tapRegistry, eventBus, new FakeCameraPauseState(),
       NullLogger.Instance);
 
     await manager.ReconcileAsync(cameraId, CancellationToken.None);
@@ -111,7 +111,7 @@ public class RecordingManagerTests
     var tapRegistry = new StreamTapRegistry();
     var host = new FakePluginHost { DataProvider = data, StorageProviders = [storage] };
 
-    var manager = new RecordingManager(host, tapRegistry, eventBus,
+    var manager = new RecordingManager(host, tapRegistry, eventBus, new FakeCameraPauseState(),
       NullLogger.Instance);
 
     await manager.ReconcileAsync(cameraId, CancellationToken.None);
@@ -121,6 +121,42 @@ public class RecordingManagerTests
 
     await manager.ReconcileAsync(cameraId, CancellationToken.None);
 
+    Assert.That(manager.WriterCount, Is.EqualTo(0));
+
+    await manager.DisposeAsync();
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A camera has a writer running for a recording-enabled stream, then the camera is paused
+  ///
+  /// ACTION:
+  /// Call ReconcileAsync for the camera, then call it again while still paused
+  ///
+  /// EXPECTED RESULT:
+  /// The writer is stopped and no writer is started again while the pause lasts
+  /// </summary>
+  [Test]
+  public async Task ReconcileAsync_PausedCamera_StopsAndStartsNoWriters()
+  {
+    var cameraId = Guid.NewGuid();
+    var data = new FakeDataProvider();
+    data.AddCamera(MakeCamera(cameraId));
+    data.AddStream(MakeStream(Guid.NewGuid(), cameraId, recordingEnabled: true));
+
+    var pauses = new FakeCameraPauseState();
+    var host = new FakePluginHost { DataProvider = data, StorageProviders = [new FakeStorage()] };
+    var manager = new RecordingManager(host, new StreamTapRegistry(), new FakeEventBus(), pauses,
+      NullLogger.Instance);
+
+    await manager.ReconcileAsync(cameraId, CancellationToken.None);
+    Assert.That(manager.WriterCount, Is.EqualTo(1));
+
+    pauses.Paused.Add(cameraId);
+    await manager.ReconcileAsync(cameraId, CancellationToken.None);
+    Assert.That(manager.WriterCount, Is.EqualTo(0));
+
+    await manager.ReconcileAsync(cameraId, CancellationToken.None);
     Assert.That(manager.WriterCount, Is.EqualTo(0));
 
     await manager.DisposeAsync();
@@ -157,7 +193,7 @@ public class RecordingManagerTests
     });
 
     var host = new FakePluginHost { DataProvider = data, StorageProviders = [new FakeStorage()] };
-    var manager = new RecordingManager(host, tapRegistry, new FakeEventBus(), NullLogger.Instance);
+    var manager = new RecordingManager(host, tapRegistry, new FakeEventBus(), new FakeCameraPauseState(), NullLogger.Instance);
 
     await manager.ReconcileAsync(cameraId, CancellationToken.None);
 
@@ -198,7 +234,7 @@ public class RecordingManagerTests
     });
 
     var host = new FakePluginHost { DataProvider = data, StorageProviders = [new FakeStorage()] };
-    var manager = new RecordingManager(host, tapRegistry, new FakeEventBus(), NullLogger.Instance);
+    var manager = new RecordingManager(host, tapRegistry, new FakeEventBus(), new FakeCameraPauseState(), NullLogger.Instance);
 
     await manager.ReconcileAsync(cameraId, CancellationToken.None);
 
@@ -243,7 +279,7 @@ public class RecordingManagerTests
     });
 
     var host = new FakePluginHost { DataProvider = data, StorageProviders = [new FakeStorage()] };
-    manager = new RecordingManager(host, tapRegistry, new FakeEventBus(), NullLogger.Instance);
+    manager = new RecordingManager(host, tapRegistry, new FakeEventBus(), new FakeCameraPauseState(), NullLogger.Instance);
 
     await manager.ReconcileAsync(cameraId, CancellationToken.None);
 

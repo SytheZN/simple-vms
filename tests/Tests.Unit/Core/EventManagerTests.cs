@@ -580,6 +580,45 @@ public class EventManagerTests
     Assert.That(recorded.Metadata!.ContainsKey("credentialsUpdated"), Is.False);
   }
 
+  /// <summary>
+  /// SCENARIO:
+  /// A camera is paused until a given time and later resumes
+  ///
+  /// ACTION:
+  /// Publish CameraPauseChanged with an end time, then with none
+  ///
+  /// EXPECTED RESULT:
+  /// "camera-paused" is written carrying the end time, followed by "camera-resumed"
+  /// </summary>
+  [Test]
+  public async Task PauseChanged_RecordsPausedThenResumed()
+  {
+    var data = new FakeDataProvider();
+    var eventBus = new EventBus();
+    var cameraId = Guid.NewGuid();
+
+    await using var manager = await StartManagerAsync(data, eventBus);
+
+    await eventBus.PublishAsync(new CameraPauseChanged
+    {
+      CameraId = cameraId,
+      PausedUntil = 9_000_000,
+      Timestamp = 6_000_000
+    }, CancellationToken.None);
+    await eventBus.PublishAsync(new CameraPauseChanged
+    {
+      CameraId = cameraId,
+      PausedUntil = null,
+      Timestamp = 9_000_000
+    }, CancellationToken.None);
+    await Task.Delay(100);
+
+    Assert.That(data.CreatedEvents.Select(e => e.Type),
+      Is.EqualTo(new[] { "camera-paused", "camera-resumed" }));
+    Assert.That(data.CreatedEvents[0].CameraId, Is.EqualTo(cameraId));
+    Assert.That(data.CreatedEvents[0].Metadata!["until"], Is.EqualTo("9000000"));
+  }
+
   private static async Task<EventManager> StartManagerAsync(
     FakeDataProvider data, IEventBus eventBus)
   {

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
+using Server.Core;
 using Server.Plugins;
 using Server.Streaming;
 using Shared.Models;
@@ -14,6 +15,7 @@ public sealed class RecordingManager : IRecordingController, IAsyncDisposable
   private readonly IPluginHost _plugins;
   private readonly StreamTapRegistry _tapRegistry;
   private readonly IEventBus _eventBus;
+  private readonly ICameraPauseState _pauses;
   private readonly ILogger _logger;
   private readonly ConcurrentDictionary<(Guid CameraId, string Profile), (SegmentWriter Writer, CancellationTokenSource Cts)> _writers = new();
   private readonly ConcurrentDictionary<(Guid CameraId, string Profile), RecordingState> _lastPublishedState = new();
@@ -30,11 +32,13 @@ public sealed class RecordingManager : IRecordingController, IAsyncDisposable
     IPluginHost plugins,
     StreamTapRegistry tapRegistry,
     IEventBus eventBus,
+    ICameraPauseState pauses,
     ILogger logger)
   {
     _plugins = plugins;
     _tapRegistry = tapRegistry;
     _eventBus = eventBus;
+    _pauses = pauses;
     _logger = logger;
   }
 
@@ -66,6 +70,7 @@ public sealed class RecordingManager : IRecordingController, IAsyncDisposable
     WatchStreamStarted(_eventCts.Token);
     WatchCameraConfigChanged(_eventCts.Token);
     WatchCameraRemoved(_eventCts.Token);
+    WatchCameraPaused(_eventCts.Token);
 
     _logger.LogInformation("Recording manager started: {Count} stream(s)", _writers.Count);
   }
@@ -171,8 +176,11 @@ public sealed class RecordingManager : IRecordingController, IAsyncDisposable
     var defaultDuration = await GetDefaultSegmentDurationAsync(ct);
     var desiredProfiles = new HashSet<string>();
     var byId = streamsResult.AsT0.ToDictionary(s => s.Id);
+    var recordable = _pauses.IsPaused(cameraId)
+      ? []
+      : streamsResult.AsT0.Where(s => s.DeletedAt == null);
 
-    foreach (var stream in streamsResult.AsT0.Where(s => s.DeletedAt == null))
+    foreach (var stream in recordable)
     {
       var root = stream.Kind == StreamKind.Metadata
         ? Server.Core.StreamHierarchy.ResolveRootStream(
@@ -286,6 +294,25 @@ public sealed class RecordingManager : IRecordingController, IAsyncDisposable
               "Failed to stop writer on CameraRemoved for camera {CameraId} profile '{Profile}'",
               key.CameraId, key.Profile);
           }
+        }
+      }
+    }, ct);
+  }
+
+  private void WatchCameraPaused(CancellationToken ct)
+  {
+    _ = Task.Run(async () =>
+    {
+      await foreach (var evt in _eventBus.SubscribeAsync<CameraPauseChanged>(ct))
+      {
+        if (evt.PausedUntil == null) continue;
+        try
+        {
+          await ReconcileAsync(evt.CameraId, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+          _logger.LogError(ex, "Failed to stop recording on pause for camera {CameraId}", evt.CameraId);
         }
       }
     }, ct);

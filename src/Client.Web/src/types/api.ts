@@ -51,6 +51,15 @@ export interface CameraListItem {
   segmentDuration?: number
   retentionMode?: string
   retentionValue?: number
+  pausedUntil?: number
+}
+
+export interface PauseCameraRequest {
+  durationSeconds: number
+}
+
+export interface PauseCameraResponse {
+  pausedUntil: number | null
 }
 
 export interface CreateCameraRequest {

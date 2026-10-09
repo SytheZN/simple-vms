@@ -528,7 +528,7 @@ public sealed class CameraService : IHostedService
       "Snapshot not available"));
   }
 
-  private static CameraDto ToCameraListItem(
+  private CameraDto ToCameraListItem(
     Camera cam, string status, List<StreamProfileDto> streams) =>
     new()
     {
@@ -544,7 +544,8 @@ public sealed class CameraService : IHostedService
       RetentionMode = cam.RetentionMode == Shared.Models.RetentionMode.Default
         ? null : cam.RetentionMode.ToString().ToLowerInvariant(),
       RetentionValue = cam.RetentionMode == Shared.Models.RetentionMode.Default
-        ? null : cam.RetentionValue
+        ? null : cam.RetentionValue,
+      PausedUntil = _status.GetPausedUntil(cam.Id)
     };
 
   private StreamProfileDto ToStreamDto(Guid cameraId, CameraStream s, Func<Guid, CameraStream?>? lookup = null)

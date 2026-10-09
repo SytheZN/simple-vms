@@ -13,6 +13,7 @@ public sealed class StreamingService : IAsyncDisposable
   private readonly IPluginHost _pluginHost;
   private readonly StreamTapRegistry _tapRegistry;
   private readonly IEventBus _eventBus;
+  private readonly ICameraPauseState _pauses;
   private readonly ILogger<StreamingService> _logger;
   private CancellationTokenSource? _eventCts;
 
@@ -20,11 +21,13 @@ public sealed class StreamingService : IAsyncDisposable
     IPluginHost pluginHost,
     StreamTapRegistry tapRegistry,
     IEventBus eventBus,
+    ICameraPauseState pauses,
     ILogger<StreamingService> logger)
   {
     _pluginHost = pluginHost;
     _tapRegistry = tapRegistry;
     _eventBus = eventBus;
+    _pauses = pauses;
     _logger = logger;
   }
 
@@ -40,7 +43,7 @@ public sealed class StreamingService : IAsyncDisposable
       return;
     }
 
-    foreach (var camera in camerasResult.AsT0)
+    foreach (var camera in camerasResult.AsT0.Where(c => !_pauses.IsPaused(c.Id)))
     {
       var streamsResult = await dataProvider.Streams.GetByCameraIdAsync(camera.Id, ct);
       if (streamsResult.IsT1)
@@ -72,6 +75,7 @@ public sealed class StreamingService : IAsyncDisposable
     WatchCameraAdded(_eventCts.Token);
     WatchCameraRemoved(_eventCts.Token);
     WatchCameraConfigChanged(_eventCts.Token);
+    WatchCameraPauseChanged(_eventCts.Token);
     StartDemandSweep(_eventCts.Token);
 
     _logger.LogInformation("Streaming service started: {Count} pipeline(s) registered",
@@ -136,6 +140,28 @@ public sealed class StreamingService : IAsyncDisposable
     }, ct);
   }
 
+  [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]
+  private void WatchCameraPauseChanged(CancellationToken ct)
+  {
+    _ = Task.Run(async () =>
+    {
+      await foreach (var evt in _eventBus.SubscribeAsync<CameraPauseChanged>(ct))
+      {
+        try
+        {
+          if (evt.PausedUntil != null)
+            await RemovePipelinesForCameraAsync(evt.CameraId);
+          else
+            await AddPipelinesForCameraAsync(evt.CameraId, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+          _logger.LogError(ex, "Failed to apply pause change for camera {CameraId}", evt.CameraId);
+        }
+      }
+    }, ct);
+  }
+
   private void StartDemandSweep(CancellationToken ct)
   {
     _ = Task.Run(async () =>
@@ -154,6 +180,8 @@ public sealed class StreamingService : IAsyncDisposable
   [RequiresDynamicCode("Pipeline construction uses dynamic fan-out types")]
   private async Task AddPipelinesForCameraAsync(Guid cameraId, CancellationToken ct)
   {
+    if (_pauses.IsPaused(cameraId)) return;
+
     var dataProvider = _pluginHost.DataProvider;
     var cameraResult = await dataProvider.Cameras.GetByIdAsync(cameraId, ct);
     if (cameraResult.IsT1) return;

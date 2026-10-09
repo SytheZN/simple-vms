@@ -8,6 +8,7 @@ import { useStreamer } from '@/composables/useStreamer'
 import { useOverlay } from '@/composables/useOverlay'
 import Timeline from '@/components/Timeline.vue'
 import PlayerStats from '@/components/PlayerStats.vue'
+import { cameraStatusLabel } from '@/lib/cameraStatus'
 import type { CameraListItem } from '@/types/api'
 
 async function supportsWebCodecsHevc(): Promise<boolean> {
@@ -349,7 +350,7 @@ onUnmounted(() => {
               : 'badge-neutral'"
           >
             <i class="ph-fill ph-circle icon-sm"></i>
-            {{ playerState.mode === 'playback' ? 'Playback' : streamer.status.value === 'connected' ? 'Live' : camera.status }}
+            {{ playerState.mode === 'playback' ? 'Playback' : streamer.status.value === 'connected' ? 'Live' : cameraStatusLabel(camera) }}
           </span>
           <span v-if="selectedStream" class="text-xs text-text-muted">{{ selectedStream.resolution }}</span>
           <button class="btn btn-ghost btn-sm" @click="cycleProfile">

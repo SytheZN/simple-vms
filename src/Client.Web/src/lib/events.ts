@@ -24,6 +24,8 @@ const descriptors: Record<string, EventDescriptor> = {
   'camera-recording-started': { label: 'Recording started', icon: 'ph ph-record', tone: 'danger', scope: 'camera' },
   'camera-recording-stopped': { label: 'Recording stopped', icon: 'ph ph-stop-circle', tone: 'muted', scope: 'camera' },
   'camera-recording-error': { label: 'Recording error', icon: 'ph ph-warning', tone: 'warning', scope: 'camera' },
+  'camera-paused': { label: 'Paused', icon: 'ph ph-eye-slash', tone: 'muted', scope: 'camera' },
+  'camera-resumed': { label: 'Resumed', icon: 'ph ph-eye', tone: 'info', scope: 'camera' },
   'camera-added': { label: 'Camera added', icon: 'ph ph-plus-circle', tone: 'muted', scope: 'system' },
   'camera-updated': { label: 'Camera updated', icon: 'ph ph-pencil', tone: 'muted', scope: 'system' },
   'camera-reconfigured': { label: 'Reconfigured', icon: 'ph ph-gear', tone: 'muted', scope: 'system' },
