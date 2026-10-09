@@ -123,7 +123,8 @@ public sealed class CoreStreamSettings : IPluginStreamSettings
   public OneOf<Success, Error> ValidateGroup(
     Guid streamId, string groupId, IReadOnlyDictionary<string, string> values) =>
     groupId == RetentionPolicyRules.GroupId
-      ? RetentionPolicyRules.Validate(values)
+      ? RetentionPolicyRules.Validate(
+          values, RetentionPolicyRules.StorageSizeKnown(_plugins.StorageProviders.FirstOrDefault()))
       : new Success();
 
   public OneOf<Success, Error> ApplyValues(Guid streamId, IReadOnlyDictionary<string, string> values)

@@ -11,6 +11,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Per-camera privacy pause with a set duration
 - Input validation caters for interdependent values
 
+### Changed
+
+- Retention balances storage across cameras and reduces proportionally when space is short
+
 ### Fixed
 
 - Playback stutter and timeline glitches in the web client

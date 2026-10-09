@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging.Abstractions;
 using Server.Recording;
 using Server.Streaming;
@@ -289,6 +290,86 @@ public class RecordingManagerTests
     await manager.DisposeAsync();
   }
 
+  /// <summary>
+  /// SCENARIO:
+  /// A writer has received a keyframe and started a segment that is still being written
+  ///
+  /// ACTION:
+  /// Read ActiveSegmentIds
+  ///
+  /// EXPECTED RESULT:
+  /// The open segment's id is reported, so retention can avoid purging it
+  /// </summary>
+  [Test]
+  public async Task ActiveSegmentIds_ReportsOpenSegment()
+  {
+    var cameraId = Guid.NewGuid();
+    var data = new FakeDataProvider();
+    data.AddCamera(MakeCamera(cameraId));
+    data.AddStream(MakeStream(Guid.NewGuid(), cameraId, recordingEnabled: true));
+
+    var tapRegistry = new StreamTapRegistry();
+    tapRegistry.RegisterPipeline(new FakePipeline
+    {
+      CameraId = cameraId,
+      Profile = "main",
+      Recordable = true,
+      OnSubscribeMux = () => Task.FromResult<IMuxStream>(new KeyframeMuxStream())
+    });
+
+    var host = new FakePluginHost { DataProvider = data, StorageProviders = [new FakeStorage()] };
+    var manager = new RecordingManager(host, tapRegistry, new FakeEventBus(), new FakeCameraPauseState(), NullLogger.Instance);
+
+    await manager.ReconcileAsync(cameraId, CancellationToken.None);
+    var segments = ((FakeSegmentRepo)data.Segments).Created;
+    Assert.That(SpinWait.SpinUntil(() => !segments.IsEmpty, TimeSpan.FromSeconds(2)), Is.True);
+
+    Assert.That(manager.ActiveSegmentIds, Is.EquivalentTo(new[] { segments.Single().Id }));
+
+    await manager.DisposeAsync();
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// The storage provider returns an error when the writer creates a segment
+  ///
+  /// ACTION:
+  /// Start recording and deliver a keyframe
+  ///
+  /// EXPECTED RESULT:
+  /// The returned error is handled as a writer failure: recording state is published as Error
+  /// </summary>
+  [Test]
+  public async Task StorageCreateError_PublishesErrorState()
+  {
+    var cameraId = Guid.NewGuid();
+    var data = new FakeDataProvider();
+    data.AddCamera(MakeCamera(cameraId));
+    data.AddStream(MakeStream(Guid.NewGuid(), cameraId, recordingEnabled: true));
+
+    var tapRegistry = new StreamTapRegistry();
+    tapRegistry.RegisterPipeline(new FakePipeline
+    {
+      CameraId = cameraId,
+      Profile = "main",
+      Recordable = true,
+      OnSubscribeMux = () => Task.FromResult<IMuxStream>(new KeyframeMuxStream())
+    });
+
+    var storage = new FakeStorage { CreateError = Error.Create(0x1FFF, 0x0001, Result.InternalError, "disk gone") };
+    var bus = new FakeEventBus();
+    var host = new FakePluginHost { DataProvider = data, StorageProviders = [storage] };
+    var manager = new RecordingManager(host, tapRegistry, bus, new FakeCameraPauseState(), NullLogger.Instance);
+
+    await manager.ReconcileAsync(cameraId, CancellationToken.None);
+
+    Assert.That(SpinWait.SpinUntil(
+      () => bus.Published.OfType<CameraRecordingChanged>().Any(e => e.State == RecordingState.Error),
+      TimeSpan.FromSeconds(2)), Is.True);
+
+    await manager.DisposeAsync();
+  }
+
   private static CameraStream MakeDerivedStream(Guid cameraId, Guid parentId) => new()
   {
     Id = Guid.NewGuid(),
@@ -331,6 +412,35 @@ public class RecordingManagerTests
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+  }
+
+  private sealed class KeyframeMuxStream : IMuxStream<Shared.Models.Formats.Fmp4Fragment>
+  {
+    public MuxStreamInfo Info { get; } = new()
+    {
+      DataFormat = "fmp4",
+      MimeType = "video/mp4",
+      FileExtension = "mp4",
+      Resolution = "640x360",
+      Fps = 30
+    };
+    public ReadOnlyMemory<byte> Header => ReadOnlyMemory<byte>.Empty;
+    public Type FrameType => typeof(Shared.Models.Formats.Fmp4Fragment);
+    public Action<MuxStreamStats>? OnStats { set { } }
+
+    public async IAsyncEnumerable<Shared.Models.Formats.Fmp4Fragment> ReadAsync(
+      [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+      yield return new Shared.Models.Formats.Fmp4Fragment
+      {
+        Data = new byte[] { 1, 2, 3 },
+        Timestamp = 1_000_000,
+        MediaTimestamp = 90_000,
+        IsSyncPoint = true,
+        IsHeader = false
+      };
+      await Task.Delay(Timeout.Infinite, ct).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+    }
   }
 
   private sealed class TrackedMuxStream : IMuxStream<Shared.Models.Formats.Fmp4Fragment>, IDisposable
@@ -383,8 +493,13 @@ public class RecordingManagerTests
 
   private sealed class FakeEventBus : IEventBus
   {
-    public Task PublishAsync<T>(T evt, CancellationToken ct) where T : ISystemEvent =>
-      Task.CompletedTask;
+    public ConcurrentQueue<ISystemEvent> Published { get; } = new();
+
+    public Task PublishAsync<T>(T evt, CancellationToken ct) where T : ISystemEvent
+    {
+      Published.Enqueue(evt);
+      return Task.CompletedTask;
+    }
 
     public async IAsyncEnumerable<T> SubscribeAsync<T>(
       [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
@@ -398,24 +513,30 @@ public class RecordingManagerTests
   private sealed class FakeStorage : IStorageProvider
   {
     public string ProviderId => "fake";
+    public Error? CreateError { get; init; }
 
-    public Task<ISegmentHandle> CreateSegmentAsync(SegmentMetadata metadata, CancellationToken ct) =>
-      Task.FromResult<ISegmentHandle>(new FakeSegmentHandle(metadata));
+    public Task<OneOf<ISegmentHandle, Error>> CreateSegmentAsync(SegmentMetadata metadata, CancellationToken ct) =>
+      CreateError is { } error
+        ? Task.FromResult<OneOf<ISegmentHandle, Error>>(error)
+        : Task.FromResult<OneOf<ISegmentHandle, Error>>(new FakeSegmentHandle(metadata));
 
-    public Task<Stream> OpenReadAsync(string segmentRef, CancellationToken ct) =>
+    public Task<OneOf<Stream, Error>> OpenReadAsync(string segmentRef, CancellationToken ct) =>
       throw new NotImplementedException();
 
-    public Task PurgeAsync(IReadOnlyList<string> segmentRefs, CancellationToken ct) =>
-      Task.CompletedTask;
+    public Task<OneOf<Success, Error>> PurgeAsync(IReadOnlyList<string> segmentRefs, CancellationToken ct) =>
+      Task.FromResult<OneOf<Success, Error>>(new Success());
 
-    public Task<StorageStats> GetStatsAsync(CancellationToken ct) =>
-      Task.FromResult(new StorageStats
+    public Task<OneOf<StorageStats, Error>> GetStatsAsync(CancellationToken ct) =>
+      Task.FromResult<OneOf<StorageStats, Error>>(new StorageStats
       {
         TotalBytes = 1_000_000_000,
         UsedBytes = 500_000_000,
         FreeBytes = 500_000_000,
         RecordingBytes = 400_000_000
       });
+
+    public Task<OneOf<long, Error>> GetFreeBytesAsync(CancellationToken ct) =>
+      Task.FromResult<OneOf<long, Error>>(500_000_000L);
   }
 
   private sealed class FakeSegmentHandle : ISegmentHandle
@@ -428,7 +549,8 @@ public class RecordingManagerTests
       SegmentRef = $"fake/{metadata.StartTime}";
     }
 
-    public Task FinalizeAsync(CancellationToken ct) => Task.CompletedTask;
+    public Task<OneOf<Success, Error>> FinalizeAsync(CancellationToken ct) =>
+      Task.FromResult<OneOf<Success, Error>>(new Success());
     public ValueTask DisposeAsync()
     {
       Stream.Dispose();
@@ -511,8 +633,13 @@ public class RecordingManagerTests
 
   private sealed class FakeSegmentRepo : ISegmentRepository
   {
-    public Task<OneOf<Success, Error>> CreateAsync(Segment segment, CancellationToken ct) =>
-      Task.FromResult<OneOf<Success, Error>>(new Success());
+    public ConcurrentQueue<Segment> Created { get; } = new();
+
+    public Task<OneOf<Success, Error>> CreateAsync(Segment segment, CancellationToken ct)
+    {
+      Created.Enqueue(segment);
+      return Task.FromResult<OneOf<Success, Error>>(new Success());
+    }
     public Task<OneOf<Success, Error>> UpdateAsync(Segment segment, CancellationToken ct) =>
       Task.FromResult<OneOf<Success, Error>>(new Success());
     public Task<OneOf<Segment, Error>> GetByIdAsync(Guid id, CancellationToken ct) =>

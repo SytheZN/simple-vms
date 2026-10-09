@@ -9,12 +9,11 @@ namespace Server.Recording;
 
 public sealed class RetentionEngine : IAsyncDisposable
 {
-  private const int TickIntervalMinutes = 1;
-  private const int FullEvaluationEveryTicks = 15;
+  private static readonly TimeSpan TickInterval = TimeSpan.FromSeconds(1);
+  private const int FreeSpaceCheckEveryTicks = 60;
+  private const int PassEveryTicks = 900;
   private const long GbBytes = 1024L * 1024L * 1024L;
   private const long HardFloorBytes = (long)(0.2 * GbBytes);
-  private const int PurgeChunkSize = 200;
-  private const int MaxPurgeChunks = 20;
   private const string GlobalModeKey = "retention.mode";
   private const string GlobalValueKey = "retention.value";
   private const string MinFreeSpaceGbKey = "retention.minFreeSpaceGb";
@@ -28,7 +27,11 @@ public sealed class RetentionEngine : IAsyncDisposable
   private readonly ILogger _logger;
   private CancellationTokenSource? _cts;
   private Task? _loop;
+  private long _minFreeBytes = (long)(MinFreeSpaceGbDefault * GbBytes);
+  private bool _warnedUnknownSpace;
   private bool _disposed;
+
+  internal Task Pass { get; private set; } = Task.CompletedTask;
 
   public RetentionEngine(IPluginHost plugins, IRecordingController recording, ILogger logger)
   {
@@ -45,14 +48,17 @@ public sealed class RetentionEngine : IAsyncDisposable
 
   private async Task RunLoopAsync(CancellationToken ct)
   {
+    using var timer = new PeriodicTimer(TickInterval);
     var tick = 0;
     while (!ct.IsCancellationRequested)
     {
       try
       {
-        await GuardFreeSpaceAsync(ct);
-        if (tick % FullEvaluationEveryTicks == 0)
-          await EvaluateAsync(ct);
+        var storage = _plugins.StorageProviders.FirstOrDefault();
+        if (storage != null)
+          await RunTickAsync(storage, tick, ct);
+        tick++;
+        await timer.WaitForNextTickAsync(ct);
       }
       catch (OperationCanceledException)
       {
@@ -62,105 +68,120 @@ public sealed class RetentionEngine : IAsyncDisposable
       {
         _logger.LogError(ex, "Retention loop iteration failed");
       }
-
-      tick++;
-      await Task.Delay(TimeSpan.FromMinutes(TickIntervalMinutes), ct)
-        .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
-      if (ct.IsCancellationRequested) break;
     }
   }
 
-  internal async Task GuardFreeSpaceAsync(CancellationToken ct)
+  private async Task RunTickAsync(IStorageProvider storage, int tick, CancellationToken ct)
   {
-    var data = _plugins.DataProvider;
-    var storage = _plugins.StorageProviders.FirstOrDefault();
-    if (storage == null) return;
+    await CheckEmergencyAsync(storage, ct);
+    if (tick % FreeSpaceCheckEveryTicks == 0)
+      await CheckFreeSpaceAsync(storage, ct);
+    if (tick % PassEveryTicks == 0)
+      DispatchPass(storage, lowSpaceFreeBefore: null, ct);
+  }
 
-    var minGb = await ReadMinFreeSpaceGbAsync(ct);
-    var minBytes = (long)(minGb * GbBytes);
+  internal async Task CheckEmergencyAsync(IStorageProvider storage, CancellationToken ct)
+  {
+    if (await ReadFreeBytesAsync(storage, ct) is not { } free)
+      return;
 
-    var stats = await storage.GetStatsAsync(ct);
-    var freeBefore = stats.FreeBytes;
+    if (free < 0)
+    {
+      WarnUnknownSpaceOnce();
+      return;
+    }
 
-    if (freeBefore < HardFloorBytes && !_recording.IsHalted)
+    if (free < HardFloorBytes && !_recording.IsHalted)
     {
       var haltedCount = _recording.WriterCount;
       _logger.LogCritical(
         "Free space {FreeBytes} bytes below hard floor {Floor}; halting all recording",
-        freeBefore, HardFloorBytes);
-      await LogSystemEventAsync(
-        SystemEventFactory.RetentionEmergencyStop(freeBefore, HardFloorBytes, haltedCount, NowMicros()),
-        ct);
+        free, HardFloorBytes);
       await _recording.HaltAllAsync();
-    }
-
-    if (freeBefore >= minBytes)
-    {
-      if (_recording.IsHalted && freeBefore >= minBytes)
-      {
-        _logger.LogInformation(
-          "Free space {FreeBytes} bytes above trim threshold {Min}; resuming recording",
-          freeBefore, minBytes);
-        await LogSystemEventAsync(
-          SystemEventFactory.RetentionRecordingResumed(freeBefore, minBytes, NowMicros()),
-          ct);
-        await _recording.ResumeAsync(ct);
-      }
-      return;
-    }
-
-    _logger.LogWarning(
-      "Free space {FreeBytes} bytes below minimum {Min}; trimming oldest segments",
-      freeBefore, minBytes);
-
-    var purgedSegments = 0;
-    var purgedBytes = 0L;
-    var freeAfter = freeBefore;
-
-    for (var i = 0; i < MaxPurgeChunks; i++)
-    {
-      ct.ThrowIfCancellationRequested();
-      var batchResult = await data.Segments.GetOldestAcrossStreamsAsync(PurgeChunkSize, ct);
-      if (batchResult.IsT1 || batchResult.AsT0.Count == 0) break;
-
-      var batch = batchResult.AsT0.ToList();
-      await PurgeSegmentsAsync(data, storage, batch, ct);
-      purgedSegments += batch.Count;
-      purgedBytes += batch.Sum(s => s.SizeBytes);
-
-      var chunkStats = await storage.GetStatsAsync(ct);
-      freeAfter = chunkStats.FreeBytes;
-      if (freeAfter >= minBytes) break;
-    }
-
-    await LogSystemEventAsync(
-      SystemEventFactory.RetentionLowSpacePurge(
-        freeBefore, freeAfter, minBytes, purgedSegments, purgedBytes, NowMicros()),
-      ct);
-
-    if (freeAfter < minBytes)
-      _logger.LogWarning(
-        "Free-space guard exhausted purge cap: still {Free} bytes free after removing {Segments} segments ({Bytes} bytes)",
-        freeAfter, purgedSegments, purgedBytes);
-
-    if (_recording.IsHalted && freeAfter >= minBytes)
-    {
       await LogSystemEventAsync(
-        SystemEventFactory.RetentionRecordingResumed(freeAfter, minBytes, NowMicros()),
-        ct);
+        SystemEventFactory.RetentionEmergencyStop(free, HardFloorBytes, haltedCount, NowMicros()), ct);
+    }
+    else if (_recording.IsHalted && free >= _minFreeBytes)
+    {
+      _logger.LogInformation(
+        "Free space {FreeBytes} bytes above minimum {Min}; resuming recording", free, _minFreeBytes);
+      await LogSystemEventAsync(
+        SystemEventFactory.RetentionRecordingResumed(free, _minFreeBytes, NowMicros()), ct);
       await _recording.ResumeAsync(ct);
     }
   }
 
-  private async Task<decimal> ReadMinFreeSpaceGbAsync(CancellationToken ct)
+  internal async Task CheckFreeSpaceAsync(IStorageProvider storage, CancellationToken ct)
+  {
+    _minFreeBytes = await ReadMinFreeBytesAsync(ct);
+
+    if (await ReadFreeBytesAsync(storage, ct) is not { } free || free < 0 || free >= _minFreeBytes)
+      return;
+
+    _logger.LogWarning(
+      "Free space {FreeBytes} bytes below minimum {Min}; running retention early", free, _minFreeBytes);
+    DispatchPass(storage, lowSpaceFreeBefore: free, ct);
+  }
+
+  private void DispatchPass(IStorageProvider storage, long? lowSpaceFreeBefore, CancellationToken ct)
+  {
+    if (!Pass.IsCompleted)
+      return;
+
+    Pass = Task.Run(() => RunPassAsync(storage, lowSpaceFreeBefore, ct), ct);
+  }
+
+  private async Task RunPassAsync(IStorageProvider storage, long? lowSpaceFreeBefore, CancellationToken ct)
+  {
+    try
+    {
+      var tally = await EvaluateAsync(storage, ct);
+      if (lowSpaceFreeBefore is not { } freeBefore)
+        return;
+
+      var freeAfter = await ReadFreeBytesAsync(storage, ct) ?? -1;
+      await LogSystemEventAsync(
+        SystemEventFactory.RetentionLowSpacePurge(
+          freeBefore, freeAfter, _minFreeBytes, tally.Segments, tally.Bytes, NowMicros()),
+        ct);
+    }
+    catch (OperationCanceledException)
+    {
+    }
+    catch (Exception ex)
+    {
+      _logger.LogError(ex, "Retention pass failed");
+    }
+  }
+
+  private async Task<long?> ReadFreeBytesAsync(IStorageProvider storage, CancellationToken ct)
+  {
+    var result = await storage.GetFreeBytesAsync(ct);
+    if (result.IsT0)
+      return result.AsT0;
+
+    _logger.LogWarning("Retention: failed to read free space: {Message}", result.AsT1.Message);
+    return null;
+  }
+
+  private void WarnUnknownSpaceOnce()
+  {
+    if (_warnedUnknownSpace) return;
+    _warnedUnknownSpace = true;
+    _logger.LogWarning(
+      "Storage cannot report free space; free space checks and the emergency stop are unavailable");
+  }
+
+  private async Task<long> ReadMinFreeBytesAsync(CancellationToken ct)
   {
     var result = await _plugins.DataProvider.Config.GetAsync("server", MinFreeSpaceGbKey, ct);
-    if (result.IsT0
+    var gb = result.IsT0
         && result.AsT0 != null
         && decimal.TryParse(result.AsT0, NumberStyles.Float, CultureInfo.InvariantCulture, out var v)
-        && v >= MinFreeSpaceGbFloor)
-      return v;
-    return MinFreeSpaceGbDefault;
+        && v >= MinFreeSpaceGbFloor
+      ? v
+      : MinFreeSpaceGbDefault;
+    return (long)(gb * GbBytes);
   }
 
   private async Task LogSystemEventAsync(SystemEvent evt, CancellationToken ct)
@@ -174,99 +195,163 @@ public sealed class RetentionEngine : IAsyncDisposable
   private static ulong NowMicros() =>
     DateTimeOffset.UtcNow.ToUnixMicroseconds();
 
-  internal async Task EvaluateAsync(CancellationToken ct)
+  internal sealed class PurgeTally
+  {
+    public int Segments { get; set; }
+    public long Bytes { get; set; }
+  }
+
+  private sealed record QualityStream(
+    CameraStream Stream, List<Segment> Segments,
+    List<(CameraStream Stream, List<Segment> Segments)> Metadata);
+
+  internal async Task<PurgeTally> EvaluateAsync(IStorageProvider storage, CancellationToken ct)
   {
     var data = _plugins.DataProvider;
-    var storage = _plugins.StorageProviders.FirstOrDefault();
-    if (storage == null)
-      return;
+    var tally = new PurgeTally();
 
-    var globalPolicy = await GetGlobalPolicyAsync(ct);
-    StorageStats? storageStats = null;
-
-    await PurgeSystemEventsAsync(data, ct);
+    _minFreeBytes = await ReadMinFreeBytesAsync(ct);
+    var systemEventCutoff = await PurgeSystemEventsAsync(data, ct);
 
     var camerasResult = await data.Cameras.GetAllAsync(ct);
     if (camerasResult.IsT1)
     {
       _logger.LogError("Retention: failed to load cameras: {Message}", camerasResult.AsT1.Message);
-      return;
+      return tally;
     }
+
+    var globalPolicy = await GetGlobalPolicyAsync(ct);
+    var streamsByCamera = new Dictionary<Guid, IReadOnlyList<CameraStream>>();
+    var quality = new List<QualityStream>();
+    var usages = new List<StreamUsage>();
 
     foreach (var camera in camerasResult.AsT0)
     {
       var streamsResult = await data.Streams.GetByCameraIdAsync(camera.Id, ct);
       if (streamsResult.IsT1)
         continue;
+      streamsByCamera[camera.Id] = streamsResult.AsT0;
 
-      foreach (var stream in streamsResult.AsT0.Where(s => s.Kind == StreamKind.Quality))
+      var loaded = await LoadQualityStreamsAsync(data, streamsResult.AsT0, ct);
+      foreach (var q in loaded)
       {
-        var (mode, value) = ResolvePolicy(stream, camera, globalPolicy);
+        var (mode, value) = ResolvePolicy(q.Stream, camera, globalPolicy);
         if (mode == RetentionMode.Default)
           continue;
 
-        switch (mode)
-        {
-          case RetentionMode.Days:
-            await PurgeByDaysAsync(data, storage, stream.Id, value, ct);
-            break;
-
-          case RetentionMode.Bytes:
-            await PurgeByBytesAsync(data, storage, stream.Id, value, ct);
-            break;
-
-          case RetentionMode.Percent:
-            storageStats ??= await storage.GetStatsAsync(ct);
-            if (storageStats.TotalBytes > 0)
-              await PurgeByPercentAsync(data, storage, stream.Id, value, storageStats, ct);
-            break;
-        }
-      }
-
-      var streamsById = streamsResult.AsT0.ToDictionary(s => s.Id);
-      foreach (var stream in streamsResult.AsT0.Where(s => s.Kind == StreamKind.Metadata))
-      {
-        var root = Server.Core.StreamHierarchy.ResolveRootStream(
-          stream, id => streamsById.GetValueOrDefault(id), _logger);
-        await PurgeUncoveredMetadataAsync(data, storage, stream, root, ct);
-      }
-
-      await PurgeEventsAsync(data, camera, streamsResult.AsT0, ct);
-
-      foreach (var stream in streamsResult.AsT0)
-      {
-        if (stream.DeletedAt == null)
-          continue;
-
-        var oldestResult = await data.Segments.GetOldestAsync(stream.Id, 1, ct);
-        if (oldestResult.IsT1 || oldestResult.AsT0.Count > 0)
-          continue;
-
-        var deleteResult = await data.Streams.DeleteAsync(stream.Id, ct);
-        if (deleteResult.IsT1)
-        {
-          _logger.LogWarning("Retention: failed to hard-delete soft-deleted stream {StreamId}: {Message}",
-            stream.Id, deleteResult.AsT1.Message);
-          continue;
-        }
-
-        foreach (var entry in _plugins.Plugins)
-        {
-          if (entry.Plugin is IPluginStreamSettings settings)
-          {
-            var cleanup = await settings.OnRemovedAsync(stream.Id, ct);
-            if (cleanup.IsT1)
-              _logger.LogWarning("Retention: plugin {Plugin} OnRemovedAsync failed for stream {Stream}: {Error}",
-                entry.Metadata.Id, stream.Id, cleanup.AsT1.Message);
-          }
-        }
-
-        _logger.LogInformation("Retention: hard-deleted soft-deleted stream {StreamId} (camera {CameraId}, profile '{Profile}')",
-          stream.Id, stream.CameraId, stream.Profile);
+        quality.Add(q);
+        usages.Add(new StreamUsage(
+          q.Stream.Id, mode, value,
+          q.Segments.Sum(s => s.SizeBytes) + q.Metadata.Sum(m => m.Segments.Sum(s => s.SizeBytes)),
+          RetentionQuotas.MeasureRate(q.Segments) + q.Metadata.Sum(m => RetentionQuotas.MeasureRate(m.Segments))));
       }
     }
 
+    var usable = await UsableBytesAsync(storage, ct);
+    var plan = RetentionQuotas.Compute(usages, usable);
+    if (plan.PercentUnavailable)
+      _logger.LogWarning("Retention: storage cannot report its size; percent retention is unavailable");
+
+    var active = _recording.ActiveSegmentIds;
+    var now = NowMicros();
+    foreach (var q in quality)
+    {
+      var toPurge = SelectForTrim(
+        q.Segments, q.Metadata.SelectMany(m => m.Segments).ToList(),
+        plan.Allowances[q.Stream.Id], now, active);
+      if (toPurge.Count > 0)
+        await PurgeSegmentsAsync(data, storage, toPurge, tally, ct);
+    }
+
+    foreach (var (cameraId, streams) in streamsByCamera)
+    {
+      await PurgeUncoveredMetadataAsync(data, storage, streams, active, tally, ct);
+      await PurgeEventsAsync(data, cameraId, streams, systemEventCutoff, ct);
+      await HardDeleteEmptyStreamsAsync(data, streams, ct);
+    }
+
     _logger.LogDebug("Retention evaluation complete");
+    return tally;
+  }
+
+  private async Task<List<QualityStream>> LoadQualityStreamsAsync(
+    IDataProvider data, IReadOnlyList<CameraStream> streams, CancellationToken ct)
+  {
+    var byId = streams.ToDictionary(s => s.Id);
+    var result = new Dictionary<Guid, QualityStream>();
+
+    foreach (var stream in streams.Where(s => s.Kind == StreamKind.Quality))
+    {
+      var segments = await data.Segments.GetOldestAsync(stream.Id, int.MaxValue, ct);
+      if (segments.IsT1)
+        continue;
+      result[stream.Id] = new QualityStream(stream, segments.AsT0.ToList(), []);
+    }
+
+    foreach (var stream in streams.Where(s => s.Kind == StreamKind.Metadata))
+    {
+      var root = StreamHierarchy.ResolveRootStream(stream, id => byId.GetValueOrDefault(id), _logger);
+      if (!result.TryGetValue(root.Id, out var owner))
+        continue;
+
+      var segments = await data.Segments.GetOldestAsync(stream.Id, int.MaxValue, ct);
+      if (segments.IsT0)
+        owner.Metadata.Add((stream, segments.AsT0.ToList()));
+    }
+
+    return result.Values.ToList();
+  }
+
+  private async Task<long?> UsableBytesAsync(IStorageProvider storage, CancellationToken ct)
+  {
+    var statsResult = await storage.GetStatsAsync(ct);
+    if (statsResult.IsT1)
+    {
+      _logger.LogWarning("Retention: failed to read storage stats: {Message}", statsResult.AsT1.Message);
+      return null;
+    }
+
+    var stats = statsResult.AsT0;
+    if (stats.TotalBytes < 0 || stats.FreeBytes < 0)
+      return null;
+    return stats.FreeBytes + stats.RecordingBytes - _minFreeBytes;
+  }
+
+  internal static List<Segment> SelectForTrim(
+    IReadOnlyList<Segment> quality, IReadOnlyList<Segment> metadata,
+    StreamAllowance allowance, ulong now, IReadOnlySet<Guid> active)
+  {
+    var remaining = new Queue<Segment>(quality.OrderBy(s => s.StartTime));
+    var metadataByEnd = metadata.OrderBy(s => s.EndTime).ToList();
+    var metadataIndex = 0;
+    var held = quality.Sum(s => s.SizeBytes) + metadata.Sum(s => s.SizeBytes);
+    ulong? ageCutoff = allowance.MaxAge is { } age
+      ? now - (ulong)Math.Min(age.TotalMicroseconds, now)
+      : null;
+
+    void DropUncoveredMetadata()
+    {
+      var coveredFrom = remaining.TryPeek(out var oldest) ? oldest.StartTime : ulong.MaxValue;
+      while (metadataIndex < metadataByEnd.Count && metadataByEnd[metadataIndex].EndTime <= coveredFrom)
+        held -= metadataByEnd[metadataIndex++].SizeBytes;
+    }
+
+    DropUncoveredMetadata();
+
+    var purge = new List<Segment>();
+    while (remaining.TryPeek(out var oldest) && !active.Contains(oldest.Id))
+    {
+      var expired = ageCutoff is { } cutoff && oldest.EndTime < cutoff;
+      var over = allowance.MaxBytes is { } max && held > max;
+      if (!expired && !over)
+        break;
+
+      purge.Add(remaining.Dequeue());
+      held -= oldest.SizeBytes;
+      DropUncoveredMetadata();
+    }
+
+    return purge;
   }
 
   internal static (RetentionMode Mode, long Value) ResolvePolicy(
@@ -281,116 +366,63 @@ public sealed class RetentionEngine : IAsyncDisposable
     return global;
   }
 
-  private async Task PurgeByDaysAsync(
-    IDataProvider data, IStorageProvider storage, Guid streamId, long days, CancellationToken ct)
-  {
-    var cutoff = DateTimeOffset.UtcNow.AddDays(-days).ToUnixMicroseconds();
-    var segmentsResult = await data.Segments.GetOldestAsync(streamId, int.MaxValue, ct);
-    if (segmentsResult.IsT1)
-      return;
-
-    var toPurge = segmentsResult.AsT0.Where(s => s.EndTime < cutoff).ToList();
-    if (toPurge.Count > 0)
-      await PurgeSegmentsAsync(data, storage, toPurge, ct);
-  }
-
-  private async Task PurgeByBytesAsync(
-    IDataProvider data, IStorageProvider storage, Guid streamId, long maxBytes, CancellationToken ct)
-  {
-    var totalResult = await data.Segments.GetTotalSizeAsync(streamId, ct);
-    if (totalResult.IsT1)
-      return;
-
-    var total = totalResult.AsT0;
-    if (total <= maxBytes)
-      return;
-
-    var segmentsResult = await data.Segments.GetOldestAsync(streamId, int.MaxValue, ct);
-    if (segmentsResult.IsT1)
-      return;
-
-    var toPurge = new List<Segment>();
-    foreach (var seg in segmentsResult.AsT0)
-    {
-      if (total <= maxBytes)
-        break;
-      toPurge.Add(seg);
-      total -= seg.SizeBytes;
-    }
-
-    if (toPurge.Count > 0)
-      await PurgeSegmentsAsync(data, storage, toPurge, ct);
-  }
-
-  private async Task PurgeByPercentAsync(
-    IDataProvider data, IStorageProvider storage, Guid streamId, long maxPercent,
-    StorageStats stats, CancellationToken ct)
-  {
-    if (stats.TotalBytes <= 0)
-      return;
-
-    var usedPercent = (long)(stats.UsedBytes * 100.0 / stats.TotalBytes);
-    if (usedPercent <= maxPercent)
-      return;
-
-    var segmentsResult = await data.Segments.GetOldestAsync(streamId, int.MaxValue, ct);
-    if (segmentsResult.IsT1)
-      return;
-
-    var bytesToFree = stats.UsedBytes - (long)(stats.TotalBytes * maxPercent / 100.0);
-    var freed = 0L;
-    var toPurge = new List<Segment>();
-
-    foreach (var seg in segmentsResult.AsT0)
-    {
-      if (freed >= bytesToFree)
-        break;
-      toPurge.Add(seg);
-      freed += seg.SizeBytes;
-    }
-
-    if (toPurge.Count > 0)
-      await PurgeSegmentsAsync(data, storage, toPurge, ct);
-  }
-
   private async Task PurgeUncoveredMetadataAsync(
-    IDataProvider data, IStorageProvider storage, CameraStream metadata, CameraStream root, CancellationToken ct)
+    IDataProvider data, IStorageProvider storage, IReadOnlyList<CameraStream> streams,
+    IReadOnlySet<Guid> active, PurgeTally tally, CancellationToken ct)
   {
-    var coveredFrom = ulong.MaxValue;
-    if (root.Kind == StreamKind.Quality)
+    var byId = streams.ToDictionary(s => s.Id);
+    foreach (var metadata in streams.Where(s => s.Kind == StreamKind.Metadata))
     {
-      var rootOldest = await data.Segments.GetOldestAsync(root.Id, 1, ct);
-      if (rootOldest.IsT1)
-        return;
-      if (rootOldest.AsT0.Count > 0)
-        coveredFrom = rootOldest.AsT0[0].StartTime;
+      var root = StreamHierarchy.ResolveRootStream(metadata, id => byId.GetValueOrDefault(id), _logger);
+
+      var coveredFrom = ulong.MaxValue;
+      if (root.Kind == StreamKind.Quality)
+      {
+        var rootOldest = await data.Segments.GetOldestAsync(root.Id, 1, ct);
+        if (rootOldest.IsT1)
+          continue;
+        if (rootOldest.AsT0.Count > 0)
+          coveredFrom = rootOldest.AsT0[0].StartTime;
+      }
+
+      var segmentsResult = await data.Segments.GetOldestAsync(metadata.Id, int.MaxValue, ct);
+      if (segmentsResult.IsT1)
+        continue;
+
+      var toPurge = segmentsResult.AsT0
+        .Where(s => s.EndTime <= coveredFrom && !active.Contains(s.Id))
+        .ToList();
+      if (toPurge.Count > 0)
+        await PurgeSegmentsAsync(data, storage, toPurge, tally, ct);
     }
-
-    var segmentsResult = await data.Segments.GetOldestAsync(metadata.Id, int.MaxValue, ct);
-    if (segmentsResult.IsT1)
-      return;
-
-    var toPurge = segmentsResult.AsT0.Where(s => s.EndTime < coveredFrom).ToList();
-    if (toPurge.Count > 0)
-      await PurgeSegmentsAsync(data, storage, toPurge, ct);
   }
 
   private async Task PurgeSegmentsAsync(
-    IDataProvider data, IStorageProvider storage, List<Segment> segments, CancellationToken ct)
+    IDataProvider data, IStorageProvider storage, List<Segment> segments, PurgeTally tally, CancellationToken ct)
   {
     var ids = segments.Select(s => s.Id).ToList();
     var refs = segments.Select(s => s.SegmentRef).ToList();
 
-    await storage.PurgeAsync(refs, ct);
+    var purged = await storage.PurgeAsync(refs, ct);
+    if (purged.IsT1)
+    {
+      _logger.LogWarning("Retention: failed to purge {Count} segments: {Message}",
+        segments.Count, purged.AsT1.Message);
+      return;
+    }
+
     await data.Keyframes.DeleteBySegmentIdsAsync(ids, ct);
     await data.Segments.DeleteBatchAsync(ids, ct);
 
-    _logger.LogInformation("Purged {Count} segments ({Bytes} bytes)",
-      segments.Count, segments.Sum(s => s.SizeBytes));
+    var bytes = segments.Sum(s => s.SizeBytes);
+    tally.Segments += segments.Count;
+    tally.Bytes += bytes;
+    _logger.LogInformation("Purged {Count} segments ({Bytes} bytes)", segments.Count, bytes);
   }
 
   private async Task PurgeEventsAsync(
-    IDataProvider data, Camera camera, IReadOnlyList<CameraStream> streams, CancellationToken ct)
+    IDataProvider data, Guid cameraId, IReadOnlyList<CameraStream> streams,
+    ulong systemEventCutoff, CancellationToken ct)
   {
     ulong? cutoff = null;
 
@@ -405,23 +437,53 @@ public sealed class RetentionEngine : IAsyncDisposable
         cutoff = start;
     }
 
-    if (cutoff == null)
-      return;
-
-    var deleteResult = await data.Events.DeleteOlderThanAsync(camera.Id, cutoff.Value, ct);
+    var deleteResult = await data.Events.DeleteOlderThanAsync(cameraId, cutoff ?? systemEventCutoff, ct);
     if (deleteResult.IsT1)
     {
       _logger.LogWarning("Retention: failed to purge events for camera {CameraId}: {Message}",
-        camera.Id, deleteResult.AsT1.Message);
+        cameraId, deleteResult.AsT1.Message);
       return;
     }
 
     if (deleteResult.AsT0 > 0)
       _logger.LogInformation("Purged {Count} events for camera {CameraId}",
-        deleteResult.AsT0, camera.Id);
+        deleteResult.AsT0, cameraId);
   }
 
-  private async Task PurgeSystemEventsAsync(IDataProvider data, CancellationToken ct)
+  private async Task HardDeleteEmptyStreamsAsync(
+    IDataProvider data, IReadOnlyList<CameraStream> streams, CancellationToken ct)
+  {
+    foreach (var stream in streams.Where(s => s.DeletedAt != null))
+    {
+      var oldestResult = await data.Segments.GetOldestAsync(stream.Id, 1, ct);
+      if (oldestResult.IsT1 || oldestResult.AsT0.Count > 0)
+        continue;
+
+      var deleteResult = await data.Streams.DeleteAsync(stream.Id, ct);
+      if (deleteResult.IsT1)
+      {
+        _logger.LogWarning("Retention: failed to hard-delete soft-deleted stream {StreamId}: {Message}",
+          stream.Id, deleteResult.AsT1.Message);
+        continue;
+      }
+
+      foreach (var entry in _plugins.Plugins)
+      {
+        if (entry.Plugin is IPluginStreamSettings settings)
+        {
+          var cleanup = await settings.OnRemovedAsync(stream.Id, ct);
+          if (cleanup.IsT1)
+            _logger.LogWarning("Retention: plugin {Plugin} OnRemovedAsync failed for stream {Stream}: {Error}",
+              entry.Metadata.Id, stream.Id, cleanup.AsT1.Message);
+        }
+      }
+
+      _logger.LogInformation("Retention: hard-deleted soft-deleted stream {StreamId} (camera {CameraId}, profile '{Profile}')",
+        stream.Id, stream.CameraId, stream.Profile);
+    }
+  }
+
+  private async Task<ulong> PurgeSystemEventsAsync(IDataProvider data, CancellationToken ct)
   {
     var daysResult = await data.Config.GetAsync("server", SystemEventDaysKey, ct);
     var days = daysResult.IsT0 && int.TryParse(daysResult.AsT0, out var d) && d > 0
@@ -435,6 +497,8 @@ public sealed class RetentionEngine : IAsyncDisposable
     else if (result.AsT0 > 0)
       _logger.LogInformation("Retention: purged {Count} system event(s) older than {Days} days",
         result.AsT0, days);
+
+    return cutoff;
   }
 
   private async Task<(RetentionMode Mode, long Value)> GetGlobalPolicyAsync(CancellationToken ct)
@@ -466,6 +530,8 @@ public sealed class RetentionEngine : IAsyncDisposable
       try { await _loop; }
       catch { }
     }
+    try { await Pass; }
+    catch { }
     _cts?.Dispose();
   }
 }

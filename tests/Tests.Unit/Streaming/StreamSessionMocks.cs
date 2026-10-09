@@ -214,18 +214,21 @@ internal sealed class StubStorageProvider : IStorageProvider
 {
   public string ProviderId => "test";
 
-  public Task<ISegmentHandle> CreateSegmentAsync(SegmentMetadata metadata, CancellationToken ct) =>
+  public Task<OneOf<ISegmentHandle, Error>> CreateSegmentAsync(SegmentMetadata metadata, CancellationToken ct) =>
     throw new NotImplementedException();
 
-  public Task<Stream> OpenReadAsync(string segmentRef, CancellationToken ct) =>
-    Task.FromResult<Stream>(new MemoryStream(new byte[100]));
+  public Task<OneOf<Stream, Error>> OpenReadAsync(string segmentRef, CancellationToken ct) =>
+    Task.FromResult<OneOf<Stream, Error>>(new MemoryStream(new byte[100]));
 
-  public Task PurgeAsync(IReadOnlyList<string> segmentRefs, CancellationToken ct) =>
-    Task.CompletedTask;
+  public Task<OneOf<Success, Error>> PurgeAsync(IReadOnlyList<string> segmentRefs, CancellationToken ct) =>
+    Task.FromResult<OneOf<Success, Error>>(new Success());
 
-  public Task<StorageStats> GetStatsAsync(CancellationToken ct) =>
-    Task.FromResult(new StorageStats
+  public Task<OneOf<StorageStats, Error>> GetStatsAsync(CancellationToken ct) =>
+    Task.FromResult<OneOf<StorageStats, Error>>(new StorageStats
     {
       TotalBytes = 1000, UsedBytes = 500, FreeBytes = 500, RecordingBytes = 100
     });
+
+  public Task<OneOf<long, Error>> GetFreeBytesAsync(CancellationToken ct) =>
+    Task.FromResult<OneOf<long, Error>>(500L);
 }

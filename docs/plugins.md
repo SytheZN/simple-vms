@@ -379,6 +379,7 @@ public interface IStorageProvider
     Task<OneOf<Stream, Error>> OpenReadAsync(string segmentRef, CancellationToken ct);
     Task<OneOf<Success, Error>> PurgeAsync(IReadOnlyList<string> segmentRefs, CancellationToken ct);
     Task<OneOf<StorageStats, Error>> GetStatsAsync(CancellationToken ct);
+    Task<OneOf<long, Error>> GetFreeBytesAsync(CancellationToken ct);
 }
 
 public interface ISegmentHandle : IAsyncDisposable
@@ -412,7 +413,7 @@ The retention engine (part of the server core) subscribes to `RecordingSegmentCo
 
 **Storage duration estimation:** The server tracks recording byte rate over a rolling window (bytes written per unit time, per camera). Combined with `FreeBytes` from `StorageStats`, this gives an estimated remaining recording duration. This calculation lives in the server core - the provider just reports accurate space figures.
 
-Plugins could implement filesystem (NFS, local, any mounted filesystem), S3, SMB, or other backends. Non-filesystem backends may not support all space reporting - `TotalBytes` and `FreeBytes` can return `-1` to indicate "unknown", in which case percentage-based retention and duration estimation are unavailable.
+Plugins could implement filesystem (NFS, local, any mounted filesystem), S3, SMB, or other backends. Non-filesystem backends may not support all space reporting - `TotalBytes`, `FreeBytes` and `GetFreeBytesAsync` can return `-1` to indicate "unknown", in which case percentage-based retention and duration estimation are unavailable.
 
 ### IDataProvider
 

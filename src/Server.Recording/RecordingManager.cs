@@ -28,6 +28,12 @@ public sealed class RecordingManager : IRecordingController, IAsyncDisposable
   public int WriterCount => _writers.Count;
   public bool IsHalted => _halted;
 
+  public IReadOnlySet<Guid> ActiveSegmentIds =>
+    _writers.Values
+      .Select(w => w.Writer.ActiveSegmentId)
+      .OfType<Guid>()
+      .ToHashSet();
+
   public RecordingManager(
     IPluginHost plugins,
     StreamTapRegistry tapRegistry,
@@ -376,16 +382,21 @@ public sealed class RecordingManager : IRecordingController, IAsyncDisposable
         ByteRateTracker.Record(sid, bytes, start, end);
       };
 
+      Exception? exception = null;
+      string reason;
       try
       {
-        await entry.Writer.RunAsync(muxResult.AsT0, header, ct);
-
-        _logger.LogDebug(
-          "Mux stream ended for camera {CameraId} profile '{Profile}', dropping writer",
-          cameraId, profile);
-        await StopWriterAsync(cameraId, profile);
-        _ = Task.Run(() => ReconcileAsync(cameraId, _eventCts?.Token ?? CancellationToken.None));
-        return;
+        var run = await entry.Writer.RunAsync(muxResult.AsT0, header, ct);
+        if (run.IsT0)
+        {
+          _logger.LogDebug(
+            "Mux stream ended for camera {CameraId} profile '{Profile}', dropping writer",
+            cameraId, profile);
+          await StopWriterAsync(cameraId, profile);
+          _ = Task.Run(() => ReconcileAsync(cameraId, _eventCts?.Token ?? CancellationToken.None));
+          return;
+        }
+        reason = run.AsT1.Message;
       }
       catch (OperationCanceledException)
       {
@@ -393,41 +404,40 @@ public sealed class RecordingManager : IRecordingController, IAsyncDisposable
       }
       catch (Exception ex)
       {
-        consecutiveFailures++;
-        PublishStateIfChanged(cameraId, profile, RecordingState.Error);
-        _logger.LogError(ex,
-          "Recording writer failed for camera {CameraId} profile '{Profile}' (failure {Count}/{Max})",
-          cameraId, profile, consecutiveFailures, MaxConsecutiveFailures);
-
-        if (consecutiveFailures >= MaxConsecutiveFailures)
-        {
-          _logger.LogError(
-            "Giving up recording camera {CameraId} profile '{Profile}' after {Count} consecutive failures",
-            cameraId, profile, consecutiveFailures);
-          return;
-        }
-
-        await DelayBackoff(consecutiveFailures, ct).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
-        if (ct.IsCancellationRequested) return;
-
-        var newWriter = new SegmentWriter(
-          cameraId, profile, storageProfile, codec, streamId,
-          segmentDuration, storage, _plugins.DataProvider, _eventBus, _logger);
-        if (_writers.TryGetValue((cameraId, profile), out var current))
-        {
-          try
-          {
-            using var disposeCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            await current.Writer.DisposeAsync().AsTask().WaitAsync(disposeCts.Token);
-          }
-          catch { }
-          _writers[(cameraId, profile)] = (newWriter, current.Cts);
-        }
-        else
-        {
-          return;
-        }
+        exception = ex;
+        reason = ex.Message;
       }
+
+      consecutiveFailures++;
+      PublishStateIfChanged(cameraId, profile, RecordingState.Error);
+      _logger.LogError(exception,
+        "Recording writer failed for camera {CameraId} profile '{Profile}' (failure {Count}/{Max}): {Reason}",
+        cameraId, profile, consecutiveFailures, MaxConsecutiveFailures, reason);
+
+      if (consecutiveFailures >= MaxConsecutiveFailures)
+      {
+        _logger.LogError(
+          "Giving up recording camera {CameraId} profile '{Profile}' after {Count} consecutive failures",
+          cameraId, profile, consecutiveFailures);
+        return;
+      }
+
+      await DelayBackoff(consecutiveFailures, ct).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+      if (ct.IsCancellationRequested) return;
+
+      var newWriter = new SegmentWriter(
+        cameraId, profile, storageProfile, codec, streamId,
+        segmentDuration, storage, _plugins.DataProvider, _eventBus, _logger);
+      if (!_writers.TryGetValue((cameraId, profile), out var current))
+        return;
+
+      try
+      {
+        using var disposeCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await current.Writer.DisposeAsync().AsTask().WaitAsync(disposeCts.Token);
+      }
+      catch { }
+      _writers[(cameraId, profile)] = (newWriter, current.Cts);
     }
   }
 

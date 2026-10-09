@@ -33,6 +33,7 @@ public sealed class SegmentWriter : IAsyncDisposable
   private bool _disposed;
 
   public Action<Guid, long, ulong, ulong>? OnSegmentFinalized { get; set; }
+  public Guid? ActiveSegmentId => _handle != null ? _segmentId : null;
 
   public SegmentWriter(
     Guid cameraId,
@@ -60,7 +61,8 @@ public sealed class SegmentWriter : IAsyncDisposable
 
   public void Seal() => _sealTcs.TrySetResult();
 
-  public async Task RunAsync(IMuxStream muxStream, ReadOnlyMemory<byte> header, CancellationToken ct)
+  public async Task<OneOf<Success, Error>> RunAsync(
+    IMuxStream muxStream, ReadOnlyMemory<byte> header, CancellationToken ct)
   {
     _fileExtension = muxStream.Info.FileExtension;
     await using var enumerator = ReadAsDataUnits(muxStream, ct).GetAsyncEnumerator(ct);
@@ -74,8 +76,9 @@ public sealed class SegmentWriter : IAsyncDisposable
         var completed = await Task.WhenAny(moveNextTask, _sealTcs.Task);
         if (completed == _sealTcs.Task)
         {
-          if (_handle != null)
-            await FinalizeSegmentAsync(ct);
+          var sealedSegment = await FinalizeSegmentAsync(ct);
+          if (sealedSegment.IsT1)
+            return sealedSegment.AsT1;
           _sealTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
           if (!await moveNextTask)
@@ -98,15 +101,22 @@ public sealed class SegmentWriter : IAsyncDisposable
         if (!fragment.IsSyncPoint)
           continue;
 
-        await StartSegmentAsync(fragment.Timestamp, header, ct);
+        var started = await StartSegmentAsync(fragment.Timestamp, header, ct);
+        if (started.IsT1)
+          return started.AsT1;
       }
       else if (fragment.IsSyncPoint)
       {
         if (ShouldFinalize(fragment.Timestamp))
         {
           _lastTimestamp = fragment.Timestamp - 1;
-          await FinalizeSegmentAsync(ct);
-          await StartSegmentAsync(fragment.Timestamp, header, ct);
+          var finalized = await FinalizeSegmentAsync(ct);
+          if (finalized.IsT1)
+            return finalized.AsT1;
+
+          var started = await StartSegmentAsync(fragment.Timestamp, header, ct);
+          if (started.IsT1)
+            return started.AsT1;
         }
         else if (ShouldFlush(fragment.Timestamp))
         {
@@ -117,11 +127,11 @@ public sealed class SegmentWriter : IAsyncDisposable
       await WriteFragmentAsync(fragment, ct);
     }
 
-    if (_handle != null)
-      await FinalizeSegmentAsync(ct);
+    return await FinalizeSegmentAsync(ct);
   }
 
-  private async Task StartSegmentAsync(ulong timestamp, ReadOnlyMemory<byte> header, CancellationToken ct)
+  private async Task<OneOf<Success, Error>> StartSegmentAsync(
+    ulong timestamp, ReadOnlyMemory<byte> header, CancellationToken ct)
   {
     _segmentId = Guid.NewGuid();
 
@@ -134,7 +144,11 @@ public sealed class SegmentWriter : IAsyncDisposable
       FileExtension = _fileExtension
     };
 
-    _handle = await _storage.CreateSegmentAsync(metadata, ct);
+    var created = await _storage.CreateSegmentAsync(metadata, ct);
+    if (created.IsT1)
+      return created.AsT1;
+
+    _handle = created.AsT0;
     _segmentStartTime = timestamp;
     _lastFlushTimestamp = timestamp;
     _bytesWritten = 0;
@@ -165,6 +179,7 @@ public sealed class SegmentWriter : IAsyncDisposable
     _logger.LogDebug(
       "Started segment {SegmentId} for camera {CameraId} profile '{Profile}' at {Timestamp}",
       _segmentId, _cameraId, _profile, timestamp);
+    return new Success();
   }
 
   private async Task WriteFragmentAsync(IDataUnit fragment, CancellationToken ct)
@@ -228,12 +243,15 @@ public sealed class SegmentWriter : IAsyncDisposable
     _lastFlushTimestamp = _lastTimestamp;
   }
 
-  private async Task FinalizeSegmentAsync(CancellationToken ct)
+  private async Task<OneOf<Success, Error>> FinalizeSegmentAsync(CancellationToken ct)
   {
     if (_handle == null)
-      return;
+      return new Success();
 
-    await _handle.FinalizeAsync(ct);
+    var finalized = await _handle.FinalizeAsync(ct);
+    if (finalized.IsT1)
+      return finalized.AsT1;
+
     await FlushAsync(ct);
 
     await _eventBus.PublishAsync(new RecordingSegmentCompleted
@@ -255,6 +273,7 @@ public sealed class SegmentWriter : IAsyncDisposable
 
     await _handle.DisposeAsync();
     _handle = null;
+    return new Success();
   }
 
   private static IAsyncEnumerable<IDataUnit> ReadAsDataUnits(IMuxStream muxStream, CancellationToken ct) =>
@@ -269,7 +288,9 @@ public sealed class SegmentWriter : IAsyncDisposable
     {
       try
       {
-        await FinalizeSegmentAsync(CancellationToken.None);
+        var finalized = await FinalizeSegmentAsync(CancellationToken.None);
+        if (finalized.IsT1)
+          _logger.LogError("Failed to finalize segment on dispose: {Message}", finalized.AsT1.Message);
       }
       catch (Exception ex)
       {

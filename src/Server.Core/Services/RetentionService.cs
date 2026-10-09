@@ -49,7 +49,8 @@ public sealed class RetentionService
       return new Error(Result.BadRequest, new DebugTag(ModuleIds.Retention, 0x0021),
         "mode must be one of days, bytes, percent");
 
-    var validation = RetentionPolicyRules.Validate(mode, policy.Value);
+    var validation = RetentionPolicyRules.Validate(
+      mode, policy.Value, RetentionPolicyRules.StorageSizeKnown(_plugins.StorageProviders.FirstOrDefault()));
     if (validation.IsT1) return validation.AsT1;
 
     if (policy.MinFreeSpaceGb < MinFreeSpaceGbFloor)

@@ -89,6 +89,53 @@ public class PluginServiceGroupValidationTests
     Assert.That(plugin.GroupCalls, Is.Empty);
   }
 
+  /// <summary>
+  /// SCENARIO:
+  /// Plugin settings are saved with a combination that breaks a group rule
+  ///
+  /// ACTION:
+  /// ApplyConfigValues(id, values)
+  ///
+  /// EXPECTED RESULT:
+  /// Rejected before the plugin applies anything
+  /// </summary>
+  [Test]
+  public void ApplyConfigValues_GroupRuleBroken_RejectedBeforeApply()
+  {
+    var plugin = new GroupedSettingsPlugin();
+    var service = CreateService(plugin);
+
+    var result = service.ApplyConfigValues(plugin.Metadata.Id,
+      new Dictionary<string, string> { ["mode"] = "percent", ["value"] = "200" });
+
+    Assert.That(result.IsT1, Is.True);
+    Assert.That(plugin.Applied, Is.False);
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Plugin settings are saved with a valid combination for the group
+  ///
+  /// ACTION:
+  /// ApplyConfigValues(id, values)
+  ///
+  /// EXPECTED RESULT:
+  /// The group is checked and the plugin applies the values
+  /// </summary>
+  [Test]
+  public void ApplyConfigValues_GroupRuleSatisfied_Applied()
+  {
+    var plugin = new GroupedSettingsPlugin();
+    var service = CreateService(plugin);
+
+    var result = service.ApplyConfigValues(plugin.Metadata.Id,
+      new Dictionary<string, string> { ["mode"] = "percent", ["value"] = "50" });
+
+    Assert.That(result.IsT0, Is.True);
+    Assert.That(plugin.GroupCalls, Is.EqualTo(new[] { "pair" }));
+    Assert.That(plugin.Applied, Is.True);
+  }
+
   private PluginService CreateService(IPlugin plugin)
   {
     var host = new FakePluginHost
@@ -154,6 +201,12 @@ public class PluginServiceGroupValidationTests
         : new Success();
     }
 
-    public OneOf<Success, Error> ApplyValues(IReadOnlyDictionary<string, string> values) => new Success();
+    public bool Applied { get; private set; }
+
+    public OneOf<Success, Error> ApplyValues(IReadOnlyDictionary<string, string> values)
+    {
+      Applied = true;
+      return new Success();
+    }
   }
 }

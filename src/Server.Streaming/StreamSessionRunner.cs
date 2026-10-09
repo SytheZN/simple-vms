@@ -199,18 +199,14 @@ public static class StreamSessionRunner
 
     while (sink.IsOpen && !ct.IsCancellationRequested)
     {
-      Stream fileStream;
-      try
-      {
-        fileStream = await storage.OpenReadAsync(currentSegment.SegmentRef, ct);
-      }
-      catch (FileNotFoundException)
+      var openResult = await storage.OpenReadAsync(currentSegment.SegmentRef, ct);
+      if (openResult.IsT1)
       {
         await sink.SendStatusAsync(StreamStatus.Error, ct);
         return;
       }
 
-      await using (fileStream)
+      await using (var fileStream = openResult.AsT0)
       {
         if (!initSent)
         {

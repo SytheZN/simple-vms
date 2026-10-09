@@ -42,15 +42,7 @@ public sealed class RecordingAccess : IRecordingAccess
       return Error.Create(ModuleIds.Recording, 0x0002, Result.Unavailable,
         "No storage provider available");
 
-    try
-    {
-      return await storage.OpenReadAsync(segmentRef, ct);
-    }
-    catch (FileNotFoundException)
-    {
-      return Error.Create(ModuleIds.Recording, 0x0003, Result.NotFound,
-        $"Segment not found: {segmentRef}");
-    }
+    return await storage.OpenReadAsync(segmentRef, ct);
   }
 
   private async Task<OneOf<CameraStream, Error>> FindStreamAsync(

@@ -51,6 +51,65 @@ public class SegmentWriterTests
 
   /// <summary>
   /// SCENARIO:
+  /// The storage provider fails to create a segment
+  ///
+  /// ACTION:
+  /// Run SegmentWriter with a sync point
+  ///
+  /// EXPECTED RESULT:
+  /// RunAsync returns the storage error without writing a segment record
+  /// </summary>
+  [Test]
+  public async Task CreateFailure_ReturnsStorageError()
+  {
+    var error = Error.Create(0x1FFF, 0x0001, Result.InternalError, "disk gone");
+    var storage = new FakeStorage { CreateError = error };
+    var data = new FakeDataProvider();
+    var source = new TestMuxStream(Header);
+
+    var writer = CreateWriter(storage, data, new FakeEventBus(), segmentDuration: 300);
+    var task = writer.RunAsync(source, Header, CancellationToken.None);
+
+    source.Emit(MakeFragment(1_000_000, sync: true));
+    var result = await task;
+
+    Assert.That(result.IsT1, Is.True);
+    Assert.That(result.AsT1, Is.EqualTo(error));
+    Assert.That(data.CreatedSegments, Is.Empty);
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A segment is opened on a keyframe and later finalized when the stream ends
+  ///
+  /// ACTION:
+  /// Read ActiveSegmentId before any keyframe, while the segment is open, and after the run ends
+  ///
+  /// EXPECTED RESULT:
+  /// Null before and after; the open segment's id while it is being written
+  /// </summary>
+  [Test]
+  public async Task ActiveSegmentId_TracksOpenSegment()
+  {
+    var data = new FakeDataProvider();
+    var source = new TestMuxStream(Header);
+    var writer = CreateWriter(new FakeStorage(), data, new FakeEventBus(), segmentDuration: 300);
+
+    Assert.That(writer.ActiveSegmentId, Is.Null);
+
+    var task = writer.RunAsync(source, Header, CancellationToken.None);
+    source.Emit(MakeFragment(1_000_000, sync: true));
+    Assert.That(SpinWait.SpinUntil(() => data.CreatedSegments.Count == 1, TimeSpan.FromSeconds(2)), Is.True);
+
+    Assert.That(writer.ActiveSegmentId, Is.EqualTo(data.CreatedSegments[0].Id));
+
+    source.Complete();
+    await task;
+    Assert.That(writer.ActiveSegmentId, Is.Null);
+  }
+
+  /// <summary>
+  /// SCENARIO:
   /// Segment duration is 10 seconds; sync points arrive at 0s, 5s, 10s, 15s
   ///
   /// ACTION:
@@ -314,27 +373,35 @@ public class SegmentWriterTests
     public List<FakeSegmentHandle> CreatedSegments { get; } = [];
     public List<string> FinalizedRefs { get; } = [];
 
-    public Task<ISegmentHandle> CreateSegmentAsync(SegmentMetadata metadata, CancellationToken ct)
+    public Error? CreateError { get; init; }
+
+    public Task<OneOf<ISegmentHandle, Error>> CreateSegmentAsync(SegmentMetadata metadata, CancellationToken ct)
     {
+      if (CreateError is { } error)
+        return Task.FromResult<OneOf<ISegmentHandle, Error>>(error);
+
       var handle = new FakeSegmentHandle(metadata, FinalizedRefs);
       CreatedSegments.Add(handle);
-      return Task.FromResult<ISegmentHandle>(handle);
+      return Task.FromResult<OneOf<ISegmentHandle, Error>>(handle);
     }
 
-    public Task<Stream> OpenReadAsync(string segmentRef, CancellationToken ct) =>
+    public Task<OneOf<Stream, Error>> OpenReadAsync(string segmentRef, CancellationToken ct) =>
       throw new NotImplementedException();
 
-    public Task PurgeAsync(IReadOnlyList<string> segmentRefs, CancellationToken ct) =>
-      Task.CompletedTask;
+    public Task<OneOf<Success, Error>> PurgeAsync(IReadOnlyList<string> segmentRefs, CancellationToken ct) =>
+      Task.FromResult<OneOf<Success, Error>>(new Success());
 
-    public Task<StorageStats> GetStatsAsync(CancellationToken ct) =>
-      Task.FromResult(new StorageStats
+    public Task<OneOf<StorageStats, Error>> GetStatsAsync(CancellationToken ct) =>
+      Task.FromResult<OneOf<StorageStats, Error>>(new StorageStats
       {
         TotalBytes = 1_000_000_000,
         UsedBytes = 500_000_000,
         FreeBytes = 500_000_000,
         RecordingBytes = 400_000_000
       });
+
+    public Task<OneOf<long, Error>> GetFreeBytesAsync(CancellationToken ct) =>
+      Task.FromResult<OneOf<long, Error>>(500_000_000L);
   }
 
   private sealed class FakeSegmentHandle : ISegmentHandle
@@ -350,10 +417,10 @@ public class SegmentWriterTests
       _finalizedRefs = finalizedRefs;
     }
 
-    public Task FinalizeAsync(CancellationToken ct)
+    public Task<OneOf<Success, Error>> FinalizeAsync(CancellationToken ct)
     {
       _finalizedRefs.Add(SegmentRef);
-      return Task.CompletedTask;
+      return Task.FromResult<OneOf<Success, Error>>(new Success());
     }
 
     public ValueTask DisposeAsync()

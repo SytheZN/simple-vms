@@ -147,28 +147,23 @@ public sealed class SystemService
     var stores = new List<StorageStoreDto>();
     foreach (var provider in _plugins.StorageProviders)
     {
-      try
-      {
-        var stats = await provider.GetStatsAsync(ct);
-        stores.Add(new StorageStoreDto
+      var statsResult = await provider.GetStatsAsync(ct);
+      stores.Add(statsResult.Match(
+        stats => new StorageStoreDto
         {
           TotalBytes = stats.TotalBytes,
           UsedBytes = stats.UsedBytes,
           FreeBytes = stats.FreeBytes,
           RecordingBytes = stats.RecordingBytes,
           Breakdown = breakdown
-        });
-      }
-      catch
-      {
-        stores.Add(new StorageStoreDto
+        },
+        _ => new StorageStoreDto
         {
           TotalBytes = -1,
           UsedBytes = -1,
           FreeBytes = -1,
           RecordingBytes = -1
-        });
-      }
+        }));
     }
 
     return new StorageResponse { Stores = stores };

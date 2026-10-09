@@ -1,4 +1,5 @@
 using System.Runtime.Loader;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Server.Plugins;
 using Server.Recording;
@@ -9,6 +10,9 @@ namespace Tests.Unit.Recording;
 [TestFixture]
 public class RetentionEngineTests
 {
+  private const long Gb = 1024L * 1024 * 1024;
+  private const ulong Hour = 3_600_000_000UL;
+
   /// <summary>
   /// SCENARIO:
   /// Stream has RetentionMode.Days with value 7; camera has RetentionMode.Default; global is Days/30
@@ -107,7 +111,7 @@ public class RetentionEngineTests
     var storage = new FakeStorage();
     var engine = CreateEngine(data, storage);
 
-    await engine.EvaluateAsync(CancellationToken.None);
+    await engine.EvaluateAsync(storage, CancellationToken.None);
 
     Assert.That(storage.PurgedRefs, Has.Count.EqualTo(1));
     Assert.That(storage.PurgedRefs[0], Is.EqualTo(seg10.SegmentRef));
@@ -129,9 +133,10 @@ public class RetentionEngineTests
   public async Task PurgeByBytes_DeletesOldestUntilUnderLimit()
   {
     var streamId = Guid.NewGuid();
-    var seg1 = MakeSegment(streamId, 1_000_000, 2_000_000, size: 50);
-    var seg2 = MakeSegment(streamId, 3_000_000, 4_000_000, size: 50);
-    var seg3 = MakeSegment(streamId, 5_000_000, 6_000_000, size: 50);
+    var now = Now();
+    var seg1 = MakeSegment(streamId, now - 3 * Hour, now - 2 * Hour, size: 50);
+    var seg2 = MakeSegment(streamId, now - 2 * Hour, now - Hour, size: 50);
+    var seg3 = MakeSegment(streamId, now - Hour, now, size: 50);
 
     var data = new FakeDataProvider();
     var stream = MakeStream(RetentionMode.Bytes, 100, streamId);
@@ -144,7 +149,7 @@ public class RetentionEngineTests
     var storage = new FakeStorage();
     var engine = CreateEngine(data, storage);
 
-    await engine.EvaluateAsync(CancellationToken.None);
+    await engine.EvaluateAsync(storage, CancellationToken.None);
 
     Assert.That(storage.PurgedRefs, Has.Count.EqualTo(1));
     Assert.That(storage.PurgedRefs[0], Is.EqualTo(seg1.SegmentRef));
@@ -175,10 +180,11 @@ public class RetentionEngineTests
     data.AddStream(stream);
 
     var plugin = new RecordingPluginStreamSettings();
-    var host = MakeHost(data, new FakeStorage(), plugin);
+    var storage = new FakeStorage();
+    var host = MakeHost(data, storage, plugin);
     var engine = new RetentionEngine(host, new StubRecordingController(), NullLogger.Instance);
 
-    await engine.EvaluateAsync(CancellationToken.None);
+    await engine.EvaluateAsync(storage, CancellationToken.None);
 
     Assert.That(plugin.OnRemovedCalls, Has.Count.EqualTo(1));
     Assert.That(plugin.OnRemovedCalls[0], Is.EqualTo(streamId));
@@ -214,10 +220,11 @@ public class RetentionEngineTests
     data.AddSegments(streamId, [seg]);
 
     var plugin = new RecordingPluginStreamSettings();
-    var host = MakeHost(data, new FakeStorage(), plugin);
+    var storage = new FakeStorage();
+    var host = MakeHost(data, storage, plugin);
     var engine = new RetentionEngine(host, new StubRecordingController(), NullLogger.Instance);
 
-    await engine.EvaluateAsync(CancellationToken.None);
+    await engine.EvaluateAsync(storage, CancellationToken.None);
 
     Assert.That(((FakeStreamRepo)data.Streams).DeletedIds, Does.Not.Contain(streamId));
     Assert.That(plugin.OnRemovedCalls, Is.Empty);
@@ -225,36 +232,314 @@ public class RetentionEngineTests
 
   /// <summary>
   /// SCENARIO:
-  /// Retention mode is Percent/50; storage is 80% used; two segments of 100 bytes
+  /// Storage holds 3 GB of recordings with 1 GB free; the 2 GB minimum free space leaves
+  /// 2 GB usable. A Percent/50 stream holds three 0.6 GB one-hour segments
   ///
   /// ACTION:
   /// Run retention evaluation
   ///
   /// EXPECTED RESULT:
-  /// Oldest segment is purged to bring usage down
+  /// The stream's quota is 1 GB (50% of usable), so the two oldest segments are purged
   /// </summary>
   [Test]
-  public async Task PurgeByPercent_DeletesWhenOverThreshold()
+  public async Task PurgeByPercent_TrimsToShareOfUsableSpace()
   {
     var streamId = Guid.NewGuid();
-    var seg1 = MakeSegment(streamId, 1_000_000, 2_000_000, size: 100);
-    var seg2 = MakeSegment(streamId, 3_000_000, 4_000_000, size: 100);
+    var now = Now();
+    var size = (long)(0.6 * Gb);
+    var seg1 = MakeSegment(streamId, now - 3 * Hour, now - 2 * Hour, size);
+    var seg2 = MakeSegment(streamId, now - 2 * Hour, now - Hour, size);
+    var seg3 = MakeSegment(streamId, now - Hour, now, size);
 
     var data = new FakeDataProvider();
-    var stream = MakeStream(RetentionMode.Percent, 50, streamId);
+    data.AddCamera(MakeCamera(RetentionMode.Default, 0));
+    data.AddStream(MakeStream(RetentionMode.Percent, 50, streamId));
+    data.AddSegments(streamId, [seg1, seg2, seg3]);
+
+    var storage = new FakeStorage(totalBytes: 4 * Gb, usedBytes: 3 * Gb);
+    await CreateEngine(data, storage).EvaluateAsync(storage, CancellationToken.None);
+
+    Assert.That(data.DeletedSegmentIds, Is.EquivalentTo(new[] { seg1.Id, seg2.Id }));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Storage cannot report its size; a Percent/50 stream holds old segments
+  ///
+  /// ACTION:
+  /// Run retention evaluation
+  ///
+  /// EXPECTED RESULT:
+  /// Nothing is purged; percent retention is unavailable without a known size
+  /// </summary>
+  [Test]
+  public async Task PurgeByPercent_UnknownStorage_NotTrimmed()
+  {
+    var streamId = Guid.NewGuid();
+    var now = Now();
+    var seg1 = MakeSegment(streamId, now - 300 * Hour, now - 299 * Hour, size: Gb);
+
+    var data = new FakeDataProvider();
+    data.AddCamera(MakeCamera(RetentionMode.Default, 0));
+    data.AddStream(MakeStream(RetentionMode.Percent, 50, streamId));
+    data.AddSegments(streamId, [seg1]);
+
+    var storage = new FakeStorage(totalBytes: -1, usedBytes: 0);
+    await CreateEngine(data, storage).EvaluateAsync(storage, CancellationToken.None);
+
+    Assert.That(data.DeletedSegmentIds, Is.Empty);
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Days/7 stream whose oldest segment is 10 days old but is the segment currently being
+  /// written
+  ///
+  /// ACTION:
+  /// Run retention evaluation
+  ///
+  /// EXPECTED RESULT:
+  /// The segment being written is never purged
+  /// </summary>
+  [Test]
+  public async Task ActiveSegment_NeverPurged()
+  {
+    var streamId = Guid.NewGuid();
+    var now = Now();
+    var seg = MakeSegment(streamId, now - 240 * Hour, now - 239 * Hour);
+
+    var data = new FakeDataProvider();
+    data.AddCamera(MakeCamera(RetentionMode.Default, 0));
+    data.AddStream(MakeStream(RetentionMode.Days, 7, streamId));
+    data.AddSegments(streamId, [seg]);
+
+    var storage = new FakeStorage();
+    var recording = new StubRecordingController { ActiveSegmentIds = new HashSet<Guid> { seg.Id } };
+    var engine = new RetentionEngine(MakeHost(data, storage), recording, NullLogger.Instance);
+    await engine.EvaluateAsync(storage, CancellationToken.None);
+
+    Assert.That(data.DeletedSegmentIds, Is.Empty);
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A camera has no recorded segments at all
+  ///
+  /// ACTION:
+  /// Run retention evaluation
+  ///
+  /// EXPECTED RESULT:
+  /// Its events are purged on the system event retention (default 180 days)
+  /// </summary>
+  [Test]
+  public async Task Events_CameraWithoutSegments_PurgedOnSystemEventRetention()
+  {
+    var data = new FakeDataProvider();
     var camera = MakeCamera(RetentionMode.Default, 0);
-
     data.AddCamera(camera);
-    data.AddStream(stream);
-    data.AddSegments(streamId, [seg1, seg2]);
+    data.AddStream(MakeStream(RetentionMode.Default, 0));
 
-    var storage = new FakeStorage(totalBytes: 1000, usedBytes: 800);
-    var engine = CreateEngine(data, storage);
+    var storage = new FakeStorage();
+    var before = DateTimeOffset.UtcNow.AddDays(-180).ToUnixMicroseconds();
+    await CreateEngine(data, storage).EvaluateAsync(storage, CancellationToken.None);
+    var after = DateTimeOffset.UtcNow.AddDays(-180).ToUnixMicroseconds();
 
-    await engine.EvaluateAsync(CancellationToken.None);
+    Assert.That(data.PurgedEvents, Has.Count.EqualTo(1));
+    Assert.That(data.PurgedEvents[0].CameraId, Is.EqualTo(camera.Id));
+    Assert.That(data.PurgedEvents[0].Cutoff, Is.InRange(before, after));
+  }
 
-    Assert.That(storage.PurgedRefs, Has.Count.GreaterThanOrEqualTo(1));
-    Assert.That(storage.PurgedRefs, Does.Contain(seg1.SegmentRef));
+  /// <summary>
+  /// SCENARIO:
+  /// Free space drops below the 0.2 GB hard floor while recording
+  ///
+  /// ACTION:
+  /// CheckEmergencyAsync
+  ///
+  /// EXPECTED RESULT:
+  /// All recording halts and an emergency stop event is logged
+  /// </summary>
+  [Test]
+  public async Task Emergency_BelowHardFloor_HaltsRecording()
+  {
+    var data = new FakeDataProvider();
+    var storage = new FakeStorage(totalBytes: Gb, usedBytes: Gb - (long)(0.1 * Gb));
+    var recording = new StubRecordingController();
+    var engine = new RetentionEngine(MakeHost(data, storage), recording, NullLogger.Instance);
+
+    await engine.CheckEmergencyAsync(storage, CancellationToken.None);
+
+    Assert.That(recording.IsHalted, Is.True);
+    Assert.That(data.CreatedSystemEvents.Select(e => e.Type), Is.EqualTo(new[] { "retention-emergency-stop" }));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Recording is halted and free space has recovered above the 2 GB minimum
+  ///
+  /// ACTION:
+  /// CheckEmergencyAsync
+  ///
+  /// EXPECTED RESULT:
+  /// Recording resumes and a resumed event is logged
+  /// </summary>
+  [Test]
+  public async Task Emergency_RecoveredAboveMinimum_ResumesRecording()
+  {
+    var data = new FakeDataProvider();
+    var storage = new FakeStorage(totalBytes: 10 * Gb, usedBytes: 5 * Gb);
+    var recording = new StubRecordingController();
+    await recording.HaltAllAsync();
+    var engine = new RetentionEngine(MakeHost(data, storage), recording, NullLogger.Instance);
+
+    await engine.CheckEmergencyAsync(storage, CancellationToken.None);
+
+    Assert.That(recording.IsHalted, Is.False);
+    Assert.That(data.CreatedSystemEvents.Select(e => e.Type), Is.EqualTo(new[] { "retention-recording-resumed" }));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Storage cannot report free space
+  ///
+  /// ACTION:
+  /// CheckEmergencyAsync
+  ///
+  /// EXPECTED RESULT:
+  /// Recording is not halted; the emergency stop is unavailable
+  /// </summary>
+  [Test]
+  public async Task Emergency_UnknownFreeSpace_DoesNothing()
+  {
+    var data = new FakeDataProvider();
+    var storage = new FakeStorage(totalBytes: -1, usedBytes: 0);
+    var recording = new StubRecordingController();
+    var engine = new RetentionEngine(MakeHost(data, storage), recording, NullLogger.Instance);
+
+    await engine.CheckEmergencyAsync(storage, CancellationToken.None);
+
+    Assert.That(recording.IsHalted, Is.False);
+    Assert.That(data.CreatedSystemEvents, Is.Empty);
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Storage cannot report free space and the emergency check runs every second
+  ///
+  /// ACTION:
+  /// CheckEmergencyAsync three times
+  ///
+  /// EXPECTED RESULT:
+  /// The unavailable-safeguards warning is logged once, not on every check
+  /// </summary>
+  [Test]
+  public async Task Emergency_UnknownFreeSpace_WarnsOnce()
+  {
+    var storage = new FakeStorage(totalBytes: -1, usedBytes: 0);
+    var logger = new ListLogger();
+    var engine = new RetentionEngine(MakeHost(new FakeDataProvider(), storage), new StubRecordingController(), logger);
+
+    for (var i = 0; i < 3; i++)
+      await engine.CheckEmergencyAsync(storage, CancellationToken.None);
+
+    Assert.That(logger.Entries.Count(e => e.Level == LogLevel.Warning), Is.EqualTo(1));
+  }
+
+  private sealed class ListLogger : ILogger
+  {
+    public List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+    public bool IsEnabled(LogLevel logLevel) => true;
+
+    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+      Func<TState, Exception?, string> formatter) =>
+      Entries.Add((logLevel, formatter(state, exception)));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Free space is below the 2 GB minimum; a Days/7 stream holds a 10-day-old segment
+  ///
+  /// ACTION:
+  /// CheckFreeSpaceAsync, then wait for the dispatched pass
+  ///
+  /// EXPECTED RESULT:
+  /// A retention pass runs early, purges the old segment, and logs a low space warning
+  /// </summary>
+  [Test]
+  public async Task FreeSpaceCheck_BelowMinimum_RunsPassAndWarns()
+  {
+    var streamId = Guid.NewGuid();
+    var now = Now();
+    var old = MakeSegment(streamId, now - 240 * Hour, now - 239 * Hour);
+
+    var data = new FakeDataProvider();
+    data.AddCamera(MakeCamera(RetentionMode.Default, 0));
+    data.AddStream(MakeStream(RetentionMode.Days, 7, streamId));
+    data.AddSegments(streamId, [old]);
+
+    var storage = new FakeStorage(totalBytes: 100 * Gb, usedBytes: 99 * Gb);
+    var engine = new RetentionEngine(MakeHost(data, storage), new StubRecordingController(), NullLogger.Instance);
+
+    await engine.CheckFreeSpaceAsync(storage, CancellationToken.None);
+    await engine.Pass;
+
+    Assert.That(data.DeletedSegmentIds, Is.EqualTo(new[] { old.Id }));
+    Assert.That(data.CreatedSystemEvents.Select(e => e.Type), Is.EqualTo(new[] { "retention-low-space-purge" }));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Free space is below the minimum and a retention pass is still running when the next
+  /// free space check fires
+  ///
+  /// ACTION:
+  /// CheckFreeSpaceAsync twice while the first pass is held, then release it
+  ///
+  /// EXPECTED RESULT:
+  /// The second check does not start another pass; only one low space warning is logged
+  /// </summary>
+  [Test]
+  public async Task FreeSpaceCheck_PassRunning_DoesNotOverlap()
+  {
+    var data = new FakeDataProvider();
+    var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    var storage = new FakeStorage(totalBytes: 100 * Gb, usedBytes: 99 * Gb) { StatsGate = gate };
+    var engine = new RetentionEngine(MakeHost(data, storage), new StubRecordingController(), NullLogger.Instance);
+
+    await engine.CheckFreeSpaceAsync(storage, CancellationToken.None);
+    var first = engine.Pass;
+    await engine.CheckFreeSpaceAsync(storage, CancellationToken.None);
+
+    Assert.That(engine.Pass, Is.SameAs(first));
+
+    gate.SetResult();
+    await engine.Pass;
+    Assert.That(data.CreatedSystemEvents.Select(e => e.Type), Is.EqualTo(new[] { "retention-low-space-purge" }));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Free space is above the 2 GB minimum
+  ///
+  /// ACTION:
+  /// CheckFreeSpaceAsync
+  ///
+  /// EXPECTED RESULT:
+  /// No pass is dispatched and no warning is logged
+  /// </summary>
+  [Test]
+  public async Task FreeSpaceCheck_AboveMinimum_DoesNothing()
+  {
+    var data = new FakeDataProvider();
+    var storage = new FakeStorage();
+    var engine = new RetentionEngine(MakeHost(data, storage), new StubRecordingController(), NullLogger.Instance);
+
+    await engine.CheckFreeSpaceAsync(storage, CancellationToken.None);
+    await engine.Pass;
+
+    Assert.That(data.CreatedSystemEvents, Is.Empty);
   }
 
   /// <summary>
@@ -283,7 +568,7 @@ public class RetentionEngineTests
     data.AddSegments(streamId, [seg10]);
 
     var storage = new FakeStorage();
-    await CreateEngine(data, storage).EvaluateAsync(CancellationToken.None);
+    await CreateEngine(data, storage).EvaluateAsync(storage, CancellationToken.None);
 
     Assert.That(data.DeletedSegmentIds, Is.EqualTo(new[] { seg10.Id }));
   }
@@ -315,15 +600,15 @@ public class RetentionEngineTests
     data.AddSegments(streamId, [seg10, seg1]);
 
     var storage = new FakeStorage();
-    await CreateEngine(data, storage).EvaluateAsync(CancellationToken.None);
+    await CreateEngine(data, storage).EvaluateAsync(storage, CancellationToken.None);
 
     Assert.That(data.DeletedSegmentIds, Is.EqualTo(new[] { seg10.Id }));
   }
 
   /// <summary>
   /// SCENARIO:
-  /// Quality stream has Bytes/100 with three 50-byte segments; an attached metadata stream
-  /// has segments covering each quality segment
+  /// Quality stream has Bytes/102 with three 50-byte segments; an attached metadata stream
+  /// has 1-byte segments covering each quality segment, counted toward the same quota
   ///
   /// ACTION:
   /// Run retention evaluation
@@ -337,22 +622,23 @@ public class RetentionEngineTests
   {
     var qualityId = Guid.NewGuid();
     var metadataId = Guid.NewGuid();
-    var q1 = MakeSegment(qualityId, 1_000_000, 2_000_000, size: 50);
-    var q2 = MakeSegment(qualityId, 3_000_000, 4_000_000, size: 50);
-    var q3 = MakeSegment(qualityId, 5_000_000, 6_000_000, size: 50);
-    var m1 = MakeSegment(metadataId, 1_000_000, 2_000_000, size: 1);
-    var m2 = MakeSegment(metadataId, 3_000_000, 4_000_000, size: 1);
-    var m3 = MakeSegment(metadataId, 5_000_000, 6_000_000, size: 1);
+    var now = Now();
+    var q1 = MakeSegment(qualityId, now - 3 * Hour, now - 2 * Hour, size: 50);
+    var q2 = MakeSegment(qualityId, now - 2 * Hour, now - Hour, size: 50);
+    var q3 = MakeSegment(qualityId, now - Hour, now, size: 50);
+    var m1 = MakeSegment(metadataId, now - 3 * Hour, now - 2 * Hour, size: 1);
+    var m2 = MakeSegment(metadataId, now - 2 * Hour, now - Hour, size: 1);
+    var m3 = MakeSegment(metadataId, now - Hour, now, size: 1);
 
     var data = new FakeDataProvider();
     data.AddCamera(MakeCamera(RetentionMode.Default, 0));
-    data.AddStream(MakeStream(RetentionMode.Bytes, 100, qualityId));
+    data.AddStream(MakeStream(RetentionMode.Bytes, 102, qualityId));
     data.AddStream(MakeMetadataStream(metadataId, qualityId));
     data.AddSegments(qualityId, [q1, q2, q3]);
     data.AddSegments(metadataId, [m1, m2, m3]);
 
     var storage = new FakeStorage();
-    await CreateEngine(data, storage).EvaluateAsync(CancellationToken.None);
+    await CreateEngine(data, storage).EvaluateAsync(storage, CancellationToken.None);
 
     Assert.That(data.DeletedSegmentIds, Is.EquivalentTo(new[] { q1.Id, m1.Id }));
   }
@@ -382,7 +668,7 @@ public class RetentionEngineTests
     data.AddSegments(metadataId, [m1, m2]);
 
     var storage = new FakeStorage();
-    await CreateEngine(data, storage).EvaluateAsync(CancellationToken.None);
+    await CreateEngine(data, storage).EvaluateAsync(storage, CancellationToken.None);
 
     Assert.That(data.DeletedSegmentIds, Is.EquivalentTo(new[] { m1.Id, m2.Id }));
   }
@@ -404,10 +690,11 @@ public class RetentionEngineTests
   {
     var qualityId = Guid.NewGuid();
     var metadataId = Guid.NewGuid();
-    var q1 = MakeSegment(qualityId, 1_000_000, 2_000_000, size: 50);
-    var q2 = MakeSegment(qualityId, 3_000_000, 4_000_000, size: 50);
-    var q3 = MakeSegment(qualityId, 5_000_000, 6_000_000, size: 50);
-    var m1 = MakeSegment(metadataId, 1_000_000, 2_000_000, size: 1);
+    var now = Now();
+    var q1 = MakeSegment(qualityId, now - 3 * Hour, now - 2 * Hour, size: 50);
+    var q2 = MakeSegment(qualityId, now - 2 * Hour, now - Hour, size: 50);
+    var q3 = MakeSegment(qualityId, now - Hour, now, size: 50);
+    var m1 = MakeSegment(metadataId, now - 3 * Hour, now - 2 * Hour, size: 1);
 
     var data = new FakeDataProvider();
     var camera = MakeCamera(RetentionMode.Default, 0);
@@ -418,10 +705,12 @@ public class RetentionEngineTests
     data.AddSegments(metadataId, [m1]);
 
     var storage = new FakeStorage();
-    await CreateEngine(data, storage).EvaluateAsync(CancellationToken.None);
+    await CreateEngine(data, storage).EvaluateAsync(storage, CancellationToken.None);
 
     Assert.That(data.PurgedEvents, Is.EqualTo(new[] { (camera.Id, q2.StartTime) }));
   }
+
+  private static ulong Now() => DateTimeOffset.UtcNow.ToUnixMicroseconds();
 
   private static CameraStream MakeMetadataStream(Guid streamId, Guid parentStreamId) => new()
   {
@@ -445,6 +734,7 @@ public class RetentionEngineTests
   {
     public bool IsHalted { get; private set; }
     public int WriterCount => 0;
+    public IReadOnlySet<Guid> ActiveSegmentIds { get; set; } = new HashSet<Guid>();
     public Task HaltAllAsync() { IsHalted = true; return Task.CompletedTask; }
     public Task ResumeAsync(CancellationToken ct) { IsHalted = false; return Task.CompletedTask; }
   }
@@ -515,32 +805,42 @@ public class RetentionEngineTests
     public string ProviderId => "fake";
     public List<string> PurgedRefs { get; } = [];
 
-    public FakeStorage(long totalBytes = 1_000_000_000, long usedBytes = 500_000_000)
+    public FakeStorage(long totalBytes = 1_000 * Gb, long usedBytes = 500 * Gb)
     {
       _totalBytes = totalBytes;
       _usedBytes = usedBytes;
     }
 
-    public Task<ISegmentHandle> CreateSegmentAsync(SegmentMetadata metadata, CancellationToken ct) =>
+    public Task<OneOf<ISegmentHandle, Error>> CreateSegmentAsync(SegmentMetadata metadata, CancellationToken ct) =>
       throw new NotImplementedException();
 
-    public Task<Stream> OpenReadAsync(string segmentRef, CancellationToken ct) =>
+    public Task<OneOf<Stream, Error>> OpenReadAsync(string segmentRef, CancellationToken ct) =>
       throw new NotImplementedException();
 
-    public Task PurgeAsync(IReadOnlyList<string> segmentRefs, CancellationToken ct)
+    public Task<OneOf<Success, Error>> PurgeAsync(IReadOnlyList<string> segmentRefs, CancellationToken ct)
     {
       PurgedRefs.AddRange(segmentRefs);
-      return Task.CompletedTask;
+      return Task.FromResult<OneOf<Success, Error>>(new Success());
     }
 
-    public Task<StorageStats> GetStatsAsync(CancellationToken ct) =>
-      Task.FromResult(new StorageStats
+    public TaskCompletionSource? StatsGate { get; init; }
+
+    public async Task<OneOf<StorageStats, Error>> GetStatsAsync(CancellationToken ct)
+    {
+      if (StatsGate != null)
+        await StatsGate.Task;
+
+      return new StorageStats
       {
         TotalBytes = _totalBytes,
         UsedBytes = _usedBytes,
         FreeBytes = _totalBytes - _usedBytes,
         RecordingBytes = _usedBytes
-      });
+      };
+    }
+
+    public Task<OneOf<long, Error>> GetFreeBytesAsync(CancellationToken ct) =>
+      Task.FromResult<OneOf<long, Error>>(_totalBytes - _usedBytes);
   }
 
   private sealed class FakeDataProvider : IDataProvider
@@ -574,6 +874,7 @@ public class RetentionEngineTests
     }
 
     public List<(Guid CameraId, ulong Cutoff)> PurgedEvents => ((FakeEventRepo)Events).Purged;
+    public List<SystemEvent> CreatedSystemEvents => ((FakeSystemEventRepo)SystemEvents).Created;
 
     public void AddCamera(Camera camera) => _cameras.Add(camera);
 

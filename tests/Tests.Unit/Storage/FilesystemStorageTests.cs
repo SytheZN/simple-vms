@@ -54,7 +54,7 @@ public class FilesystemStorageTests
       FileExtension = "mp4"
     };
 
-    await using var handle = await _plugin.CreateSegmentAsync(metadata, CancellationToken.None);
+    await using var handle = (await _plugin.CreateSegmentAsync(metadata, CancellationToken.None)).AsT0;
     await handle.Stream.WriteAsync(new byte[] { 1, 2, 3 });
     await handle.FinalizeAsync(CancellationToken.None);
 
@@ -86,7 +86,7 @@ public class FilesystemStorageTests
     var data = new byte[] { 10, 20, 30, 40, 50 };
 
     string segmentRef;
-    await using (var handle = await _plugin.CreateSegmentAsync(metadata, CancellationToken.None))
+    await using (var handle = (await _plugin.CreateSegmentAsync(metadata, CancellationToken.None)).AsT0)
     {
       await handle.Stream.WriteAsync(data);
       await handle.FinalizeAsync(CancellationToken.None);
@@ -113,7 +113,7 @@ public class FilesystemStorageTests
     var metadata = CreateMetadata();
     string segmentRef;
 
-    await using (var handle = await _plugin.CreateSegmentAsync(metadata, CancellationToken.None))
+    await using (var handle = (await _plugin.CreateSegmentAsync(metadata, CancellationToken.None)).AsT0)
     {
       await handle.Stream.WriteAsync(new byte[] { 1, 2, 3 });
       segmentRef = handle.SegmentRef;
@@ -140,14 +140,14 @@ public class FilesystemStorageTests
     var data = new byte[] { 99, 98, 97 };
 
     string segmentRef;
-    await using (var handle = await _plugin.CreateSegmentAsync(metadata, CancellationToken.None))
+    await using (var handle = (await _plugin.CreateSegmentAsync(metadata, CancellationToken.None)).AsT0)
     {
       await handle.Stream.WriteAsync(data);
       await handle.FinalizeAsync(CancellationToken.None);
       segmentRef = handle.SegmentRef;
     }
 
-    await using var readStream = await _plugin.OpenReadAsync(segmentRef, CancellationToken.None);
+    await using var readStream = (await _plugin.OpenReadAsync(segmentRef, CancellationToken.None)).AsT0;
     var buffer = new byte[data.Length];
     var bytesRead = await readStream.ReadAsync(buffer);
 
@@ -163,14 +163,15 @@ public class FilesystemStorageTests
   /// Call OpenReadAsync with a nonexistent ref
   ///
   /// EXPECTED RESULT:
-  /// Throws FileNotFoundException
+  /// Returns a NotFound error
   /// </summary>
   [Test]
-  public void OpenReadAsync_MissingFile_Throws()
+  public async Task OpenReadAsync_MissingFile_ReturnsNotFound()
   {
-    var ex = Assert.CatchAsync<IOException>(async () =>
-      await _plugin.OpenReadAsync("nonexistent/path/file.mp4", CancellationToken.None));
-    Assert.That(ex, Is.Not.Null);
+    var result = await _plugin.OpenReadAsync("nonexistent/path/file.mp4", CancellationToken.None);
+
+    Assert.That(result.IsT1, Is.True);
+    Assert.That(result.AsT1.Result, Is.EqualTo(Result.NotFound));
   }
 
   /// <summary>
@@ -189,7 +190,7 @@ public class FilesystemStorageTests
     var metadata = CreateMetadata();
 
     string segmentRef;
-    await using (var handle = await _plugin.CreateSegmentAsync(metadata, CancellationToken.None))
+    await using (var handle = (await _plugin.CreateSegmentAsync(metadata, CancellationToken.None)).AsT0)
     {
       await handle.Stream.WriteAsync(new byte[] { 1 });
       await handle.FinalizeAsync(CancellationToken.None);
@@ -221,18 +222,199 @@ public class FilesystemStorageTests
     var metadata = CreateMetadata();
     var data = new byte[1024];
 
-    await using (var handle = await _plugin.CreateSegmentAsync(metadata, CancellationToken.None))
+    await using (var handle = (await _plugin.CreateSegmentAsync(metadata, CancellationToken.None)).AsT0)
     {
       await handle.Stream.WriteAsync(data);
       await handle.FinalizeAsync(CancellationToken.None);
     }
 
-    var stats = await _plugin.GetStatsAsync(CancellationToken.None);
+    var stats = (await _plugin.GetStatsAsync(CancellationToken.None)).AsT0;
 
     Assert.That(stats.TotalBytes, Is.GreaterThan(0));
     Assert.That(stats.FreeBytes, Is.GreaterThan(0));
     Assert.That(stats.UsedBytes, Is.GreaterThan(0));
     Assert.That(stats.RecordingBytes, Is.EqualTo(1024));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// GetFreeBytesAsync is called on a mounted directory
+  ///
+  /// ACTION:
+  /// Call GetFreeBytesAsync
+  ///
+  /// EXPECTED RESULT:
+  /// Returns a positive free space figure without error
+  /// </summary>
+  [Test]
+  public async Task GetFreeBytesAsync_ReturnsDriveFreeSpace()
+  {
+    var free = await _plugin.GetFreeBytesAsync(CancellationToken.None);
+
+    Assert.That(free.IsT0, Is.True);
+    Assert.That(free.AsT0, Is.GreaterThan(0));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A segment is created twice with the same metadata, so the file already exists
+  ///
+  /// ACTION:
+  /// Call CreateSegmentAsync a second time
+  ///
+  /// EXPECTED RESULT:
+  /// Returns an InternalError instead of throwing
+  /// </summary>
+  [Test]
+  public async Task CreateSegment_FileExists_ReturnsError()
+  {
+    var metadata = CreateMetadata();
+    await using var first = (await _plugin.CreateSegmentAsync(metadata, CancellationToken.None)).AsT0;
+
+    var second = await _plugin.CreateSegmentAsync(metadata, CancellationToken.None);
+
+    Assert.That(second.IsT1, Is.True);
+    Assert.That(second.AsT1.Result, Is.EqualTo(Result.InternalError));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// The storage root is not writable
+  ///
+  /// ACTION:
+  /// Call CreateSegmentAsync
+  ///
+  /// EXPECTED RESULT:
+  /// Returns an InternalError instead of throwing
+  /// </summary>
+  [Test]
+  [Platform("Unix")]
+  [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+  public async Task CreateSegment_UnwritableRoot_ReturnsError()
+  {
+    File.SetUnixFileMode(_tempDir, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+    try
+    {
+      IgnoreUnlessPermissionsEnforced(_tempDir);
+
+      var result = await _plugin.CreateSegmentAsync(CreateMetadata(), CancellationToken.None);
+
+      Assert.That(result.IsT1, Is.True);
+      Assert.That(result.AsT1.Result, Is.EqualTo(Result.InternalError));
+    }
+    finally
+    {
+      File.SetUnixFileMode(_tempDir, FullAccess);
+    }
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A segment's directory is not writable, so its file cannot be deleted
+  ///
+  /// ACTION:
+  /// Call PurgeAsync for the segment
+  ///
+  /// EXPECTED RESULT:
+  /// Returns an InternalError instead of throwing
+  /// </summary>
+  [Test]
+  [Platform("Unix")]
+  [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+  public async Task PurgeAsync_UnwritableDirectory_ReturnsError()
+  {
+    string segmentRef;
+    await using (var handle = (await _plugin.CreateSegmentAsync(CreateMetadata(), CancellationToken.None)).AsT0)
+    {
+      await handle.FinalizeAsync(CancellationToken.None);
+      segmentRef = handle.SegmentRef;
+    }
+
+    var directory = Path.GetDirectoryName(Path.Combine(_tempDir, segmentRef))!;
+    File.SetUnixFileMode(directory, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+    try
+    {
+      IgnoreUnlessPermissionsEnforced(directory);
+
+      var result = await _plugin.PurgeAsync([segmentRef], CancellationToken.None);
+
+      Assert.That(result.IsT1, Is.True);
+      Assert.That(result.AsT1.Result, Is.EqualTo(Result.InternalError));
+    }
+    finally
+    {
+      File.SetUnixFileMode(directory, FullAccess);
+    }
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A segment file exists but cannot be read
+  ///
+  /// ACTION:
+  /// Call OpenReadAsync
+  ///
+  /// EXPECTED RESULT:
+  /// Returns an InternalError instead of throwing
+  /// </summary>
+  [Test]
+  [Platform("Unix")]
+  [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+  public async Task OpenReadAsync_UnreadableFile_ReturnsError()
+  {
+    string segmentRef;
+    await using (var handle = (await _plugin.CreateSegmentAsync(CreateMetadata(), CancellationToken.None)).AsT0)
+    {
+      await handle.FinalizeAsync(CancellationToken.None);
+      segmentRef = handle.SegmentRef;
+    }
+
+    var fullPath = Path.Combine(_tempDir, segmentRef);
+    File.SetUnixFileMode(fullPath, UnixFileMode.None);
+    try
+    {
+      if (CanOpen(fullPath))
+        Assert.Ignore("File modes are not enforced for this user");
+
+      var result = await _plugin.OpenReadAsync(segmentRef, CancellationToken.None);
+
+      Assert.That(result.IsT1, Is.True);
+      Assert.That(result.AsT1.Result, Is.EqualTo(Result.InternalError));
+    }
+    finally
+    {
+      File.SetUnixFileMode(fullPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+    }
+  }
+
+  private const UnixFileMode FullAccess =
+    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+
+  private static void IgnoreUnlessPermissionsEnforced(string directory)
+  {
+    var probe = Path.Combine(directory, "probe");
+    try
+    {
+      File.WriteAllText(probe, "");
+      File.Delete(probe);
+      Assert.Ignore("File modes are not enforced for this user");
+    }
+    catch (UnauthorizedAccessException)
+    {
+    }
+  }
+
+  private static bool CanOpen(string path)
+  {
+    try
+    {
+      using var _ = File.OpenRead(path);
+      return true;
+    }
+    catch (UnauthorizedAccessException)
+    {
+      return false;
+    }
   }
 
   private static SegmentMetadata CreateMetadata() => new()

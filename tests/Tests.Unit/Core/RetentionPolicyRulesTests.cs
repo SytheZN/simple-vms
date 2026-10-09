@@ -51,7 +51,30 @@ public class RetentionPolicyRulesTests
     if (value != null)
       values[RetentionPolicyRules.ValueKey] = value;
 
-    Assert.That(RetentionPolicyRules.Validate(values).IsT1, Is.True);
+    Assert.That(RetentionPolicyRules.Validate(values, sizeKnown: true).IsT1, Is.True);
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// A retention group has a numeric or unknown mode with a valid value
+  ///
+  /// ACTION:
+  /// Validate(values)
+  ///
+  /// EXPECTED RESULT:
+  /// Rejected; the group check does not rely on the per-field mode check having run
+  /// </summary>
+  [TestCase("42")]
+  [TestCase("weeks")]
+  public void Validate_InvalidMode_Rejected(string mode)
+  {
+    var values = new Dictionary<string, string>
+    {
+      [RetentionPolicyRules.ModeKey] = mode,
+      [RetentionPolicyRules.ValueKey] = "30"
+    };
+
+    Assert.That(RetentionPolicyRules.Validate(values, sizeKnown: true).IsT1, Is.True);
   }
 
   /// <summary>
@@ -73,7 +96,7 @@ public class RetentionPolicyRulesTests
     if (value != null)
       values[RetentionPolicyRules.ValueKey] = value;
 
-    Assert.That(RetentionPolicyRules.Validate(values).IsT0, Is.True);
+    Assert.That(RetentionPolicyRules.Validate(values, sizeKnown: true).IsT0, Is.True);
   }
 
   /// <summary>
@@ -90,7 +113,25 @@ public class RetentionPolicyRulesTests
   [TestCase(101, false)]
   public void Validate_PercentAbove100_Rejected(decimal value, bool expectValid)
   {
-    Assert.That(RetentionPolicyRules.Validate(RetentionMode.Percent, value).IsT0, Is.EqualTo(expectValid));
+    Assert.That(RetentionPolicyRules.Validate(RetentionMode.Percent, value, sizeKnown: true).IsT0, Is.EqualTo(expectValid));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// The active storage cannot report its size
+  ///
+  /// ACTION:
+  /// Validate(mode, value, sizeKnown: false)
+  ///
+  /// EXPECTED RESULT:
+  /// Percent is rejected; days and size do not depend on the storage size and are accepted
+  /// </summary>
+  [TestCase(RetentionMode.Percent, false)]
+  [TestCase(RetentionMode.Days, true)]
+  [TestCase(RetentionMode.Bytes, true)]
+  public void Validate_UnknownStorageSize_RejectsPercentOnly(RetentionMode mode, bool expectValid)
+  {
+    Assert.That(RetentionPolicyRules.Validate(mode, 30, sizeKnown: false).IsT0, Is.EqualTo(expectValid));
   }
 
   /// <summary>
@@ -115,7 +156,7 @@ public class RetentionPolicyRulesTests
       [RetentionPolicyRules.ValueKey] = value
     };
 
-    Assert.That(RetentionPolicyRules.Validate(values).IsT0, Is.EqualTo(expectValid));
+    Assert.That(RetentionPolicyRules.Validate(values, sizeKnown: true).IsT0, Is.EqualTo(expectValid));
   }
 
   /// <summary>
@@ -132,7 +173,7 @@ public class RetentionPolicyRulesTests
   [TestCase(RetentionMode.Days, "9223372036854775808")]
   public void Validate_TooLarge_Rejected(RetentionMode mode, string value)
   {
-    Assert.That(RetentionPolicyRules.Validate(mode, decimal.Parse(value)).IsT1, Is.True);
+    Assert.That(RetentionPolicyRules.Validate(mode, decimal.Parse(value), sizeKnown: true).IsT1, Is.True);
   }
 
   /// <summary>

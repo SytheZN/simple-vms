@@ -88,7 +88,7 @@ onMounted(load)
           <i class="ph ph-warning icon-xl"></i>
           <div>
             <span class="font-medium">Warning</span>
-            <p>Oldest recordings are trimmed regardless of retention policy when free space drops below this threshold. Recording halts on all streams if free space falls below 0.2 GB, and resumes once free space returns above the threshold.</p>
+            <p>Retention is reduced proportionally across all cameras to keep this much space free. Recording halts on all streams if free space falls below 0.2 GB, and resumes once free space returns above the threshold.</p>
           </div>
         </div>
       </div>
