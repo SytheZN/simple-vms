@@ -479,6 +479,7 @@ public interface IPluginSettings
     IReadOnlyList<SettingGroup> GetSchema();
     IReadOnlyDictionary<string, string> GetValues();
     OneOf<Success, Error> ValidateValue(string key, string value);
+    OneOf<Success, Error> ValidateGroup(string groupId, IReadOnlyDictionary<string, string> values);
     OneOf<Success, Error> ApplyValues(IReadOnlyDictionary<string, string> values);
 }
 
@@ -501,6 +502,7 @@ public record SettingField
     public string? DefaultValue { get; init; }
     public bool Required { get; init; }
     public IReadOnlyList<SettingFieldOption>? Options { get; init; }
+    public string? GroupId { get; init; }
 }
 
 public record SettingFieldOption
@@ -510,7 +512,7 @@ public record SettingFieldOption
 }
 ```
 
-`GetSchema` returns groups of fields for the UI to render in order. `GetValues` returns the current values keyed by field key. `ValidateValue` validates a single field value before submission (for inline validation in the UI). `ApplyValues` validates and persists the full set. Plugins that have no user-facing settings do not implement `IPluginSettings`.
+`GetSchema` returns groups of fields for the UI to render in order. `GetValues` returns the current values keyed by field key. `ValidateValue` validates a single field value before submission (for inline validation in the UI). `ValidateGroup` validates fields sharing a `GroupId` together. `ApplyValues` validates and persists the full set. Plugins that have no user-facing settings do not implement `IPluginSettings`.
 
 For closed-set fields (`Type = "select"`), the plugin populates `Options` with the allowed `{ Value, Label }` pairs - the UI renders these as a dropdown. `Value` is the wire value persisted via `ApplyValues`; `Label` is the human-readable label shown in the dropdown. Open-set fields leave `Options` null.
 
@@ -526,6 +528,7 @@ public interface IPluginCameraSettings
     IReadOnlyList<SettingGroup> GetSchema(Guid cameraId);
     IReadOnlyDictionary<string, string> GetValues(Guid cameraId);
     OneOf<Success, Error> ValidateValue(Guid cameraId, string key, string value);
+    OneOf<Success, Error> ValidateGroup(Guid cameraId, string groupId, IReadOnlyDictionary<string, string> values);
     OneOf<Success, Error> ApplyValues(Guid cameraId, IReadOnlyDictionary<string, string> values);
     Task<OneOf<Success, Error>> OnRemovedAsync(Guid cameraId, CancellationToken ct);
 }

@@ -10,4 +10,5 @@ public record SettingField
   public string? DefaultValue { get; init; }
   public bool Required { get; init; }
   public IReadOnlyList<SettingFieldOption>? Options { get; init; }
+  public string? GroupId { get; init; }
 }

@@ -145,6 +145,14 @@ public static class ApiRoutes
       var result = await config.ApplyAsync(req.RouteGuid("id"), body, ct);
       return ApiResult.Ok(result, new DebugTag(ModuleIds.CameraManagement, 0x0022));
     });
+
+    dispatcher.Add("POST", "/api/v1/cameras/{id:guid}/config/validate", async (req, ct) =>
+    {
+      var config = req.Resolve<CameraConfigService>();
+      var body = req.Body(ServerJsonContext.Default.CameraConfigValues);
+      var result = await config.ValidateAsync(req.RouteGuid("id"), body, ct);
+      return ApiResult.Ok(result, new DebugTag(ModuleIds.CameraManagement, 0x0023));
+    });
   }
 
   private static void RegisterClients(ApiDispatcher dispatcher)
@@ -391,7 +399,7 @@ public static class ApiRoutes
     {
       var plugins = req.Resolve<PluginService>();
       var body = req.Body(ServerJsonContext.Default.ValidateFieldRequest);
-      var result = plugins.ValidateField(req.RouteString("id"), body.Key, body.Value);
+      var result = plugins.ValidateField(req.RouteString("id"), body.Key, body.Value, body.Values);
       return Task.FromResult(
         ApiResult.Ok(result, new DebugTag(ModuleIds.PluginManagement, 0x0017)));
     });

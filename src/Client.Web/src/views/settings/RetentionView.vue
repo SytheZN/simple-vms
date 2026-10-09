@@ -70,7 +70,7 @@ onMounted(load)
           <label class="label">Mode</label>
           <select class="input" v-model="retention.mode">
             <option value="days">Days</option>
-            <option value="bytes">Bytes</option>
+            <option value="bytes">Size (GB)</option>
             <option value="percent">Percent</option>
           </select>
         </div>

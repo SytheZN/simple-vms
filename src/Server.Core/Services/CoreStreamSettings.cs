@@ -58,11 +58,12 @@ public sealed class CoreStreamSettings : IPluginStreamSettings
         Description = "How long this stream's recordings are kept.",
         DefaultValue = "default",
         Required = true,
+        GroupId = RetentionPolicyRules.GroupId,
         Options =
         [
           new SettingFieldOption { Value = "default", Label = "Inherit from Camera" },
           new SettingFieldOption { Value = "days", Label = "Days" },
-          new SettingFieldOption { Value = "bytes", Label = "Bytes" },
+          new SettingFieldOption { Value = "bytes", Label = "Size (GB)" },
           new SettingFieldOption { Value = "percent", Label = "Percent" }
         ]
       },
@@ -72,8 +73,9 @@ public sealed class CoreStreamSettings : IPluginStreamSettings
         Order = 1,
         Label = "Retention Value",
         Type = "number",
-        Description = "Quantity for the selected Mode. Leave blank to inherit.",
-        Required = false
+        Description = "Quantity for the selected Mode. Required if Mode is specified.",
+        Required = false,
+        GroupId = RetentionPolicyRules.GroupId
       }
     ]
   };
@@ -90,7 +92,7 @@ public sealed class CoreStreamSettings : IPluginStreamSettings
           {
             ["recordingEnabled"] = s.RecordingEnabled ? "true" : "false",
             ["retentionMode"] = s.RetentionMode.ToString().ToLowerInvariant(),
-            ["retentionValue"] = s.RetentionValue == 0 ? "" : s.RetentionValue.ToString()
+            ["retentionValue"] = RetentionPolicyRules.FormatValue(s.RetentionMode, s.RetentionValue)
           },
       _ => new Dictionary<string, string>());
   }
@@ -105,18 +107,24 @@ public sealed class CoreStreamSettings : IPluginStreamSettings
             "recordingEnabled must be 'true' or 'false'");
         break;
       case "retentionMode":
-        if (!Enum.TryParse<RetentionMode>(value, ignoreCase: true, out _))
+        if (!Enum.TryParseExact<RetentionMode>(value, out _))
           return new Error(Result.BadRequest, new DebugTag(ModuleIds.CameraManagement, 0x0051),
             "retentionMode must be one of default, days, bytes, percent");
         break;
       case "retentionValue":
-        if (!string.IsNullOrEmpty(value) && !long.TryParse(value, out _))
+        if (!string.IsNullOrEmpty(value) && !RetentionPolicyRules.TryParseValue(value, out _))
           return new Error(Result.BadRequest, new DebugTag(ModuleIds.CameraManagement, 0x0052),
             "retentionValue must be a number");
         break;
     }
     return new Success();
   }
+
+  public OneOf<Success, Error> ValidateGroup(
+    Guid streamId, string groupId, IReadOnlyDictionary<string, string> values) =>
+    groupId == RetentionPolicyRules.GroupId
+      ? RetentionPolicyRules.Validate(values)
+      : new Success();
 
   public OneOf<Success, Error> ApplyValues(Guid streamId, IReadOnlyDictionary<string, string> values)
   {
@@ -131,10 +139,15 @@ public sealed class CoreStreamSettings : IPluginStreamSettings
       {
         if (values.TryGetValue("recordingEnabled", out var re))
           stream.RecordingEnabled = re == "true";
-        if (values.TryGetValue("retentionMode", out var rm))
-          stream.RetentionMode = Enum.Parse<RetentionMode>(rm, ignoreCase: true);
-        if (values.TryGetValue("retentionValue", out var rv))
-          stream.RetentionValue = string.IsNullOrEmpty(rv) ? 0 : long.Parse(rv);
+        if (values.ContainsKey(RetentionPolicyRules.ModeKey) || values.ContainsKey(RetentionPolicyRules.ValueKey))
+        {
+          var display = values.GetValueOrDefault(RetentionPolicyRules.ValueKey)
+            ?? RetentionPolicyRules.FormatValue(stream.RetentionMode, stream.RetentionValue);
+          if (values.TryGetValue(RetentionPolicyRules.ModeKey, out var rm)
+              && Enum.TryParseExact<RetentionMode>(rm, out var mode))
+            stream.RetentionMode = mode;
+          stream.RetentionValue = RetentionPolicyRules.StoredValue(stream.RetentionMode, display);
+        }
 
         return _plugins.DataProvider.Streams.UpsertAsync(stream).GetAwaiter().GetResult().Match<OneOf<Success, Error>>(
           _ => new Success(),

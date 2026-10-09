@@ -93,7 +93,7 @@ async function saveConfig() {
 async function validateField(key: string) {
   if (!selectedPlugin.value) return
   try {
-    await api.plugins.validateField(selectedPlugin.value.id, key, configValues.value[key])
+    await api.plugins.validateField(selectedPlugin.value.id, key, configValues.value)
     delete fieldErrors.value[key]
   } catch (e) {
     if (e instanceof ApiError) fieldErrors.value[key] = e.message

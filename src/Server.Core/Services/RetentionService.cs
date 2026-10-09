@@ -33,10 +33,11 @@ public sealed class RetentionService
     var minFreeResult = await _plugins.DataProvider!.Config.GetAsync("server", MinFreeSpaceGbKey, ct);
     if (minFreeResult.IsT1) return minFreeResult.AsT1;
 
+    var mode = Enum.TryParseExact<RetentionMode>(modeResult.AsT0, out var m) ? m : RetentionMode.Days;
     return new RetentionPolicy
     {
-      Mode = modeResult.AsT0 ?? "days",
-      Value = long.TryParse(valueResult.AsT0, out var v) ? v : 30,
+      Mode = mode.ToString().ToLowerInvariant(),
+      Value = long.TryParse(valueResult.AsT0, out var v) ? RetentionPolicyRules.DisplayValue(mode, v) : 30,
       MinFreeSpaceGb = ParseMinFreeSpaceGb(minFreeResult.AsT0)
     };
   }
@@ -44,10 +45,23 @@ public sealed class RetentionService
   public async Task<OneOf<Success, Error>> SetGlobalAsync(
     RetentionPolicy policy, CancellationToken ct)
   {
-    var modeResult = await _plugins.DataProvider!.Config.SetAsync("server", ModeKey, policy.Mode, ct);
+    if (!Enum.TryParseExact<RetentionMode>(policy.Mode, out var mode) || mode == RetentionMode.Default)
+      return new Error(Result.BadRequest, new DebugTag(ModuleIds.Retention, 0x0021),
+        "mode must be one of days, bytes, percent");
+
+    var validation = RetentionPolicyRules.Validate(mode, policy.Value);
+    if (validation.IsT1) return validation.AsT1;
+
+    if (policy.MinFreeSpaceGb < MinFreeSpaceGbFloor)
+      return new Error(Result.BadRequest, new DebugTag(ModuleIds.Retention, 0x0023),
+        $"minFreeSpaceGb must be at least {MinFreeSpaceGbFloor}");
+
+    var modeResult = await _plugins.DataProvider!.Config.SetAsync(
+      "server", ModeKey, mode.ToString().ToLowerInvariant(), ct);
     if (modeResult.IsT1) return modeResult.AsT1;
 
-    var valueResult = await _plugins.DataProvider!.Config.SetAsync("server", ValueKey, policy.Value.ToString(), ct);
+    var stored = RetentionPolicyRules.StoredValue(mode, policy.Value);
+    var valueResult = await _plugins.DataProvider!.Config.SetAsync("server", ValueKey, stored.ToString(), ct);
     if (valueResult.IsT1) return valueResult.AsT1;
 
     var minFree = policy.MinFreeSpaceGb < MinFreeSpaceGbFloor ? MinFreeSpaceGbFloor : policy.MinFreeSpaceGb;
@@ -76,8 +90,14 @@ public sealed class RetentionService
     };
   }
 
-  public Task<OneOf<Success, Error>> SetSystemEventRetentionAsync(
-    SystemEventRetentionDto retention, CancellationToken ct) =>
-    _plugins.DataProvider!.Config.SetAsync(
+  public async Task<OneOf<Success, Error>> SetSystemEventRetentionAsync(
+    SystemEventRetentionDto retention, CancellationToken ct)
+  {
+    if (retention.Days <= 0)
+      return new Error(Result.BadRequest, new DebugTag(ModuleIds.Retention, 0x0022),
+        "days must be greater than zero");
+
+    return await _plugins.DataProvider!.Config.SetAsync(
       "server", SystemEventDaysKey, retention.Days.ToString(), ct);
+  }
 }

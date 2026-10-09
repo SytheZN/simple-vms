@@ -29,12 +29,25 @@ const rtspPort = ref('')
 
 const confirmDelete = ref(false)
 
-function toggleBool(scope: Record<string, string>, key: string) {
-  scope[key] = scope[key] === 'true' ? 'false' : 'true'
+const fieldErrors = ref<Record<string, string>>({})
+let validateSeq = 0
+
+function cameraField(pluginId: string | number, key: string): string {
+  return `camera/${pluginId}/${key}`
 }
 
-function cycleTristate(scope: Record<string, string>, key: string) {
+function streamField(profile: string, pluginId: string | number, key: string): string {
+  return `streams/${profile}/${pluginId}/${key}`
+}
+
+function toggleBool(scope: Record<string, string>, key: string, field: string) {
+  scope[key] = scope[key] === 'true' ? 'false' : 'true'
+  validateField(field)
+}
+
+function cycleTristate(scope: Record<string, string>, key: string, field: string) {
   scope[key] = scope[key] === 'false' ? '' : scope[key] === '' ? 'true' : 'false'
+  validateField(field)
 }
 
 function tristateChecked(value: string): 'true' | 'false' | 'mixed' {
@@ -74,9 +87,25 @@ function hasChanges(diff: CameraConfigValues): boolean {
   return Object.keys(diff.camera).length > 0 || Object.keys(diff.streams).length > 0
 }
 
+async function validateField(field: string) {
+  const seq = ++validateSeq
+  const diff = diffConfigValues()
+  if (!hasChanges(diff)) {
+    fieldErrors.value = {}
+    return
+  }
+
+  try {
+    await api.cameras.validateConfig(cameraId, diff)
+    if (seq === validateSeq) fieldErrors.value = {}
+  } catch (e) {
+    if (seq === validateSeq && e instanceof ApiError) fieldErrors.value = { [field]: e.message }
+  }
+}
+
 async function load() {
   loading.value = true
-  error.value = ''
+  fieldErrors.value = {}
   try {
     const [cameraData, schemaData, valuesData] = await Promise.all([
       api.cameras.get(cameraId),
@@ -310,12 +339,14 @@ onMounted(load)
                   v-model="values.camera[pluginId][field.key]"
                   :placeholder="field.defaultValue?.toString() ?? ''"
                   autocomplete="off"
+                  @blur="validateField(cameraField(pluginId, field.key))"
                 />
                 <input
                   v-else-if="field.type === 'password'"
                   class="input" type="password"
                   v-model="values.camera[pluginId][field.key]"
                   autocomplete="new-password"
+                  @blur="validateField(cameraField(pluginId, field.key))"
                 />
                 <input
                   v-else-if="field.type === 'int' || field.type === 'number'"
@@ -323,12 +354,13 @@ onMounted(load)
                   v-model="values.camera[pluginId][field.key]"
                   :placeholder="field.defaultValue?.toString() ?? ''"
                   autocomplete="off"
+                  @blur="validateField(cameraField(pluginId, field.key))"
                 />
                 <button
                   v-else-if="field.type === 'bool' || field.type === 'boolean'"
                   class="toggle-track" role="switch" type="button"
                   :aria-checked="values.camera[pluginId][field.key] === 'true'"
-                  @click="toggleBool(values.camera[pluginId], field.key)"
+                  @click="toggleBool(values.camera[pluginId], field.key, cameraField(pluginId, field.key))"
                 >
                   <span class="toggle-knob"></span>
                 </button>
@@ -336,7 +368,7 @@ onMounted(load)
                   v-else-if="field.type === 'tristate'"
                   class="toggle-track" role="switch" type="button" data-tristate
                   :aria-checked="tristateChecked(values.camera[pluginId][field.key])"
-                  @click="cycleTristate(values.camera[pluginId], field.key)"
+                  @click="cycleTristate(values.camera[pluginId], field.key, cameraField(pluginId, field.key))"
                 >
                   <span class="toggle-knob"></span>
                 </button>
@@ -344,6 +376,7 @@ onMounted(load)
                   v-else-if="field.type === 'select'"
                   class="input"
                   v-model="values.camera[pluginId][field.key]"
+                  @change="validateField(cameraField(pluginId, field.key))"
                 >
                   <option v-for="opt in field.options ?? []" :key="opt.value" :value="opt.value">
                     {{ opt.label }}
@@ -355,6 +388,7 @@ onMounted(load)
                   v-model="values.camera[pluginId][field.key]"
                   :placeholder="field.defaultValue?.toString() ?? ''"
                   autocomplete="off"
+                  @blur="validateField(cameraField(pluginId, field.key))"
                 />
               </div>
               <p
@@ -362,6 +396,12 @@ onMounted(load)
                 class="sm:col-span-2 text-xs text-text-muted"
               >
                 {{ field.description }}
+              </p>
+              <p
+                v-if="fieldErrors[cameraField(pluginId, field.key)]"
+                class="sm:col-span-2 text-xs text-danger"
+              >
+                {{ fieldErrors[cameraField(pluginId, field.key)] }}
               </p>
             </div>
           </div>
@@ -417,12 +457,14 @@ onMounted(load)
                     v-model="values.streams[stream.profile][pluginId][field.key]"
                     :placeholder="field.defaultValue?.toString() ?? ''"
                     autocomplete="off"
+                    @blur="validateField(streamField(stream.profile, pluginId, field.key))"
                   />
                   <input
                     v-else-if="field.type === 'password'"
                     class="input" type="password"
                     v-model="values.streams[stream.profile][pluginId][field.key]"
                     autocomplete="new-password"
+                    @blur="validateField(streamField(stream.profile, pluginId, field.key))"
                   />
                   <input
                     v-else-if="field.type === 'int' || field.type === 'number'"
@@ -430,12 +472,13 @@ onMounted(load)
                     v-model="values.streams[stream.profile][pluginId][field.key]"
                     :placeholder="field.defaultValue?.toString() ?? ''"
                     autocomplete="off"
+                    @blur="validateField(streamField(stream.profile, pluginId, field.key))"
                   />
                   <button
                     v-else-if="field.type === 'bool' || field.type === 'boolean'"
                     class="toggle-track" role="switch" type="button"
                     :aria-checked="values.streams[stream.profile][pluginId][field.key] === 'true'"
-                    @click="toggleBool(values.streams[stream.profile][pluginId], field.key)"
+                    @click="toggleBool(values.streams[stream.profile][pluginId], field.key, streamField(stream.profile, pluginId, field.key))"
                   >
                     <span class="toggle-knob"></span>
                   </button>
@@ -443,7 +486,7 @@ onMounted(load)
                     v-else-if="field.type === 'tristate'"
                     class="toggle-track" role="switch" type="button" data-tristate
                     :aria-checked="tristateChecked(values.streams[stream.profile][pluginId][field.key])"
-                    @click="cycleTristate(values.streams[stream.profile][pluginId], field.key)"
+                    @click="cycleTristate(values.streams[stream.profile][pluginId], field.key, streamField(stream.profile, pluginId, field.key))"
                   >
                     <span class="toggle-knob"></span>
                   </button>
@@ -451,6 +494,7 @@ onMounted(load)
                     v-else-if="field.type === 'select'"
                     class="input"
                     v-model="values.streams[stream.profile][pluginId][field.key]"
+                    @change="validateField(streamField(stream.profile, pluginId, field.key))"
                   >
                     <option v-for="opt in field.options ?? []" :key="opt.value" :value="opt.value">
                       {{ opt.label }}
@@ -462,6 +506,7 @@ onMounted(load)
                     v-model="values.streams[stream.profile][pluginId][field.key]"
                     :placeholder="field.defaultValue?.toString() ?? ''"
                     autocomplete="off"
+                    @blur="validateField(streamField(stream.profile, pluginId, field.key))"
                   />
                 </div>
                 <p
@@ -469,6 +514,12 @@ onMounted(load)
                   class="sm:col-span-2 text-xs text-text-muted"
                 >
                   {{ field.description }}
+                </p>
+                <p
+                  v-if="fieldErrors[streamField(stream.profile, pluginId, field.key)]"
+                  class="sm:col-span-2 text-xs text-danger"
+                >
+                  {{ fieldErrors[streamField(stream.profile, pluginId, field.key)] }}
                 </p>
               </div>
             </div>

@@ -50,11 +50,12 @@ public sealed class CoreCameraSettings : IPluginCameraSettings
           Description = "How long recordings are kept on disk.",
           DefaultValue = "default",
           Required = true,
+          GroupId = RetentionPolicyRules.GroupId,
           Options =
           [
             new SettingFieldOption { Value = "default", Label = "Inherit from Server" },
             new SettingFieldOption { Value = "days", Label = "Days" },
-            new SettingFieldOption { Value = "bytes", Label = "Bytes" },
+            new SettingFieldOption { Value = "bytes", Label = "Size (GB)" },
             new SettingFieldOption { Value = "percent", Label = "Percent" }
           ]
         },
@@ -64,8 +65,9 @@ public sealed class CoreCameraSettings : IPluginCameraSettings
           Order = 1,
           Label = "Retention Value",
           Type = "number",
-          Description = "Quantity for the selected Mode. Leave blank to inherit.",
-          Required = false
+          Description = "Quantity for the selected Mode. Required if Mode is specified.",
+          Required = false,
+          GroupId = RetentionPolicyRules.GroupId
         }
       ]
     }
@@ -82,7 +84,7 @@ public sealed class CoreCameraSettings : IPluginCameraSettings
     {
       ["segmentDuration"] = c.SegmentDuration?.ToString() ?? "",
       ["retentionMode"] = c.RetentionMode.ToString().ToLowerInvariant(),
-      ["retentionValue"] = c.RetentionValue == 0 ? "" : c.RetentionValue.ToString()
+      ["retentionValue"] = RetentionPolicyRules.FormatValue(c.RetentionMode, c.RetentionValue)
     };
   }
 
@@ -96,18 +98,24 @@ public sealed class CoreCameraSettings : IPluginCameraSettings
             "segmentDuration must be an integer");
         break;
       case "retentionMode":
-        if (!Enum.TryParse<RetentionMode>(value, ignoreCase: true, out _))
+        if (!Enum.TryParseExact<RetentionMode>(value, out _))
           return new Error(Result.BadRequest, new DebugTag(ModuleIds.CameraManagement, 0x0041),
             "retentionMode must be one of default, days, bytes, percent");
         break;
       case "retentionValue":
-        if (!string.IsNullOrEmpty(value) && !long.TryParse(value, out _))
+        if (!string.IsNullOrEmpty(value) && !RetentionPolicyRules.TryParseValue(value, out _))
           return new Error(Result.BadRequest, new DebugTag(ModuleIds.CameraManagement, 0x0042),
             "retentionValue must be a number");
         break;
     }
     return new Success();
   }
+
+  public OneOf<Success, Error> ValidateGroup(
+    Guid cameraId, string groupId, IReadOnlyDictionary<string, string> values) =>
+    groupId == RetentionPolicyRules.GroupId
+      ? RetentionPolicyRules.Validate(values)
+      : new Success();
 
   public OneOf<Success, Error> ApplyValues(Guid cameraId, IReadOnlyDictionary<string, string> values)
   {
@@ -123,10 +131,15 @@ public sealed class CoreCameraSettings : IPluginCameraSettings
 
     if (values.TryGetValue("segmentDuration", out var sd))
       camera.SegmentDuration = string.IsNullOrEmpty(sd) ? null : int.Parse(sd);
-    if (values.TryGetValue("retentionMode", out var rm))
-      camera.RetentionMode = Enum.Parse<RetentionMode>(rm, ignoreCase: true);
-    if (values.TryGetValue("retentionValue", out var rv))
-      camera.RetentionValue = string.IsNullOrEmpty(rv) ? 0 : long.Parse(rv);
+    if (values.ContainsKey(RetentionPolicyRules.ModeKey) || values.ContainsKey(RetentionPolicyRules.ValueKey))
+    {
+      var display = values.GetValueOrDefault(RetentionPolicyRules.ValueKey)
+        ?? RetentionPolicyRules.FormatValue(camera.RetentionMode, camera.RetentionValue);
+      if (values.TryGetValue(RetentionPolicyRules.ModeKey, out var rm)
+          && Enum.TryParseExact<RetentionMode>(rm, out var mode))
+        camera.RetentionMode = mode;
+      camera.RetentionValue = RetentionPolicyRules.StoredValue(camera.RetentionMode, display);
+    }
 
     var upsert = _plugins.DataProvider.Cameras.UpdateAsync(camera).GetAwaiter().GetResult();
     return upsert.IsT1 ? upsert.AsT1 : new Success();

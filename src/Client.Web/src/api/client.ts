@@ -157,6 +157,7 @@ export const api = {
     configSchema: (id: string) => request<CameraConfigSchema>('OPTIONS', `/api/v1/cameras/${id}/config`),
     configValues: (id: string) => get<CameraConfigValues>(`/api/v1/cameras/${id}/config`),
     updateConfig: (id: string, body: CameraConfigValues) => put<void>(`/api/v1/cameras/${id}/config`, body),
+    validateConfig: (id: string, body: CameraConfigValues) => post<void>(`/api/v1/cameras/${id}/config/validate`, body),
   },
 
   discovery: {
@@ -206,7 +207,12 @@ export const api = {
     configSchema: (id: string) => request<SettingGroup[]>('OPTIONS', `/api/v1/plugins/${id}/config`),
     configValues: (id: string) => get<Record<string, unknown>>(`/api/v1/plugins/${id}/config`),
     updateConfig: (id: string, body: Record<string, unknown>) => put<void>(`/api/v1/plugins/${id}/config`, body),
-    validateField: (id: string, key: string, value: unknown) => post<void>(`/api/v1/plugins/${id}/config/validate`, { key, value }),
+    validateField: (id: string, key: string, values: Record<string, unknown>) =>
+      post<void>(`/api/v1/plugins/${id}/config/validate`, {
+        key,
+        value: String(values[key]),
+        values: Object.fromEntries(Object.entries(values).map(([k, v]) => [k, String(v)])),
+      }),
     start: (id: string) => post<void>(`/api/v1/plugins/${id}/start`),
     stop: (id: string) => post<void>(`/api/v1/plugins/${id}/stop`),
   },

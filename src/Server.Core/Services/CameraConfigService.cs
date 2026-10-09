@@ -81,58 +81,25 @@ public sealed class CameraConfigService
     return new CameraConfigValues { Camera = camera, Streams = streams };
   }
 
+  private sealed record PendingCamera(
+    string PluginId, IPluginCameraSettings Settings, IReadOnlyDictionary<string, string> Values);
+
+  private sealed record PendingStream(
+    string PluginId, IPluginStreamSettings Settings, Guid StreamId, IReadOnlyDictionary<string, string> Values);
+
+  private sealed record PendingChanges(List<PendingCamera> Camera, List<PendingStream> Streams);
+
+  public async Task<OneOf<Success, Error>> ValidateAsync(Guid cameraId, CameraConfigValues body, CancellationToken ct)
+  {
+    var prepared = await PrepareAsync(cameraId, body, ct);
+    return prepared.IsT1 ? prepared.AsT1 : new Success();
+  }
+
   public async Task<OneOf<Success, Error>> ApplyAsync(Guid cameraId, CameraConfigValues body, CancellationToken ct)
   {
-    var pendingCamera = new List<(string PluginId, IPluginCameraSettings Settings, IReadOnlyDictionary<string, string> Values)>();
-    var pendingStream = new List<(string PluginId, IPluginStreamSettings Settings, Guid StreamId, IReadOnlyDictionary<string, string> Values)>();
-
-    foreach (var (pluginId, values) in body.Camera ?? [])
-    {
-      var settings = ResolveCameraSettings(pluginId);
-      if (settings == null)
-        return new Error(Result.BadRequest, new DebugTag(ModuleIds.CameraManagement, 0x0030),
-          $"Unknown plugin '{pluginId}' in camera section");
-      pendingCamera.Add((pluginId, settings, values));
-    }
-
-    if (body.Streams?.Count > 0)
-    {
-      var streamsResult = await _plugins.DataProvider.Streams.GetByCameraIdAsync(cameraId, ct);
-      if (streamsResult.IsT1) return streamsResult.AsT1;
-      var byProfile = streamsResult.AsT0
-        .Where(s => s.DeletedAt == null)
-        .ToDictionary(s => s.Profile);
-
-      foreach (var (profile, perProfile) in body.Streams)
-      {
-        if (!byProfile.TryGetValue(profile, out var stream))
-          return new Error(Result.NotFound, new DebugTag(ModuleIds.CameraManagement, 0x0031),
-            $"Profile '{profile}' not found on camera {cameraId}");
-
-        foreach (var (pluginId, values) in perProfile ?? [])
-        {
-          var settings = ResolveStreamSettings(pluginId);
-          if (settings == null)
-            return new Error(Result.BadRequest, new DebugTag(ModuleIds.CameraManagement, 0x0032),
-              $"Unknown plugin '{pluginId}' in stream section");
-          pendingStream.Add((pluginId, settings, stream.Id, values));
-        }
-      }
-    }
-
-    foreach (var (_, settings, values) in pendingCamera)
-      foreach (var (key, value) in values)
-      {
-        var v = settings.ValidateValue(cameraId, key, value);
-        if (v.IsT1) return v.AsT1;
-      }
-
-    foreach (var (_, settings, streamId, values) in pendingStream)
-      foreach (var (key, value) in values)
-      {
-        var v = settings.ValidateValue(streamId, key, value);
-        if (v.IsT1) return v.AsT1;
-      }
+    var prepared = await PrepareAsync(cameraId, body, ct);
+    if (prepared.IsT1) return prepared.AsT1;
+    var (pendingCamera, pendingStream) = prepared.AsT0;
 
     var diff = new Dictionary<string, DiffChange>();
 
@@ -188,6 +155,79 @@ public sealed class CameraConfigService
     }
 
     return new Success();
+  }
+
+  private async Task<OneOf<PendingChanges, Error>> PrepareAsync(
+    Guid cameraId, CameraConfigValues body, CancellationToken ct)
+  {
+    var pendingCamera = new List<PendingCamera>();
+    var pendingStream = new List<PendingStream>();
+
+    foreach (var (pluginId, values) in body.Camera ?? [])
+    {
+      var settings = ResolveCameraSettings(pluginId);
+      if (settings == null)
+        return new Error(Result.BadRequest, new DebugTag(ModuleIds.CameraManagement, 0x0030),
+          $"Unknown plugin '{pluginId}' in camera section");
+      pendingCamera.Add(new PendingCamera(pluginId, settings, values));
+    }
+
+    if (body.Streams?.Count > 0)
+    {
+      var streamsResult = await _plugins.DataProvider.Streams.GetByCameraIdAsync(cameraId, ct);
+      if (streamsResult.IsT1) return streamsResult.AsT1;
+      var byProfile = streamsResult.AsT0
+        .Where(s => s.DeletedAt == null)
+        .ToDictionary(s => s.Profile);
+
+      foreach (var (profile, perProfile) in body.Streams)
+      {
+        if (!byProfile.TryGetValue(profile, out var stream))
+          return new Error(Result.NotFound, new DebugTag(ModuleIds.CameraManagement, 0x0031),
+            $"Profile '{profile}' not found on camera {cameraId}");
+
+        foreach (var (pluginId, values) in perProfile ?? [])
+        {
+          var settings = ResolveStreamSettings(pluginId);
+          if (settings == null)
+            return new Error(Result.BadRequest, new DebugTag(ModuleIds.CameraManagement, 0x0032),
+              $"Unknown plugin '{pluginId}' in stream section");
+          pendingStream.Add(new PendingStream(pluginId, settings, stream.Id, values));
+        }
+      }
+    }
+
+    foreach (var (_, settings, values) in pendingCamera)
+      foreach (var (key, value) in values)
+      {
+        var v = settings.ValidateValue(cameraId, key, value);
+        if (v.IsT1) return v.AsT1;
+      }
+
+    foreach (var (_, settings, streamId, values) in pendingStream)
+      foreach (var (key, value) in values)
+      {
+        var v = settings.ValidateValue(streamId, key, value);
+        if (v.IsT1) return v.AsT1;
+      }
+
+    foreach (var (_, settings, values) in pendingCamera)
+      foreach (var (groupId, groupValues) in SettingFieldGroups.Collect(
+        settings.GetSchema(cameraId), settings.GetValues(cameraId), values))
+      {
+        var v = settings.ValidateGroup(cameraId, groupId, groupValues);
+        if (v.IsT1) return v.AsT1;
+      }
+
+    foreach (var (_, settings, streamId, values) in pendingStream)
+      foreach (var (groupId, groupValues) in SettingFieldGroups.Collect(
+        settings.GetSchema(streamId), settings.GetValues(streamId), values))
+      {
+        var v = settings.ValidateGroup(streamId, groupId, groupValues);
+        if (v.IsT1) return v.AsT1;
+      }
+
+    return new PendingChanges(pendingCamera, pendingStream);
   }
 
   private IEnumerable<(string Id, IPluginCameraSettings Settings)> CameraSettingsSources()

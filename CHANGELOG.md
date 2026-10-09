@@ -9,11 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - Per-camera privacy pause with a set duration
+- Input validation caters for interdependent values
 
 ### Fixed
 
 - Playback stutter and timeline glitches in the web client
-- Camera events and motion data not pruned with recordings
+- Camera events and motion data not pruned with recordings in some circumstances
 
 ## [0.1.2] - 2026-10-02
 

@@ -105,6 +105,13 @@ public sealed class PluginService
 
     if (entry.Plugin is IPluginSettings settings)
     {
+      foreach (var (groupId, groupValues) in SettingFieldGroups.Collect(
+        settings.GetSchema(), settings.GetValues(), pluginValues))
+      {
+        var group = settings.ValidateGroup(groupId, groupValues);
+        if (group.IsT1) return group.AsT1;
+      }
+
       var apply = settings.ApplyValues(pluginValues);
       if (apply.IsT1) return apply.AsT1;
     }
@@ -127,7 +134,8 @@ public sealed class PluginService
     return new Success();
   }
 
-  public OneOf<Success, Error> ValidateField(string id, string key, string value)
+  public OneOf<Success, Error> ValidateField(
+    string id, string key, string value, IReadOnlyDictionary<string, string>? values = null)
   {
     var entry = _host.Plugins.FirstOrDefault(p => p.Metadata.Id == id);
     if (entry == null)
@@ -148,7 +156,17 @@ public sealed class PluginService
         new DebugTag(ModuleIds.PluginManagement, 0x000C),
         $"Plugin '{id}' does not support settings");
 
-    return settings.ValidateValue(key, value);
+    var field = settings.ValidateValue(key, value);
+    if (field.IsT1) return field;
+
+    var schema = settings.GetSchema();
+    var groupId = schema.SelectMany(g => g.Fields).FirstOrDefault(f => f.Key == key)?.GroupId;
+    if (groupId == null) return new Success();
+
+    var submitted = new Dictionary<string, string>(values ?? new Dictionary<string, string>()) { [key] = value };
+    var (_, groupValues) = SettingFieldGroups.Collect(schema, settings.GetValues(), submitted)
+      .First(g => g.GroupId == groupId);
+    return settings.ValidateGroup(groupId, groupValues);
   }
 
   public async Task<OneOf<Success, Error>> UserStartAsync(string id, CancellationToken ct)

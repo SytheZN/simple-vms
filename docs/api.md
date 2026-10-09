@@ -261,6 +261,10 @@ Apply config changes. Partial updates are allowed; omitted sections and fields a
 
 Each section is dispatched to the named plugin's `IPluginCameraSettings.ApplyValues` or `IPluginStreamSettings.ApplyValues`. A `CameraConfigChanged` event is published on changes that affect streaming or recording.
 
+#### POST /api/v1/cameras/{id}/config/validate
+
+Validate config changes without applying them. Same body as `PUT`.
+
 #### DELETE /api/v1/cameras/{id}
 
 Remove a camera. Stops streaming and recording. Recordings are retained according to retention policy (not deleted immediately). Publishes a `CameraRemoved` event.
@@ -596,7 +600,7 @@ Update plugin configuration. Calls `IPluginSettings.ApplyValues()`. Returns vali
 
 #### POST /api/v1/plugins/{id}/config/validate
 
-Validate a single field value. Calls `IPluginSettings.ValidateValue()`. Returns `BadRequest` with a message if validation fails. Returns `BadRequest` if the plugin does not implement `IPluginSettings`. Used by the UI for inline validation on field blur.
+Validate a single field value. Calls `IPluginSettings.ValidateValue()` and `ValidateGroup()`. Returns `BadRequest` with a message if validation fails. Returns `BadRequest` if the plugin does not implement `IPluginSettings`. Used by the UI for inline validation on field blur.
 
 **Request body:**
 
@@ -604,6 +608,7 @@ Validate a single field value. Calls `IPluginSettings.ValidateValue()`. Returns 
 |-------|------|-------------|
 | `key` | string | Field key to validate |
 | `value` | any | Value to validate |
+| `values` | object? | Other unsaved values, for group validation |
 
 #### POST /api/v1/plugins/{id}/start
 
