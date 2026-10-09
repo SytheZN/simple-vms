@@ -135,6 +135,11 @@ export function usePlayer(): Player {
     return true
   }
 
+  function snapToBufferedGops(ts: number): number {
+    const oldest = fetcher.oldestTimestamp()
+    return oldest !== null && ts < oldest ? oldest : ts
+  }
+
   function startLoop() {
     if (rafId !== null) return
     rafId = requestAnimationFrame(loop)
@@ -152,6 +157,7 @@ export function usePlayer(): Player {
 
     if (state === 'seeking') {
       if (seekRenderTarget > 0) {
+        seekRenderTarget = snapToBufferedGops(seekRenderTarget)
         updatePipeline(seekRenderTarget)
         if (decoder.hasFrameToward(seekRenderTarget, direction.value)
             && renderAt(seekRenderTarget)) {

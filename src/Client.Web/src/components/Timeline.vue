@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { api } from '@/api/client'
-import type { TimelineSpan, TimelineEvent } from '@/types/api'
-import { eventMarkerClass, timelineEventTitle } from '@/lib/events'
+import { eventMarkerClass } from '@/lib/events'
+import { TimelineCache, type TimeRange } from '@/lib/timelineCache'
 
 const props = defineProps<{
   cameraId: string
@@ -18,39 +18,70 @@ const emit = defineEmits<{
 }>()
 
 function resetWindow() {
-  skipNextStabilize = true
   endOffset.value = defaultOffset()
-  scheduleLoad()
 }
 
 defineExpose({ resetWindow })
 
 const containerRef = ref<HTMLDivElement | null>(null)
 const barRef = ref<HTMLDivElement | null>(null)
-const spans = ref<TimelineSpan[]>([])
-const events = ref<TimelineEvent[]>([])
+const canvasRef = ref<HTMLCanvasElement | null>(null)
+let cache = new TimelineCache()
 const dragging = ref(false)
 
 const windowHours = ref(4)
 const endOffset = ref(defaultOffset())
 const initialAnchor = Date.now() * 1000
-let skipNextStabilize = false
+
+const pendingSeekUs = ref(0)
+const playheadUs = computed(() => pendingSeekUs.value || props.currentTimeUs)
+watch(() => props.currentTimeUs, () => { pendingSeekUs.value = 0 })
 
 let frozenAnchor = 0
-const anchorUs = computed(() => frozenAnchor || props.currentTimeUs || initialAnchor)
+const anchorUs = computed(() => frozenAnchor || playheadUs.value || initialAnchor)
+const windowRangeUs = computed(() => windowHours.value * 3600 * 1_000_000)
 const windowEnd = computed(() => anchorUs.value + endOffset.value)
-const windowStart = computed(() => windowEnd.value - windowHours.value * 3600 * 1_000_000)
+const windowStart = computed(() => windowEnd.value - windowRangeUs.value)
 
-watch(anchorUs, (newVal, oldVal) => {
-  if (skipNextStabilize) {
-    skipNextStabilize = false
-    return
-  }
-  if (scrubActive.value) return
-  if (oldVal && Math.abs(newVal - oldVal) > 5_000_000) {
-    endOffset.value += oldVal - newVal
-  }
-})
+const windowsPerStrip = 3
+const stripStartUs = ref(0)
+const stripRangeUs = ref(0)
+const stripEndUs = computed(() => stripStartUs.value + stripRangeUs.value)
+
+const stripStyle = computed(() => ({
+  width: windowsPerStrip * 100 + '%',
+  transform: stripRangeUs.value > 0
+    ? `translateX(${-(windowStart.value - stripStartUs.value) / stripRangeUs.value * 100}%)`
+    : 'none',
+}))
+
+function stripPercent(ts: number): number {
+  return ((ts - stripStartUs.value) / stripRangeUs.value) * 100
+}
+
+function stripNeedsReanchor(): boolean {
+  const reanchorMarginUs = windowRangeUs.value / 2
+  return stripRangeUs.value !== windowRangeUs.value * windowsPerStrip
+    || windowStart.value < stripStartUs.value + reanchorMarginUs
+    || windowEnd.value > stripEndUs.value - reanchorMarginUs
+}
+
+function reanchorStrip() {
+  stripRangeUs.value = windowRangeUs.value * windowsPerStrip
+  stripStartUs.value = windowStart.value - windowRangeUs.value
+  drawStrip()
+  fetchMissing()
+}
+
+function seekKeepingWindow(ts: number) {
+  const end = windowEnd.value
+  pendingSeekUs.value = ts
+  endOffset.value = end - ts
+}
+
+watch([windowStart, windowRangeUs], () => {
+  if (stripNeedsReanchor()) reanchorStrip()
+}, { immediate: true })
 
 let tickTimer: ReturnType<typeof setInterval> | null = null
 
@@ -70,26 +101,81 @@ function startTicking() {
     const now = Date.now()
     if (now - lastInteraction > 5000 && now - lastAutoLoad >= 60000) {
       lastAutoLoad = now
-      loadTimeline()
+      reanchorStrip()
     }
   }, 1000)
 }
 
-async function loadTimeline() {
+function fetchMissing() {
+  const strip = { from: Math.floor(stripStartUs.value), to: Math.floor(stripEndUs.value) }
+  for (const range of cache.missing(strip))
+    fetchRange(cache, range)
+}
+
+async function fetchRange(target: TimelineCache, range: TimeRange) {
+  target.begin(range)
   try {
-    const range = windowEnd.value - windowStart.value
-    const result = await api.recordings.timeline(
-      props.cameraId,
-      Math.floor(windowStart.value - range),
-      Math.floor(windowEnd.value + range),
-      props.profile
-    )
-    spans.value = result.spans
-    events.value = result.events.filter(e => e.type === 'motion')
+    const result = await api.recordings.timeline(props.cameraId, range.from, range.to, props.profile)
+    target.complete(range, result.spans, result.events.filter(e => e.type === 'motion'), Date.now() * 1000)
   } catch {
-    spans.value = []
-    events.value = []
-  } finally {
+    target.fail(range)
+    return
+  }
+  if (target === cache) drawStrip()
+}
+
+function resetCache() {
+  cache = new TimelineCache()
+  drawStrip()
+  fetchMissing()
+}
+
+function resolveBackground(className: string): string {
+  const probe = document.createElement('div')
+  probe.className = className
+  barRef.value!.appendChild(probe)
+  const color = getComputedStyle(probe).backgroundColor
+  probe.remove()
+  return color
+}
+
+function drawStrip() {
+  const canvas = canvasRef.value
+  const bar = barRef.value
+  if (!canvas || !bar || stripRangeUs.value <= 0) return
+
+  const dpr = window.devicePixelRatio || 1
+  const width = Math.round(bar.clientWidth * windowsPerStrip * dpr)
+  const height = Math.round(bar.clientHeight * dpr)
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width
+    canvas.height = height
+  }
+
+  const ctx = canvas.getContext('2d')!
+  ctx.clearRect(0, 0, width, height)
+  const toX = (ts: number) => (ts - stripStartUs.value) / stripRangeUs.value * width
+
+  ctx.fillStyle = resolveBackground('timeline-span-recording')
+  for (const span of cache.spans) {
+    const x0 = toX(span.startTime)
+    const x1 = toX(span.endTime)
+    if (x1 < 0 || x0 > width) continue
+    ctx.fillRect(x0, 0, Math.max(1, x1 - x0), height)
+  }
+
+  const markerWidth = 2 * dpr
+  const markerColors = new Map<string, string>()
+  for (const evt of cache.events.values()) {
+    const x = toX(evt.startTime)
+    if (x < -markerWidth || x > width + markerWidth) continue
+    let color = markerColors.get(evt.type)
+    if (!color) {
+      color = resolveBackground(eventMarkerClass(evt.type))
+      markerColors.set(evt.type, color)
+    }
+    ctx.fillStyle = color
+    ctx.fillRect(x - markerWidth / 2, 0, markerWidth, height)
   }
 }
 
@@ -134,82 +220,61 @@ function ceilToLocalInterval(tsUs: number, intervalMinutes: number): Date {
 }
 
 function todayMidnight(): Date {
-  const d = new Date(anchorUs.value / 1000)
+  const d = new Date()
   return new Date(d.getFullYear(), d.getMonth(), d.getDate())
 }
 
-function formatTickLabel(date: Date, crossesDate: boolean, isDayTick: boolean): string {
-  if (isDayTick)
-    return date.toLocaleDateString([], { day: '2-digit', month: '2-digit' })
-
-  const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  if (!crossesDate) return time
-
-  if (date.getHours() === 0 && date.getMinutes() === 0)
-    return date.toLocaleDateString([], { day: '2-digit', month: '2-digit' })
-
-  return time
+function formatDateLabel(date: Date): string {
+  return date.toLocaleDateString([], { day: '2-digit', month: '2-digit' })
 }
 
-function generateDayTicks(start: number, end: number, range: number): { ts: number, pct: number, label: string }[] {
-  const stepDays = pickDayInterval(range)
+function formatHourLabel(date: Date): string {
+  if (date.getHours() === 0 && date.getMinutes() === 0)
+    return formatDateLabel(date)
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+function generateDayTicks(start: number, end: number, stepDays: number): { ts: number, label: string }[] {
   const anchorMs = todayMidnight().getTime()
   const stepMs = stepDays * 86_400_000
-  const startMs = start / 1000
-  const endMs = end / 1000
   const labels = []
 
-  const firstStep = Math.ceil((startMs - anchorMs) / stepMs)
-  const lastStep = Math.floor((endMs - anchorMs) / stepMs)
+  const firstStep = Math.ceil((start / 1000 - anchorMs) / stepMs)
+  const lastStep = Math.floor((end / 1000 - anchorMs) / stepMs)
 
   for (let i = firstStep; i <= lastStep; i++) {
     const tick = new Date(anchorMs + i * stepMs)
-    const tsUs = tick.getTime() * 1000
-    const pct = ((tsUs - start) / range) * 100
-    if (pct >= 3 && pct <= 97)
-      labels.push({ ts: tsUs, pct, label: formatTickLabel(tick, true, true) })
+    labels.push({ ts: tick.getTime() * 1000, label: formatDateLabel(tick) })
   }
 
   return labels
 }
 
-function generateHourTicks(start: number, end: number, range: number, intervalMinutes: number): { ts: number, pct: number, label: string }[] {
+function generateHourTicks(start: number, end: number, intervalMinutes: number): { ts: number, label: string }[] {
   const intervalMs = intervalMinutes * 60_000
-  const startDate = new Date(start / 1000)
-  const endDate = new Date(end / 1000)
-  const crossesDate = startDate.getDate() !== endDate.getDate()
-    || startDate.getMonth() !== endDate.getMonth()
-    || startDate.getFullYear() !== endDate.getFullYear()
-
   const first = ceilToLocalInterval(start, intervalMinutes)
   const labels = []
-  for (let ms = first.getTime(); ms <= end / 1000; ms += intervalMs) {
-    const tsUs = ms * 1000
-    const pct = ((tsUs - start) / range) * 100
-    if (pct >= 3 && pct <= 97) {
-      const date = new Date(ms)
-      labels.push({ ts: tsUs, pct, label: formatTickLabel(date, crossesDate, false) })
-    }
-  }
+  for (let ms = first.getTime(); ms <= end / 1000; ms += intervalMs)
+    labels.push({ ts: ms * 1000, label: formatHourLabel(new Date(ms)) })
   return labels
 }
 
 const timeLabels = computed(() => {
-  const start = windowStart.value
-  const end = windowEnd.value
-  const range = end - start
+  const start = stripStartUs.value
+  const end = stripEndUs.value
+  if (end <= start) return []
 
-  const hourInterval = pickHourInterval(range)
+  const hourInterval = pickHourInterval(windowRangeUs.value)
   if (hourInterval != null)
-    return generateHourTicks(start, end, range, hourInterval)
+    return generateHourTicks(start, end, hourInterval)
 
-  return generateDayTicks(start, end, range)
+  return generateDayTicks(start, end, pickDayInterval(windowRangeUs.value))
 })
 
 const scrubTimestamp = ref(0)
 
 const playheadPct = computed(() => {
-  const ts = scrubActive.value ? scrubTimestamp.value : props.currentTimeUs
+  const ts = scrubActive.value ? scrubTimestamp.value : playheadUs.value
   if (!ts) return -999
   return timestampToPercent(ts)
 })
@@ -231,7 +296,7 @@ function onPlayheadDown(e: PointerEvent) {
   e.stopPropagation()
   e.preventDefault()
   markInteraction()
-  scrubTimestamp.value = props.currentTimeUs
+  scrubTimestamp.value = playheadUs.value
   frozenAnchor = anchorUs.value
   scrubActive.value = true
   ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
@@ -249,6 +314,7 @@ function onPlayheadUp(e: PointerEvent) {
   if (!scrubActive.value) return
   markInteraction()
   const ts = pctToTimestamp(e.clientX)
+  seekKeepingWindow(ts)
   scrubActive.value = false
   scrubTimestamp.value = 0
   frozenAnchor = 0
@@ -260,7 +326,6 @@ function onPointerDown(e: PointerEvent) {
   if (e.button === 1) {
     e.preventDefault()
     endOffset.value = defaultOffset()
-    scheduleLoad()
     return
   }
   if (!containerRef.value) return
@@ -278,8 +343,7 @@ function onPointerMove(e: PointerEvent) {
   if (dx > 3) dragMoved = true
   const rect = barRef.value.getBoundingClientRect()
   const deltaPct = (e.clientX - dragStartX) / rect.width
-  const range = windowHours.value * 3600 * 1_000_000
-  endOffset.value = dragStartOffset - deltaPct * range
+  endOffset.value = dragStartOffset - deltaPct * windowRangeUs.value
 }
 
 function onPointerUp(e: PointerEvent) {
@@ -288,9 +352,9 @@ function onPointerUp(e: PointerEvent) {
   dragging.value = false
 
   if (!dragMoved && barRef.value) {
-    emit('seek', pctToTimestamp(e.clientX))
-  } else {
-    scheduleLoad()
+    const ts = pctToTimestamp(e.clientX)
+    seekKeepingWindow(ts)
+    emit('seek', ts)
   }
 }
 
@@ -323,25 +387,18 @@ function onMiddleClick(e: MouseEvent) {
   if (e.button === 1) e.preventDefault()
 }
 
-let fetchTimer: ReturnType<typeof setTimeout> | null = null
+watch([() => props.cameraId, () => props.profile], resetCache)
 
-function scheduleLoad() {
-  if (dragging.value) return
-  if (fetchTimer) clearTimeout(fetchTimer)
-  fetchTimer = setTimeout(loadTimeline, 500)
-}
-
-watch([() => props.cameraId, () => props.profile], scheduleLoad)
-watch(windowHours, scheduleLoad)
+const barResizeObserver = new ResizeObserver(drawStrip)
 
 onMounted(() => {
+  barResizeObserver.observe(barRef.value!)
   startTicking()
-  loadTimeline()
 })
 
 onUnmounted(() => {
+  barResizeObserver.disconnect()
   if (tickTimer) clearInterval(tickTimer)
-  if (fetchTimer) clearTimeout(fetchTimer)
 })
 </script>
 
@@ -357,24 +414,7 @@ onUnmounted(() => {
       @auxclick="onMiddleClick"
     >
       <div ref="barRef" class="timeline-bar">
-        <div
-          v-for="(span, i) in spans"
-          :key="'s' + i"
-          class="timeline-span timeline-span-recording"
-          :style="{
-            left: Math.max(0, timestampToPercent(span.startTime)) + '%',
-            width: Math.max(0, Math.min(100, timestampToPercent(span.endTime)) - Math.max(0, timestampToPercent(span.startTime))) + '%',
-          }"
-        ></div>
-
-        <div
-          v-for="evt in events"
-          :key="evt.id"
-          class="timeline-marker"
-          :class="eventMarkerClass(evt.type)"
-          :style="{ left: timestampToPercent(evt.startTime) + '%' }"
-          :title="timelineEventTitle(evt)"
-        ></div>
+        <canvas ref="canvasRef" class="timeline-strip h-full" :style="stripStyle"></canvas>
 
         <div
           class="timeline-marker timeline-playhead"
@@ -386,14 +426,16 @@ onUnmounted(() => {
 
       </div>
 
-      <div class="relative h-4">
-        <div
-          v-for="label in timeLabels"
-          :key="label.ts"
-          class="timeline-tick"
-          :style="{ left: label.pct + '%' }"
-        >
-          {{ label.label }}
+      <div class="relative h-4 overflow-x-clip">
+        <div class="timeline-strip" :style="stripStyle">
+          <div
+            v-for="label in timeLabels"
+            :key="label.ts"
+            class="timeline-tick"
+            :style="{ left: stripPercent(label.ts) + '%' }"
+          >
+            {{ label.label }}
+          </div>
         </div>
       </div>
     </div>

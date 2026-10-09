@@ -529,6 +529,14 @@ input[type="number"].input::-webkit-inner-spin-button {
   overflow-y: visible;
 }
 
+.timeline-strip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  will-change: transform;
+}
+
 .timeline-span {
   position: absolute;
   top: 0;

@@ -1,4 +1,4 @@
-import type { CameraEvent, TimelineEvent } from '@/types/api'
+import type { CameraEvent } from '@/types/api'
 
 export type EventTone = 'danger' | 'warning' | 'success' | 'info' | 'muted'
 
@@ -131,9 +131,4 @@ export function extraMetadata(evt: CameraEvent): [string, string][] {
 
 export function hasDetail(evt: CameraEvent): boolean {
   return Object.keys(evt.metadata ?? {}).length > 0
-}
-
-export function timelineEventTitle(evt: TimelineEvent): string {
-  const when = new Date(evt.startTime / 1000).toLocaleTimeString()
-  return `${describeEvent(evt.type).label} - ${when}`
 }
