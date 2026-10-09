@@ -200,10 +200,12 @@ public class RetentionEngineTests
   [Test]
   public async Task SoftDeletedStream_HasSegments_NotDeleted()
   {
+    var now = (ulong)(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000);
+    var day = 86_400_000_000UL;
     var streamId = Guid.NewGuid();
     var stream = MakeStream(RetentionMode.Default, 0, streamId);
-    stream.DeletedAt = (ulong)(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000);
-    var seg = MakeSegment(streamId, 1_000_000, 2_000_000, size: 100);
+    stream.DeletedAt = now;
+    var seg = MakeSegment(streamId, now - day, now - day + 1000, size: 100);
 
     var data = new FakeDataProvider();
     var camera = MakeCamera(RetentionMode.Default, 0);
@@ -254,6 +256,184 @@ public class RetentionEngineTests
     Assert.That(storage.PurgedRefs, Has.Count.GreaterThanOrEqualTo(1));
     Assert.That(storage.PurgedRefs, Does.Contain(seg1.SegmentRef));
   }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Quality stream has RecordingEnabled = false and Days/7; one segment is 10 days old
+  ///
+  /// ACTION:
+  /// Run retention evaluation
+  ///
+  /// EXPECTED RESULT:
+  /// The old segment is purged; disabling recording does not exempt existing footage
+  /// </summary>
+  [Test]
+  public async Task RecordingDisabledStream_StillPurgedByPolicy()
+  {
+    var now = (ulong)(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000);
+    var day = 86_400_000_000UL;
+    var streamId = Guid.NewGuid();
+    var seg10 = MakeSegment(streamId, now - 10 * day, now - 10 * day + 1000);
+
+    var data = new FakeDataProvider();
+    var stream = MakeStream(RetentionMode.Days, 7, streamId);
+    stream.RecordingEnabled = false;
+    data.AddCamera(MakeCamera(RetentionMode.Default, 0));
+    data.AddStream(stream);
+    data.AddSegments(streamId, [seg10]);
+
+    var storage = new FakeStorage();
+    await CreateEngine(data, storage).EvaluateAsync(CancellationToken.None);
+
+    Assert.That(data.DeletedSegmentIds, Is.EqualTo(new[] { seg10.Id }));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Soft-deleted quality stream has Days/7; one segment is 10 days old, one is 1 day old
+  ///
+  /// ACTION:
+  /// Run retention evaluation
+  ///
+  /// EXPECTED RESULT:
+  /// The old segment is purged under the stream's policy; the recent one remains
+  /// </summary>
+  [Test]
+  public async Task SoftDeletedStream_StillPurgedByPolicy()
+  {
+    var now = (ulong)(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000);
+    var day = 86_400_000_000UL;
+    var streamId = Guid.NewGuid();
+    var seg10 = MakeSegment(streamId, now - 10 * day, now - 10 * day + 1000);
+    var seg1 = MakeSegment(streamId, now - 1 * day, now - 1 * day + 1000);
+
+    var data = new FakeDataProvider();
+    var stream = MakeStream(RetentionMode.Days, 7, streamId);
+    stream.DeletedAt = now;
+    data.AddCamera(MakeCamera(RetentionMode.Default, 0));
+    data.AddStream(stream);
+    data.AddSegments(streamId, [seg10, seg1]);
+
+    var storage = new FakeStorage();
+    await CreateEngine(data, storage).EvaluateAsync(CancellationToken.None);
+
+    Assert.That(data.DeletedSegmentIds, Is.EqualTo(new[] { seg10.Id }));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Quality stream has Bytes/100 with three 50-byte segments; an attached metadata stream
+  /// has segments covering each quality segment
+  ///
+  /// ACTION:
+  /// Run retention evaluation
+  ///
+  /// EXPECTED RESULT:
+  /// The oldest quality segment is purged, and the metadata segment that only covered it
+  /// is purged with it; metadata covering the remaining quality segments is kept
+  /// </summary>
+  [Test]
+  public async Task MetadataStream_PurgedWhereQualityNoLongerCovers()
+  {
+    var qualityId = Guid.NewGuid();
+    var metadataId = Guid.NewGuid();
+    var q1 = MakeSegment(qualityId, 1_000_000, 2_000_000, size: 50);
+    var q2 = MakeSegment(qualityId, 3_000_000, 4_000_000, size: 50);
+    var q3 = MakeSegment(qualityId, 5_000_000, 6_000_000, size: 50);
+    var m1 = MakeSegment(metadataId, 1_000_000, 2_000_000, size: 1);
+    var m2 = MakeSegment(metadataId, 3_000_000, 4_000_000, size: 1);
+    var m3 = MakeSegment(metadataId, 5_000_000, 6_000_000, size: 1);
+
+    var data = new FakeDataProvider();
+    data.AddCamera(MakeCamera(RetentionMode.Default, 0));
+    data.AddStream(MakeStream(RetentionMode.Bytes, 100, qualityId));
+    data.AddStream(MakeMetadataStream(metadataId, qualityId));
+    data.AddSegments(qualityId, [q1, q2, q3]);
+    data.AddSegments(metadataId, [m1, m2, m3]);
+
+    var storage = new FakeStorage();
+    await CreateEngine(data, storage).EvaluateAsync(CancellationToken.None);
+
+    Assert.That(data.DeletedSegmentIds, Is.EquivalentTo(new[] { q1.Id, m1.Id }));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Quality stream has no segments left; its attached metadata stream still has segments
+  ///
+  /// ACTION:
+  /// Run retention evaluation
+  ///
+  /// EXPECTED RESULT:
+  /// All metadata segments are purged
+  /// </summary>
+  [Test]
+  public async Task MetadataStream_PurgedEntirelyWhenQualityHasNoSegments()
+  {
+    var qualityId = Guid.NewGuid();
+    var metadataId = Guid.NewGuid();
+    var m1 = MakeSegment(metadataId, 1_000_000, 2_000_000, size: 1);
+    var m2 = MakeSegment(metadataId, 3_000_000, 4_000_000, size: 1);
+
+    var data = new FakeDataProvider();
+    data.AddCamera(MakeCamera(RetentionMode.Default, 0));
+    data.AddStream(MakeStream(RetentionMode.Days, 7, qualityId));
+    data.AddStream(MakeMetadataStream(metadataId, qualityId));
+    data.AddSegments(metadataId, [m1, m2]);
+
+    var storage = new FakeStorage();
+    await CreateEngine(data, storage).EvaluateAsync(CancellationToken.None);
+
+    Assert.That(data.DeletedSegmentIds, Is.EquivalentTo(new[] { m1.Id, m2.Id }));
+  }
+
+  /// <summary>
+  /// SCENARIO:
+  /// Quality stream has Bytes/100 with three 50-byte segments; an attached metadata stream
+  /// has a segment as old as the oldest quality segment
+  ///
+  /// ACTION:
+  /// Run retention evaluation
+  ///
+  /// EXPECTED RESULT:
+  /// Camera events are purged up to the oldest remaining quality segment, not held back
+  /// by metadata that only covered purged footage
+  /// </summary>
+  [Test]
+  public async Task Events_PurgedUpToOldestRemainingFootage()
+  {
+    var qualityId = Guid.NewGuid();
+    var metadataId = Guid.NewGuid();
+    var q1 = MakeSegment(qualityId, 1_000_000, 2_000_000, size: 50);
+    var q2 = MakeSegment(qualityId, 3_000_000, 4_000_000, size: 50);
+    var q3 = MakeSegment(qualityId, 5_000_000, 6_000_000, size: 50);
+    var m1 = MakeSegment(metadataId, 1_000_000, 2_000_000, size: 1);
+
+    var data = new FakeDataProvider();
+    var camera = MakeCamera(RetentionMode.Default, 0);
+    data.AddCamera(camera);
+    data.AddStream(MakeStream(RetentionMode.Bytes, 100, qualityId));
+    data.AddStream(MakeMetadataStream(metadataId, qualityId));
+    data.AddSegments(qualityId, [q1, q2, q3]);
+    data.AddSegments(metadataId, [m1]);
+
+    var storage = new FakeStorage();
+    await CreateEngine(data, storage).EvaluateAsync(CancellationToken.None);
+
+    Assert.That(data.PurgedEvents, Is.EqualTo(new[] { (camera.Id, q2.StartTime) }));
+  }
+
+  private static CameraStream MakeMetadataStream(Guid streamId, Guid parentStreamId) => new()
+  {
+    Id = streamId,
+    CameraId = Guid.NewGuid(),
+    Profile = "main-motion-grid",
+    Kind = StreamKind.Metadata,
+    FormatId = "mgrd",
+    Codec = "mgrd",
+    Uri = "",
+    ParentStreamId = parentStreamId
+  };
 
   private static RetentionEngine CreateEngine(FakeDataProvider data, FakeStorage storage)
   {

@@ -199,15 +199,8 @@ public sealed class RetentionEngine : IAsyncDisposable
       if (streamsResult.IsT1)
         continue;
 
-      foreach (var stream in streamsResult.AsT0)
+      foreach (var stream in streamsResult.AsT0.Where(s => s.Kind == StreamKind.Quality))
       {
-        if (stream.DeletedAt != null)
-          continue;
-        if (stream.Kind != StreamKind.Quality)
-          continue;
-        if (!stream.RecordingEnabled)
-          continue;
-
         var (mode, value) = ResolvePolicy(stream, camera, globalPolicy);
         if (mode == RetentionMode.Default)
           continue;
@@ -228,6 +221,14 @@ public sealed class RetentionEngine : IAsyncDisposable
               await PurgeByPercentAsync(data, storage, stream.Id, value, storageStats, ct);
             break;
         }
+      }
+
+      var streamsById = streamsResult.AsT0.ToDictionary(s => s.Id);
+      foreach (var stream in streamsResult.AsT0.Where(s => s.Kind == StreamKind.Metadata))
+      {
+        var root = Server.Core.StreamHierarchy.ResolveRootStream(
+          stream, id => streamsById.GetValueOrDefault(id), _logger);
+        await PurgeUncoveredMetadataAsync(data, storage, stream, root, ct);
       }
 
       await PurgeEventsAsync(data, camera, streamsResult.AsT0, ct);
@@ -348,6 +349,28 @@ public sealed class RetentionEngine : IAsyncDisposable
       freed += seg.SizeBytes;
     }
 
+    if (toPurge.Count > 0)
+      await PurgeSegmentsAsync(data, storage, toPurge, ct);
+  }
+
+  private async Task PurgeUncoveredMetadataAsync(
+    IDataProvider data, IStorageProvider storage, CameraStream metadata, CameraStream root, CancellationToken ct)
+  {
+    var coveredFrom = ulong.MaxValue;
+    if (root.Kind == StreamKind.Quality)
+    {
+      var rootOldest = await data.Segments.GetOldestAsync(root.Id, 1, ct);
+      if (rootOldest.IsT1)
+        return;
+      if (rootOldest.AsT0.Count > 0)
+        coveredFrom = rootOldest.AsT0[0].StartTime;
+    }
+
+    var segmentsResult = await data.Segments.GetOldestAsync(metadata.Id, int.MaxValue, ct);
+    if (segmentsResult.IsT1)
+      return;
+
+    var toPurge = segmentsResult.AsT0.Where(s => s.EndTime < coveredFrom).ToList();
     if (toPurge.Count > 0)
       await PurgeSegmentsAsync(data, storage, toPurge, ct);
   }
